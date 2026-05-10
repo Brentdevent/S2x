@@ -1,0 +1,8 @@
+"# If you edit this file,make sure to push it to DW servers: //s2-depot/s2/online/surveys/s2/",,,,,,,,
+# Version must always be greater than zero,,,,,,,,
+version,9,,,,,,,
+,,,,,,,,
+,,"#if you want an event added, ask the engineers","#event parameters match parameters passed to the survey event inside Lua, check there for what the parameters are. Max 4 params",#internal reference name,#make sure localized strings are patched into the string tables before you go live!,,#as long as the optionType has an associated entry in the survey system you can change it arbitrarily,
+# type = survey,surveyId (limit of 63),associatedEvent,additionalParamFunc,surveyReferenceName,localizeTitle,localizeMsg,optionType,sampleSize
+survey,0,,,invalid,,,,0
+survey,1,survey_onMatchStartRequested,,allmodesfungame,MENU_SURVEY_TITLE,MENU_FUN_GAME_SURVEY,yesno,0
