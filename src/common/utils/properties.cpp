@@ -31,7 +31,7 @@ namespace utils::properties
 		{
 			static auto props = []
 			{
-				auto path = std::filesystem::path("boiii_players/properties.json");
+				auto path = std::filesystem::path("players/properties.json");
 				const auto legacy_path = get_properties_folder() / "properties.json";
 
 				migrate_if_needed();
@@ -129,13 +129,13 @@ namespace utils::properties
 			CoTaskMemFree(path);
 		});
 
-		static auto appdata = std::filesystem::path(path) / "boiii";
+		static auto appdata = std::filesystem::path(path) / "s2x";
 		return appdata;
 	}
 
 	std::unique_lock<named_mutex> lock()
 	{
-		static named_mutex mutex{"boiii-properties-lock"};
+		static named_mutex mutex{"s2x-properties-lock"};
 		return std::unique_lock{mutex};
 	}
 

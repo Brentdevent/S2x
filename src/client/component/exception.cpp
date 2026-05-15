@@ -88,11 +88,11 @@ namespace exception
 				++recovery_data.recovery_counts;
 
 				/*game::Com_Error(game::ERR_DROP, "Fatal error (0x%08X) at 0x%p (0x%p).\nA minidump has been written.\n\n"
-				                "BOIII has tried to recover your game, but it might not run stable anymore.\n\n"
+				                "S2x has tried to recover your game, but it might not run stable anymore.\n\n"
 				                "Make sure to update your graphics card drivers and install operating system updates!\n"
 				                "Closing or restarting Steam might also help.",
 				                exception_data.code, exception_data.address,
-					            reverse_g(reinterpret_cast<uint64_t>(exception_data.address)));*/
+					            game::derelocate(reinterpret_cast<uint64_t>(exception_data.address)));*/
 			}
 			else
 			{
