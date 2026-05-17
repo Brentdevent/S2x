@@ -92,7 +92,7 @@ namespace demonware
 		std::memcpy(data.m_dec_key, &out_3[40], 16);
 		std::memcpy(data.m_enc_key, &out_3[56], 16);
 
-		if (utils::flags::has_flag("demonware_debug"))
+		if (utils::flags::has_flag("-demonware_debug"))
 		{
 			console::redudant("[DW] Response id: %s\n", utils::string::dump_hex(std::string(&out_2[8], 8)).data());
 			console::redudant("[DW] Hash verify: %s\n", utils::string::dump_hex(std::string(&out_3[20], 20)).data());

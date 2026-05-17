@@ -36,28 +36,28 @@ namespace console
 	{
 		con_type = con_type_default;
 
-		const auto noconsole_flag = utils::flags::has_flag("noconsole");
+		const auto noconsole_flag = utils::flags::has_flag("-noconsole");
 		if (!game::environment::is_dedi() && noconsole_flag)
 		{
 			con_type = con_type_none;
 			return;
 		}
 
-		const auto wincon_flag = utils::flags::has_flag("wincon");
+		const auto wincon_flag = utils::flags::has_flag("-wincon");
 		if (wincon_flag)
 		{
 			con_type = con_type_wincon;
 			return;
 		}
 
-		const auto terminal_flag = utils::flags::has_flag("terminal");
+		const auto terminal_flag = utils::flags::has_flag("-terminal");
 		if (terminal_flag)
 		{
 			con_type = con_type_terminal;
 			return;
 		}
 
-		const auto syscon_flag = utils::flags::has_flag("syscon");
+		const auto syscon_flag = utils::flags::has_flag("-syscon");
 		if (syscon_flag)
 		{
 			con_type = con_type_syscon;
