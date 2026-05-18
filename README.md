@@ -40,7 +40,7 @@ S2x does **not** provide game files, cracked executables, or any method to obtai
 ## Credits
 
 - [momo5502](https://github.com/momo5502) - Former lead developer of [XLabsProject](https://github.com/XLabsProject), research, codebase, and Sogen.
-- [Auroramod](https://github.com/auroramod) - Multiple components, UD2 patching, and Demonware emulation.
+- [Auroramod](https://github.com/auroramod) - Multiple components, int 2d patching, and Demonware emulation.
 - [Mallgrab](https://github.com/mallgrab/CWHook) - Cold War Arxan research.
 - [Wanted](https://github.com/WantedDV) - `find_lea_target` helper and feedback on VirtualAlloc hook research.
 
