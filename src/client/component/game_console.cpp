@@ -1,8 +1,10 @@
 #include <std_include.hpp>
 #include "loader/component_loader.hpp"
+
 #include "game_console.hpp"
 #include "console/console.hpp"
 #include "scheduler.hpp"
+#include "command.hpp"
 
 #include "game/game.hpp"
 #include "game/dvars.hpp"
@@ -844,45 +846,66 @@ namespace game_console
 			strncpy_s(con.globals.auto_complete_choice, "", 64);
 
 			// add clear command
-			/*command::add("clear", [&]()
+			command::add("clear", [&]()
 			{
 				clear();
+
 				con.line_count = 0;
 				con.display_line_offset = 0;
 				con.output.access([](output_queue& output)
 				{
 					output.clear();
 				});
+
 				history_index = -1;
 				history.clear();
-			});*/
+			});
 
 			// add our dvars
-			dvars::con_inputBoxColor = game::Dvar_RegisterVec4("con_inputBoxColor", 0.2f, 0.2f, 0.2f, 0.9f, 0.0f, 1.0f,
-				game::DVAR_FLAG_SAVED);
-			dvars::con_inputHintBoxColor = game::Dvar_RegisterVec4("con_inputHintBoxColor", 0.3f, 0.3f, 0.3f, 1.0f,
+			dvars::con_inputBoxColor = game::Dvar_RegisterVec4(
+				"con_inputBoxColor", 0.10f, 0.10f, 0.10f, 0.96f,
 				0.0f, 1.0f,
 				game::DVAR_FLAG_SAVED);
-			dvars::con_outputBarColor = game::Dvar_RegisterVec4("con_outputBarColor", 0.5f, 0.5f, 0.5f, 0.6f, 0.0f,
-				1.0f, game::DVAR_FLAG_SAVED);
-			dvars::con_outputSliderColor = game::Dvar_RegisterVec4("con_outputSliderColor", 1.0f, 1.0f, 1.0f, 1.0f,
+
+			dvars::con_inputHintBoxColor = game::Dvar_RegisterVec4(
+				"con_inputHintBoxColor", 0.14f, 0.14f, 0.14f, 0.98f,
 				0.0f, 1.0f,
 				game::DVAR_FLAG_SAVED);
-			dvars::con_outputWindowColor = game::Dvar_RegisterVec4("con_outputWindowColor", 0.25f, 0.25f, 0.25f, 0.85f,
-				0.0f,
-				1.0f, game::DVAR_FLAG_SAVED);
-			dvars::con_inputDvarMatchColor = game::Dvar_RegisterVec4("con_inputDvarMatchColor", 1.0f, 1.0f, 0.8f, 1.0f,
-				0.0f,
-				1.0f, game::DVAR_FLAG_SAVED);
-			dvars::con_inputDvarValueColor = game::Dvar_RegisterVec4("con_inputDvarValueColor", 1.0f, 1.0f, 0.8f, 1.0f,
-				0.0f,
-				1.0f, game::DVAR_FLAG_SAVED);
+
+			dvars::con_outputBarColor = game::Dvar_RegisterVec4(
+				"con_outputBarColor", 0.20f, 0.20f, 0.20f, 0.65f,
+				0.0f, 1.0f,
+				game::DVAR_FLAG_SAVED);
+
+			dvars::con_outputSliderColor = game::Dvar_RegisterVec4(
+				"con_outputSliderColor", 0.55f, 0.55f, 0.55f, 0.95f,
+				0.0f, 1.0f,
+				game::DVAR_FLAG_SAVED);
+
+			dvars::con_outputWindowColor = game::Dvar_RegisterVec4(
+				"con_outputWindowColor", 0.075f, 0.075f, 0.075f, 0.94f,
+				0.0f, 1.0f,
+				game::DVAR_FLAG_SAVED);
+
+			dvars::con_inputDvarMatchColor = game::Dvar_RegisterVec4(
+				"con_inputDvarMatchColor", 0.78f, 0.78f, 0.58f, 1.0f,
+				0.0f, 1.0f,
+				game::DVAR_FLAG_SAVED);
+
+			dvars::con_inputDvarValueColor = game::Dvar_RegisterVec4(
+				"con_inputDvarValueColor", 0.78f, 0.78f, 0.58f, 1.0f,
+				0.0f, 1.0f,
+				game::DVAR_FLAG_SAVED);
+
 			dvars::con_inputDvarInactiveValueColor = game::Dvar_RegisterVec4(
-				"con_inputDvarInactiveValueColor", 0.8f, 0.8f,
-				0.8f, 1.0f, 0.0f, 1.0f, game::DVAR_FLAG_SAVED);
-			dvars::con_inputCmdMatchColor = game::Dvar_RegisterVec4("con_inputCmdMatchColor", 0.80f, 0.80f, 1.0f, 1.0f,
-				0.0f,
-				1.0f, game::DVAR_FLAG_SAVED);
+				"con_inputDvarInactiveValueColor", 0.46f, 0.46f, 0.46f, 1.0f,
+				0.0f, 1.0f,
+				game::DVAR_FLAG_SAVED);
+
+			dvars::con_inputCmdMatchColor = game::Dvar_RegisterVec4(
+				"con_inputCmdMatchColor", 0.58f, 0.58f, 0.78f, 1.0f,
+				0.0f, 1.0f,
+				game::DVAR_FLAG_SAVED);
 		}
 	};
 }
