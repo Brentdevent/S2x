@@ -410,10 +410,7 @@ namespace syscon
 			{
 				this->runner();
 			});
-		}
 
-		void post_unpack() override
-		{
 			this->initialize();
 		}
 
@@ -556,6 +553,11 @@ namespace syscon
 			}
 
 			std::this_thread::yield();
+		}
+
+		component_priority priority() const override
+		{
+			return component_priority::console;
 		}
 	};
 

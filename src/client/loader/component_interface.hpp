@@ -8,6 +8,7 @@ enum class component_priority
 	// must run after the updater
 	steam_proxy,
 	updater,
+	console,
 	// must have the highest priority
 	arxan,
 };
