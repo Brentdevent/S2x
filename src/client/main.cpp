@@ -50,19 +50,6 @@ namespace
 		return {game_entry, original_import};
 	}
 
-	bool restart_app_if_necessary_stub()
-	{
-		const std::string steam_path = steam::SteamAPI_GetSteamInstallPath();
-		if (steam_path.empty() || !::utils::io::file_exists(steam_path + "/steam.exe"))
-		{
-			//game::show_error("Steam must be installed for the game to run. Please install Steam!");
-			ShellExecuteA(nullptr, "open", "https://store.steampowered.com/about/", nullptr, nullptr, SW_SHOWNORMAL);
-			TerminateProcess(GetCurrentProcess(), 1);
-		}
-
-		return steam::SteamAPI_RestartAppIfNecessary();
-	}
-
 	void patch_imports()
 	{
 		patch_steam_import("SteamAPI_RegisterCallback", steam::SteamAPI_RegisterCallback);
@@ -81,7 +68,7 @@ namespace
 		patch_steam_import("SteamAPI_GetHSteamPipe", steam::SteamAPI_GetHSteamPipe);
 		patch_steam_import("SteamAPI_Init", steam::SteamAPI_Init);
 		patch_steam_import("SteamAPI_Shutdown", steam::SteamAPI_Shutdown);
-		patch_steam_import("SteamAPI_RestartAppIfNecessary", restart_app_if_necessary_stub);
+		patch_steam_import("SteamAPI_RestartAppIfNecessary", steam::SteamAPI_RestartAppIfNecessary);
 
 		const utils::nt::library ucrt{ "ucrtbase.dll" };
 		auto* exit_func = ucrt.get_proc<void*>("exit");

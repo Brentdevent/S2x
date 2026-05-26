@@ -172,12 +172,16 @@ namespace steam_proxy
 	public:
 		void post_load() override
 		{
+			if (is_disabled()) return;
+
 			load_client();
 			perform_cleanup_if_needed();
 		}
 
 		void post_unpack() override
 		{
+			if (is_disabled()) return;
+
 			try
 			{
 				const auto res = start_mod("\xE2\xAD\x90" " S2x"s, steam::SteamUtils()->GetAppID());
