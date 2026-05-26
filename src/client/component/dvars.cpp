@@ -149,7 +149,7 @@ namespace dvars
 		return dvar_name;
 	}
 
-	class component final : public multiplayer_component
+	class component final : public generic_component
 	{
 	public:
 		void post_load() override
