@@ -19,18 +19,6 @@ You must own a legitimate Steam copy of **Call of Duty®: WWII** to use S2x.
 
 S2x does **not** provide game files, cracked executables, or any method to obtain the game without purchasing it. Please support the original developers and publishers by owning a legal copy of the game.
 
-## Roadmap
-
-- [x] Basic Steam API emulation
-- [x] Basic Demonware emulation
-- [x] Offline multiplayer/zombies/campaign support
-- [x] Disable anti-debug checks
-- [x] Disable integrity checks
-- [x] Disable code healing
-- [x] Restore internal/external console
-- [ ] Dedicated servers
-- [ ] Basic modding support
-
 ## Compile from source code
 
 - Clone the Git repository using [Git](https://git-scm.com/install/windows) or [GitHub Desktop](https://desktop.github.com/download/). **Do not download it as a ZIP**, as that will not include the required submodules.
