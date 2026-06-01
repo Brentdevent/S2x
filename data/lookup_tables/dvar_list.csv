@@ -9,6 +9,7 @@ g_gametype,1924
 com_errorMessage,1943
 g_hardcore,2043
 onlinegame,2291
+sv_maxclients,2299
 cl_motdString,3680
 com_completionResolveCommand,5369
 cl_paused,183

@@ -455,6 +455,20 @@ namespace game
 		static_assert(sizeof(gentity_s) == 0x418);
 		static_assert(offsetof(gentity_s, client) == 0x258);
 
+		struct client_t
+		{
+			int state;
+			char __pad0[0x41DF0 - 0x00004];
+			gentity_s* gentity;
+			char __pad1[0x42158 - 0x41DF8];
+			int testClient;
+			char __pad2[0x11E870 - 0x4215C];
+		};
+		static_assert(sizeof(client_t) == 0x11E870);
+		static_assert(offsetof(client_t, state) == 0x00000);
+		static_assert(offsetof(client_t, gentity) == 0x41DF0);
+		static_assert(offsetof(client_t, testClient) == 0x42158);
+
 		struct XZone
 		{
 			char __pad0[0x340];

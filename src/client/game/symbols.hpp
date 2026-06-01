@@ -134,7 +134,7 @@ namespace game
 	namespace mp
 	{
 		WEAK symbol<void(int migrate, int loadScripts)> SV_MapRestart{ 0x6D6F60 };
-		WEAK symbol<mp::gentity_s*(const char* name, int difficulty)> SV_AddBot{ 0xF2650 };
+		WEAK symbol<mp::gentity_s*(const char* name, int customizationGroup)> SV_AddBot{ 0xF2650 };
 
 		WEAK symbol<int(mp::gentity_s* entity)> SV_SpawnTestClient{ 0xF6AA0 };
 
@@ -145,6 +145,8 @@ namespace game
 
 		WEAK symbol<void(int a, int b)> CL_VirtualLobbyShutdown{ 0x8BB80 };
 
+		WEAK symbol<client_t*> svs_clients{ 0xC5FBA58 };
+		WEAK symbol<int> sv_maxclients{ 0xC5FBA50 };
 		WEAK symbol<int> sv_migrate{ 0xBB4FE68 };
 		WEAK symbol<char> virtualLobby_Loaded{ 0x1BD36F8 };
 	}
