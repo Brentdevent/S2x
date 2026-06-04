@@ -122,6 +122,8 @@ namespace game
 
 	bool Cbuf_AddText(int localClientNum, const char* text);
 	void Cbuf_AddCall(void* function);
+
+	bool is_server_running();
 }
 
 inline size_t operator"" _g(const size_t val)

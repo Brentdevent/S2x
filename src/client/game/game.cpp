@@ -205,4 +205,14 @@ namespace game
 
 		RtlLeaveCriticalSection(193);
 	}
+
+	bool is_server_running()
+	{
+		const auto* com_sv_running = game::Dvar_FindMalleableVar("1080"); // com_sv_running
+
+		return com_sv_running &&
+			com_sv_running->current.enabled &&
+			game::SV_Loaded() &&
+			!*game::mp::virtualLobby_Loaded;
+	}
 }

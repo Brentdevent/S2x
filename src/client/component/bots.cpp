@@ -3,6 +3,7 @@
 
 #include "command.hpp"
 #include "scheduler.hpp"
+#include "party.hpp"
 
 #include "game/game.hpp"
 
@@ -14,29 +15,60 @@ namespace bots
 {
 	namespace
 	{
-		constexpr int max_match_players = 18;
-
-		int get_connected_client_count()
+		int get_requested_bot_count(const command::params& params)
 		{
-			int count = 0;
-			auto* clients = *game::mp::svs_clients;
-
-			for (int i = 0; i < *game::mp::sv_maxclients; ++i)
+			if (params.size() <= 1)
 			{
-				const auto& client = clients[i];
-
-				if (client.state != 0)
-				{
-					++count;
-				}
+				return 1;
 			}
 
-			return count;
+			return std::max(1, std::atoi(params[1]));
 		}
 
-		int get_available_match_slots()
+		int get_planned_bot_count(const int requested_count)
 		{
-			return std::max(0, max_match_players - get_connected_client_count());
+			const auto available_slots = party::get_available_match_slots();
+			return std::min(requested_count, available_slots);
+		}
+
+		void spawn_bot()
+		{
+			auto* ent = game::mp::SV_AddBot("", 1);
+
+			if (ent)
+			{
+				game::mp::SV_SpawnTestClient(ent);
+			}
+		}
+
+		void spawn_bots(const int count)
+		{
+			for (int i = 0; i < count; ++i)
+			{
+				spawn_bot();
+			}
+		}
+
+		void spawn_bot_command(const command::params& params)
+		{
+			if (!game::is_server_running())
+			{
+				return;
+			}
+
+			const auto requested_count = get_requested_bot_count(params);
+			const auto planned_count = get_planned_bot_count(requested_count);
+
+			if (planned_count <= 0)
+			{
+				console::warn("Cannot spawn bot: match player limit reached\n");
+				return;
+			}
+
+			scheduler::once([planned_count]
+			{
+				spawn_bots(planned_count);
+			}, scheduler::server);
 		}
 	}
 
@@ -53,40 +85,9 @@ namespace bots
 			// Not sure, is LUA related (Might need additional patches since it also checks OnlineGame dvar outside this function)
 			utils::hook::set(0x388210_g, 0xC301B0);
 
-			command::add("SpawnBot", [](const command::params& params)
+			command::add("spawnBot", [](const command::params& params)
 			{
-				if (!game::SV_Loaded() || *game::mp::virtualLobby_Loaded)
-				{
-					return;
-				}
-
-				int requested_count = 1;
-				if (params.size() > 1)
-				{
-					requested_count = std::atoi(params[1]);
-				}
-
-				const auto available_slots = get_available_match_slots();
-				const auto planned_count = std::min(requested_count, available_slots);
-
-				if (planned_count <= 0)
-				{
-					console::warn("Cannot spawn bot: match player limit reached\n");
-					return;
-				}
-
-				scheduler::once([planned_count]
-				{
-					for (size_t i = 0; i < planned_count; ++i)
-					{
-						auto* ent = game::mp::SV_AddBot("", 1);
-
-						if (ent)
-						{
-							game::mp::SV_SpawnTestClient(ent);
-						}
-					}
-				}, scheduler::server);
+				spawn_bot_command(params);
 			});
 		}
 	};

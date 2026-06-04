@@ -123,6 +123,10 @@ namespace game
 	WEAK symbol<int> sv_loadScripts{ 0xBB4FE64, 0xB39AD18 };
 
 	WEAK symbol<char> g_zones{ 0x58360E0, 0x6907D50 };
+
+	WEAK symbol<void*(int unk)> Lobby_GetPartyData{0x47D050};
+	WEAK symbol<void(void* party, const char* gametype)> Party_SetGameType{ 0x1973A0 };
+	WEAK symbol<void(void* party, const char* mapname)> Party_SetMapName{ 0x1973C0 };
 	
 	constexpr auto CMD_MAX_NESTING = 8;
 
@@ -146,6 +150,8 @@ namespace game
 		WEAK symbol<void(int a, int b)> CL_VirtualLobbyShutdown{ 0x8BB80 };
 
 		WEAK symbol<client_t*> svs_clients{ 0xC5FBA58 };
+		WEAK symbol<mp::gentity_s> g_entities{ 0x9ED4430 };
+
 		WEAK symbol<int> sv_maxclients{ 0xC5FBA50 };
 		WEAK symbol<int> sv_migrate{ 0xBB4FE68 };
 		WEAK symbol<char> virtualLobby_Loaded{ 0x1BD36F8 };

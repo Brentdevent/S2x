@@ -389,6 +389,54 @@ namespace game
 		StringTableCell* values;
 	};
 
+	enum netadrtype_t : int
+	{
+		NA_BOT = 0x0,
+		NA_BAD = 0x1,
+		NA_LOOPBACK = 0x2,
+		NA_BROADCAST = 0x3,
+		NA_IP = 0x4,
+	};
+
+	enum netsrc_t : int
+	{
+		NS_CLIENT1 = 0x0,
+		NS_MAXCLIENTS = 0x1,
+		NS_SERVER = 0x2,
+		NS_PACKET = 0x3,
+		NS_INVALID_NETSRC = 0x4,
+	};
+
+	struct netadr_s
+	{
+		netadrtype_t type;
+		union
+		{
+			uint8_t ip[4];
+			uint32_t addr;
+		};
+		uint16_t port;
+		netsrc_t localNetID;
+		uint32_t addrHandleIndex;
+	};
+
+	struct msg_t
+	{
+		int overflowed;
+		int readOnly;
+		char* data;
+		char* splitData;
+		int maxsize;
+		int cursize;
+		int splitSize;
+		int readcount;
+		int bit;
+		int lastEntityRef;
+		netsrc_t targetLocalNetID;
+		int useZlib;
+	};
+	static_assert(sizeof(msg_t) == 0x38);
+
 	namespace sp
 	{
 		struct playerState_s
@@ -399,8 +447,8 @@ namespace game
 		struct gclient_s
 		{
 			char __pad0[0xF24C];
-			int autoMantle;                    // 0xF24C
-			int sprintCancel;                  // 0xF250
+			int autoMantle;
+			int sprintCancel;
 
 			// ... incomplete
 		};
@@ -408,7 +456,7 @@ namespace game
 		struct gentity_s
 		{
 			char __pad0[0x1C0];
-			gclient_s* client;                 // 0x1C0
+			gclient_s* client;
 			char __pad1C8[0x400 - 0x1C8];
 		};
 		static_assert(sizeof(gentity_s) == 0x400);
@@ -419,8 +467,8 @@ namespace game
 		struct XZone
 		{
 			char __pad0[0x328];
-			char name[0x40];     // 0x328
-			int flags;           // 0x368
+			char name[0x40];
+			int flags;
 			char __pad1[0x12C];
 		};
 		static_assert(offsetof(XZone, name) == 0x328);
@@ -442,14 +490,17 @@ namespace game
 		struct gclient_s
 		{
 			playerState_s ps;
+			char __pad0[0x5AB8 - sizeof(playerState_s)];
+			int team;
 
 			// ... incomplete
 		};
+		static_assert(offsetof(gclient_s, team) == 0x5AB8);
 
 		struct gentity_s
 		{
 			char __pad0[0x258];
-			gclient_s* client;                 // 0x0258
+			gclient_s* client;
 			char __pad260[0x418 - 0x260];
 		};
 		static_assert(sizeof(gentity_s) == 0x418);
@@ -458,22 +509,27 @@ namespace game
 		struct client_t
 		{
 			int state;
-			char __pad0[0x41DF0 - 0x00004];
+			char __pad0[0x30 - 0x04];
+			netadr_s remoteAddress;
+			int qport;
+			char __pad1[0x41DF0 - 0x48];
 			gentity_s* gentity;
-			char __pad1[0x42158 - 0x41DF8];
+			char __pad2[0x42158 - 0x41DF8];
 			int testClient;
-			char __pad2[0x11E870 - 0x4215C];
+			char __pad3[0x11E870 - 0x4215C];
 		};
 		static_assert(sizeof(client_t) == 0x11E870);
 		static_assert(offsetof(client_t, state) == 0x00000);
+		static_assert(offsetof(client_t, remoteAddress) == 0x00030);
+		static_assert(offsetof(client_t, qport) == 0x00044);
 		static_assert(offsetof(client_t, gentity) == 0x41DF0);
 		static_assert(offsetof(client_t, testClient) == 0x42158);
 
 		struct XZone
 		{
 			char __pad0[0x340];
-			char name[0x40];     // 0x340
-			int flags;           // 0x380
+			char name[0x40];
+			int flags;
 			char __pad1[0x22C];
 		};
 		static_assert(offsetof(XZone, name) == 0x340);
