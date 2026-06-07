@@ -3,9 +3,6 @@
 
 #include "game/game.hpp"
 
-#include "console/console.hpp"
-#include "network.hpp"
-
 #include <utils/hook.hpp>
 
 namespace patches
