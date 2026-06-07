@@ -213,6 +213,6 @@ namespace game
 		return com_sv_running &&
 			com_sv_running->current.enabled &&
 			game::SV_Loaded() &&
-			!*game::mp::virtualLobby_Loaded;
+			!*game::virtualLobby_Loaded;
 	}
 }

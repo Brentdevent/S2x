@@ -3,53 +3,32 @@
 
 #include "command.hpp"
 #include "scheduler.hpp"
+#include "network.hpp"
 
-#include "game/game.hpp"
 #include "game/dvars.hpp"
 
 #include "console/console.hpp"
 
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
+#include <utils/cryptography.hpp>
+#include <utils/info_string.hpp>
 
 namespace party
 {
 	namespace
 	{
-		constexpr int max_clients = 18;
+		// Technically max clients is 48, but needs more patches to work properly
+		constexpr int total_max_clients = 18;
 
-		void set_client_team(const int client_num, const int team)
+		struct connect_state_t
 		{
-			if (client_num < 0 || client_num >= max_clients)
-			{
-				console::error("invalid client num %d\n", client_num);
-				return;
-			}
+			game::netadr_s host{};
+			std::string challenge{};
+			bool host_defined{ false };
+		};
 
-			auto& ent = game::mp::g_entities[client_num];
-
-			if (!ent.client)
-			{
-				console::error("client %d has no gclient\n", client_num);
-				return;
-			}
-
-			const auto old_team = ent.client->team;
-			ent.client->team = team;
-
-			console::info("set client %d team %d -> %d\n", client_num, old_team, team);
-		}
-
-		std::string get_gametype_or_default(const command::params& params)
-		{
-			if (params.size() >= 3)
-			{
-				return params[2];
-			}
-
-			const auto* g_gametype = game::Dvar_FindMalleableVar("1924"); // g_gametype
-			return g_gametype ? g_gametype->current.string : "dm";
-		}
+		connect_state_t connect_state{};
 
 		bool get_map_index(const std::string& map_name, int& map_index)
 		{
@@ -85,12 +64,165 @@ namespace party
 			game::Dvar_SetIntByName("864", map_index);           // ui_mapname
 		}
 
+		std::string get_current_mapname()
+		{
+			const auto* dvar = game::Dvar_FindMalleableVar("1673"); // mapname
+			if (dvar && dvar->current.string)
+			{
+				return dvar->current.string;
+			}
+
+			return {};
+		}
+
+		std::string get_current_gametype()
+		{
+			const auto* dvar = game::Dvar_FindMalleableVar("1924"); // g_gametype
+			if (dvar && dvar->current.string)
+			{
+				return dvar->current.string;
+			}
+
+			return "dm";
+		}
+
+		std::string get_gametype_or_default(const command::params& params)
+		{
+			if (params.size() >= 3)
+			{
+				return params[2];
+			}
+
+			const auto* g_gametype = game::Dvar_FindMalleableVar("1924"); // g_gametype
+			return g_gametype ? g_gametype->current.string : "dm";
+		}
+
 		void start_server()
 		{
-			*game::mp::sv_migrate = 0;
+			*game::sv_migrate = 0;
 
 			const auto* args = "StartServer";
 			game::UI_RunMenuScript(0, &args);
+		}
+
+		bool validate_map_and_gametype(const std::string& mapname, const std::string& gametype)
+		{
+			if (mapname.empty())
+			{
+				console::error("Connection failed: invalid map.\n");
+				return false;
+			}
+
+			if (gametype.empty())
+			{
+				console::error("Connection failed: invalid gametype.\n");
+				return false;
+			}
+
+			int map_index = 0;
+			if (!get_map_index(mapname, map_index))
+			{
+				console::error("Connection failed: map '%s' is not available locally.\n", mapname.data());
+				return false;
+			}
+
+			return true;
+		}
+
+		void connect_to_server(const game::netadr_s& target, const std::string& mapname, const std::string& gametype, const int max_clients)
+		{
+			if (!validate_map_and_gametype(mapname, gametype))
+			{
+				return;
+			}
+
+			int map_index = 0;
+			if (!get_map_index(mapname, map_index))
+			{
+				return;
+			}
+
+			const auto clamped_max_clients = std::clamp(max_clients, 2, total_max_clients);
+			game::Dvar_SetIntByName("2299", clamped_max_clients); // sv_maxclients
+
+			console::info(
+				"Connecting to %s on map '%s' gametype '%s'\n",
+				network::net_adr_to_string(target),
+				mapname.data(),
+				gametype.data()
+			);
+
+			set_party_map_settings(mapname, gametype);
+			set_map_dvars(mapname, gametype, map_index, true);
+
+			char session_info[0x100]{};
+			auto target_copy = target;
+
+			game::CL_ConnectAndPreloadMap(
+				0,
+				session_info,
+				&target_copy,
+				mapname.data(),
+				gametype.data()
+			);
+		}
+
+		void connect(const game::netadr_s& target)
+		{
+			if (target.type <= game::NA_BAD)
+			{
+				console::error("Cannot connect to bad address.\n");
+				return;
+			}
+
+			if (game::virtualLobby_Loaded)
+			{
+				game::CL_VirtualLobbyShutdown(0, 0);
+			}
+
+			connect_state.host = target;
+			connect_state.challenge = utils::cryptography::random::get_challenge();
+			connect_state.host_defined = true;
+
+			console::info(
+				"Querying server %s...\n",
+				network::net_adr_to_string(connect_state.host)
+			);
+
+			network::send(connect_state.host, "s2x_getInfo", connect_state.challenge);
+		}
+
+		void reconnect()
+		{
+			if (!connect_state.host_defined)
+			{
+				console::info("Cannot reconnect: no previous server.\n");
+				return;
+			}
+
+			connect(connect_state.host);
+		}
+
+		void set_client_team(const int client_num, const int team)
+		{
+			if (client_num < 0 || client_num >= total_max_clients)
+			{
+				console::error("invalid client num %d\n", client_num);
+				return;
+			}
+
+			auto& ent = game::mp::g_entities[client_num];
+
+			if (!ent.client)
+			{
+				console::error("client %d has no gclient\n", client_num);
+				return;
+			}
+
+			const auto old_team = ent.client->team;
+			ent.client->team = team;
+
+			console::info("set client %d team %d -> %d\n", client_num, old_team, team);
 		}
 
 		void assign_team_when_ready()
@@ -175,6 +307,11 @@ namespace party
 		}
 	}
 
+	game::netadr_s& get_target()
+	{
+		return connect_state.host;
+	}
+
 	int get_connected_client_count()
 	{
 		int count = 0;
@@ -185,7 +322,7 @@ namespace party
 			return 0;
 		}
 
-		for (int i = 0; i < *game::mp::sv_maxclients; ++i)
+		for (int i = 0; i < *game::sv_maxclients; ++i)
 		{
 			const auto& client = clients[i];
 
@@ -200,7 +337,7 @@ namespace party
 
 	int get_available_match_slots()
 	{
-		return std::max(0, max_clients - get_connected_client_count());
+		return std::max(0, total_max_clients - get_connected_client_count());
 	}
 
 	class component final : public multiplayer_component
@@ -212,9 +349,9 @@ namespace party
 			{
 				*game::sv_map_restart = 1;
 				*game::sv_loadScripts = 1;
-				*game::mp::sv_migrate = 0;
+				*game::sv_migrate = 0;
 
-				game::mp::SV_MapRestart(*game::mp::sv_migrate, *game::sv_loadScripts);
+				game::mp::SV_MapRestart(*game::sv_migrate, *game::sv_loadScripts);
 			});
 
 			command::add("fast_restart", []()
@@ -231,6 +368,120 @@ namespace party
 			command::add("setTeam", [](const command::params& params)
 			{
 				set_team_command(params);
+			});
+
+			command::add("connect", [](const command::params& params)
+			{
+				if (params.size() < 2)
+				{
+					console::info("usage: connect <address>\n");
+					return;
+				}
+
+				game::netadr_s target{};
+
+				if (!game::NET_StringToAdr(params[1], &target))
+				{
+					console::error("Invalid address: %s\n", params[1]);
+					return;
+				}
+
+				target.localNetID = game::NS_SERVER;
+				target.addrHandleIndex = 0;
+
+				connect(target);
+			});
+
+			command::add("reconnect", [](const command::params&)
+			{
+				reconnect();
+			});
+
+			network::on("s2x_getInfo", [](const game::netadr_s& from, const std::string_view& data)
+			{
+				utils::info_string info{};
+
+				const auto mapname = get_current_mapname();
+				const auto gametype = get_current_gametype();
+
+				info.set("challenge", std::string{ data });
+				info.set("gamename", "S2");
+				info.set("mapname", mapname);
+				info.set("gametype", gametype);
+				info.set("clients", std::to_string(get_connected_client_count()));
+				//info.set("botcount", "0");
+				info.set("sv_maxclients", std::to_string(*game::sv_maxclients));
+				info.set("sv_running", game::is_server_running() ? "1" : "0");
+				info.set("protocol", std::to_string(PROTOCOL));
+
+				network::send(from, "s2x_infoResponse", info.build(), '\n');
+			});
+
+			network::on("s2x_infoResponse", [](const game::netadr_s& from, const std::string_view& data)
+			{
+				console::info(
+					"[party] getInfo from %s challenge=%.*s\n",
+					network::net_adr_to_string(from),
+					static_cast<int>(data.size()),
+					data.data()
+				);
+
+				const utils::info_string info{ std::string{data} };
+
+				const auto challenge = info.get("challenge");
+				if (challenge != connect_state.challenge)
+				{
+					// Not our connect query, or stale response.
+					return;
+				}
+
+				const auto protocol = std::atoi(info.get("protocol").data());
+				if (protocol != PROTOCOL)
+				{
+					console::error("Connection failed: invalid protocol %i.\n", protocol);
+					return;
+				}
+
+				const auto gamename = info.get("gamename");
+				if (gamename != "S2")
+				{
+					console::error("Connection failed: invalid gamename '%s'.\n", gamename.data());
+					return;
+				}
+
+				const auto sv_running = info.get("sv_running");
+				if (sv_running != "1")
+				{
+					console::error("Connection failed: server is not running.\n");
+					return;
+				}
+
+				const auto mapname = info.get("mapname");
+				const auto gametype = info.get("gametype");
+
+				if (!validate_map_and_gametype(mapname, gametype))
+				{
+					return;
+				}
+
+				const auto max_clients = std::atoi(info.get("sv_maxclients").data());
+				const auto server_max_clients = max_clients > 0 ? max_clients : total_max_clients;
+
+				console::info(
+					"Server response from %s: map='%s' gametype='%s' clients=%s/%s\n",
+					network::net_adr_to_string(from),
+					mapname.data(),
+					gametype.data(),
+					info.get("clients").data(),
+					info.get("sv_maxclients").data()
+				);
+
+				auto target = from;
+
+				scheduler::once([target, mapname, gametype, server_max_clients]()
+				{
+					connect_to_server(target, mapname, gametype, server_max_clients);
+				}, scheduler::pipeline::main);
 			});
 		}
 	};

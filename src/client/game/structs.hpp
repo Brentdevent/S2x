@@ -1,5 +1,7 @@
 #pragma once
 
+#define PROTOCOL 1
+
 #ifdef __cplusplus
 namespace game
 {
@@ -410,15 +412,18 @@ namespace game
 	struct netadr_s
 	{
 		netadrtype_t type;
+
 		union
 		{
 			uint8_t ip[4];
 			uint32_t addr;
 		};
+
 		uint16_t port;
 		netsrc_t localNetID;
 		uint32_t addrHandleIndex;
 	};
+	static_assert(sizeof(netadr_s) == 0x14);
 
 	struct msg_t
 	{

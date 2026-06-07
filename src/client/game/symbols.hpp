@@ -80,6 +80,7 @@ namespace game
 
 	WEAK symbol<const ScreenPlacement*(const LocalClientNum_t localClientNum)> ScrPlace_GetViewPlacement{ 0x4A01B0, 0x272660 };
 
+	WEAK symbol<const char*(int index)> Cmd_Argv{ 0x8D9F0 };
 	WEAK symbol<void(const char* text_in)> SV_Cmd_TokenizeString{ 0x64C070, 0x4665A0 };
 	WEAK symbol<void(const char* text_in)> Cmd_TokenizeString{ 0x64B970, 0x465EA0 };
 	WEAK symbol<void()> SV_Cmd_EndTokenizedString{ 0x64C030, 0x466560 };
@@ -98,11 +99,33 @@ namespace game
 
 	WEAK symbol<void(const char* mapName, const char* gameType)> CL_PreloadMap{ 0x83950 };
 	WEAK symbol<void(const char* mapName)> CL_PreloadMap2{ 0x837E0 };
+	WEAK symbol<void(int a, int b)> CL_VirtualLobbyShutdown{ 0x8BB80 };
+	WEAK symbol<bool(int localClientNum, netadr_s* from, msg_t* msg, int time)> CL_DispatchConnectionlessPacket{ 0x6F7E0 };
+	WEAK symbol<void(int localClientNum, void* sessionInfo, netadr_s* to, const char* mapname, const char* gametype)> CL_ConnectAndPreloadMap{ 0x6CCA0 };
 
 	WEAK symbol<void(int localClientNum, const char** args)> UI_RunMenuScript{ 0x746A50 };
 	WEAK symbol<int(const char* mapName)> UI_GetListIndexFromMapName{ 0x650510 };
 	WEAK symbol<void(const char* mapname, const char* gametype)> UI_SetMap{ 0x74A050 };
 	WEAK symbol<void(int localClientNum)> UI_Map{ 0x744C30 };
+
+	WEAK symbol<std::uint16_t(char* dst, const char* src, int length)> Sys_ChecksumCopy{ 0x75FB80 };
+	WEAK symbol<int(netsrc_t sock, int length, const void* data, const netadr_s* to)> Sys_SendPacket{ 0x7B0F50 };
+	WEAK symbol<int(netsrc_t sock, int length, const void* data, const netadr_s* to)> NET_SendPacket{ 0x66E290 };
+	WEAK symbol<int(const netadr_s* a, const netadr_s* b)> NET_CompareAdr{ 0x66DAE0 };
+	WEAK symbol<int(const netadr_s* a, const netadr_s* b)> NET_CompareBaseAdr{ 0x66DB50 };
+	WEAK symbol<int(const char* address, netadr_s* out)> NET_StringToAdr{ 0x66E3E0 };
+	WEAK symbol<void(const netadr_s* address, sockaddr* s)> NetadrToSockadr{ 0x75F9E0 };
+
+	WEAK symbol<void*(int unk)> Lobby_GetPartyData{ 0x47D050 };
+	WEAK symbol<void(void* partyData, const char* gametype)> Party_SetGameType{ 0x1973A0 };
+	WEAK symbol<void(void* partyData, const char* mapname)> Party_SetMapName{ 0x1973C0 };
+
+	WEAK symbol<bool()> BG_BotFastFileEnabled{ 0x3879A0 };
+	WEAK symbol<bool()> BG_BotSystemEnabled{ 0x388180 };
+	WEAK symbol<bool(void* unk)> BG_AgentSystemEnabled{ 0x387BC0 };
+	WEAK symbol<bool()> BG_BotsUsingTeamDifficulty{ 0x388310 };
+
+	WEAK symbol<std::uint64_t()> BG_NetDataChecksum{ 0x38BD70 };
 
 	WEAK symbol<CmdArgs> sv_cmd_args{ 0xAA763C0, 0x97D7CB0 };
 	WEAK symbol<CmdArgs> cmd_args{ 0xAA762D0, 0x97D7BC0 };
@@ -123,10 +146,13 @@ namespace game
 	WEAK symbol<int> sv_loadScripts{ 0xBB4FE64, 0xB39AD18 };
 
 	WEAK symbol<char> g_zones{ 0x58360E0, 0x6907D50 };
+	
+	WEAK symbol<int> sv_maxclients{ 0xC5FBA50 };
+	WEAK symbol<int> sv_migrate{ 0xBB4FE68 };
 
-	WEAK symbol<void*(int unk)> Lobby_GetPartyData{0x47D050};
-	WEAK symbol<void(void* party, const char* gametype)> Party_SetGameType{ 0x1973A0 };
-	WEAK symbol<void(void* party, const char* mapname)> Party_SetMapName{ 0x1973C0 };
+	WEAK symbol<char> virtualLobby_Loaded{ 0x1BD36F8 };
+
+	WEAK symbol<SOCKET> ip_socket{ 0xD8B0540 };
 	
 	constexpr auto CMD_MAX_NESTING = 8;
 
@@ -142,18 +168,7 @@ namespace game
 
 		WEAK symbol<int(mp::gentity_s* entity)> SV_SpawnTestClient{ 0xF6AA0 };
 
-		WEAK symbol<bool()> BG_BotFastFileEnabled{ 0x3879A0 };
-		WEAK symbol<bool()> BG_BotSystemEnabled{ 0x388180 };
-		WEAK symbol<bool(void* unk)> BG_AgentSystemEnabled{ 0x387BC0 };
-		WEAK symbol<bool()> BG_BotsUsingTeamDifficulty{ 0x388310 };
-
-		WEAK symbol<void(int a, int b)> CL_VirtualLobbyShutdown{ 0x8BB80 };
-
-		WEAK symbol<client_t*> svs_clients{ 0xC5FBA58 };
+		WEAK symbol<mp::client_t*> svs_clients{ 0xC5FBA58 };
 		WEAK symbol<mp::gentity_s> g_entities{ 0x9ED4430 };
-
-		WEAK symbol<int> sv_maxclients{ 0xC5FBA50 };
-		WEAK symbol<int> sv_migrate{ 0xBB4FE68 };
-		WEAK symbol<char> virtualLobby_Loaded{ 0x1BD36F8 };
 	}
 }

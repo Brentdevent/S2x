@@ -77,10 +77,10 @@ namespace bots
 	public:
 		void post_unpack() override
 		{
-			utils::hook::set(game::mp::BG_BotFastFileEnabled, 0xC301B0);
-			utils::hook::set(game::mp::BG_BotsUsingTeamDifficulty, 0xC301B0);
-			utils::hook::set(game::mp::BG_BotSystemEnabled, 0xC301B0);
-			utils::hook::set(game::mp::BG_AgentSystemEnabled, 0xC301B0);
+			utils::hook::set(game::BG_BotFastFileEnabled, 0xC301B0);
+			utils::hook::set(game::BG_BotsUsingTeamDifficulty, 0xC301B0);
+			utils::hook::set(game::BG_BotSystemEnabled, 0xC301B0);
+			utils::hook::set(game::BG_AgentSystemEnabled, 0xC301B0);
 			
 			// Not sure, is LUA related (Might need additional patches since it also checks OnlineGame dvar outside this function)
 			utils::hook::set(0x388210_g, 0xC301B0);
