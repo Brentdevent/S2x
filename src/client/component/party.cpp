@@ -18,6 +18,8 @@ namespace party
 {
 	namespace
 	{
+		utils::hook::detour cl_connect_hook;
+
 		// Technically max clients is 48, but needs more patches to work properly
 		constexpr int total_max_clients = 18;
 
@@ -203,6 +205,31 @@ namespace party
 			connect(connect_state.host);
 		}
 
+		void cl_connect_stub()
+		{
+			const auto argc = game::Cmd_Argc();
+
+			if (argc == 2 && !game::is_local_play())
+			{
+				const auto* address_string = game::Cmd_Argv(1);
+
+				game::netadr_s target{};
+				if (!game::NET_StringToAdr(address_string, &target))
+				{
+					console::error("Invalid address: %s\n", address_string);
+					return;
+				}
+
+				target.localNetID = game::NS_SERVER;
+				target.addrHandleIndex = 0;
+
+				connect(target);
+				return;
+			}
+
+			cl_connect_hook.invoke<void>();
+		}
+
 		void set_client_team(const int client_num, const int team)
 		{
 			if (client_num < 0 || client_num >= total_max_clients)
@@ -345,6 +372,8 @@ namespace party
 	public:
 		void post_unpack() override
 		{
+			cl_connect_hook.create(game::CL_Connect, cl_connect_stub);
+
 			command::add("map_restart", []()
 			{
 				*game::sv_map_restart = 1;
@@ -368,28 +397,6 @@ namespace party
 			command::add("setTeam", [](const command::params& params)
 			{
 				set_team_command(params);
-			});
-
-			command::add("connect", [](const command::params& params)
-			{
-				if (params.size() < 2)
-				{
-					console::info("usage: connect <address>\n");
-					return;
-				}
-
-				game::netadr_s target{};
-
-				if (!game::NET_StringToAdr(params[1], &target))
-				{
-					console::error("Invalid address: %s\n", params[1]);
-					return;
-				}
-
-				target.localNetID = game::NS_SERVER;
-				target.addrHandleIndex = 0;
-
-				connect(target);
 			});
 
 			command::add("reconnect", [](const command::params&)

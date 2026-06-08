@@ -91,6 +91,7 @@ namespace game
 	WEAK symbol<void(int localClientNum, const char* map, bool mapIsPreloaded)> SV_StartMap{ 0x6D8200 };
 	WEAK symbol<void(const char* reason)> SV_Shutdown{ 0x6DBF50 };
 	WEAK symbol<bool()> SV_Loaded{ 0x6DB810 };
+	WEAK symbol<void(netadr_s* from, bool allowBotKick)> SV_DirectConnect{ 0xF31D0 };
 
 	WEAK symbol<void(XZoneInfo* zoneInfo, unsigned int zoneCount, DBSyncMode syncMode)> DB_LoadXAssets{ 0xA4F60, 0x2ADB50 };
 	WEAK symbol<void(const char* zoneName, int zoneFlags, int isBaseMap)> DB_TryLoadXFileInternal{ 0xACE30, 0x2AF980 };
@@ -102,6 +103,7 @@ namespace game
 	WEAK symbol<void(int a, int b)> CL_VirtualLobbyShutdown{ 0x8BB80 };
 	WEAK symbol<bool(int localClientNum, netadr_s* from, msg_t* msg, int time)> CL_DispatchConnectionlessPacket{ 0x6F7E0 };
 	WEAK symbol<void(int localClientNum, void* sessionInfo, netadr_s* to, const char* mapname, const char* gametype)> CL_ConnectAndPreloadMap{ 0x6CCA0 };
+	WEAK symbol<void()> CL_Connect{ 0x6D0A0 };
 
 	WEAK symbol<void(int localClientNum, const char** args)> UI_RunMenuScript{ 0x746A50 };
 	WEAK symbol<int(const char* mapName)> UI_GetListIndexFromMapName{ 0x650510 };

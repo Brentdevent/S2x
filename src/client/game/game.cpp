@@ -206,6 +206,18 @@ namespace game
 		RtlLeaveCriticalSection(193);
 	}
 
+	int Cmd_Argc()
+	{
+		const auto nesting = game::cmd_args->nesting;
+
+		if (nesting < 0 || nesting >= 8)
+		{
+			return 0;
+		}
+
+		return game::cmd_args->argc[nesting];
+	}
+
 	bool is_server_running()
 	{
 		const auto* com_sv_running = game::Dvar_FindMalleableVar("1080"); // com_sv_running
@@ -214,5 +226,11 @@ namespace game
 			com_sv_running->current.enabled &&
 			game::SV_Loaded() &&
 			!*game::virtualLobby_Loaded;
+	}
+
+	bool is_local_play()
+	{
+		const auto* systemlink = game::Dvar_FindMalleableVar("5075"); // systemlink
+		return systemlink && systemlink->current.enabled;
 	}
 }

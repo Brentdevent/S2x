@@ -18,6 +18,7 @@ namespace network
 {
 	namespace
 	{
+		utils::hook::detour sys_send_packet_hook;
 		utils::hook::detour cl_dispatch_connectionless_packet_hook;
 		utils::hook::detour sv_direct_connect_hook;
 
@@ -114,6 +115,11 @@ namespace network
 			if (!data || !to || length < 0)
 			{
 				return 0;
+			}
+
+			if (game::is_local_play())
+			{
+				return sys_send_packet_hook.invoke<int>(sock, length, data, to);
 			}
 
 			if (to->type != game::NA_IP && to->type != game::NA_BROADCAST)
@@ -305,8 +311,8 @@ namespace network
 				game::CL_DispatchConnectionlessPacket, cl_dispatch_connectionless_packet_stub
 			);
 
-			sv_direct_connect_hook.create(0xF31D0_g, sv_direct_connect_stub);
-			utils::hook::jump(game::Sys_SendPacket, sys_send_packet_stub);
+			sv_direct_connect_hook.create(game::SV_DirectConnect, sv_direct_connect_stub);
+			sys_send_packet_hook.create(game::Sys_SendPacket, sys_send_packet_stub);
 
 			// Handle xuid without secure connection
 			utils::hook::nop(0x6DBDC0_g, 6);

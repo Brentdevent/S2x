@@ -123,7 +123,10 @@ namespace game
 	bool Cbuf_AddText(int localClientNum, const char* text);
 	void Cbuf_AddCall(void* function);
 
+	int Cmd_Argc();
+
 	bool is_server_running();
+	bool is_local_play();
 }
 
 inline size_t operator"" _g(const size_t val)

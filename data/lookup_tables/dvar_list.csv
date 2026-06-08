@@ -1,3 +1,4 @@
+cl_paused,183
 ui_mapname,864
 com_sv_running,1080
 playlistFilename,1369
@@ -11,6 +12,6 @@ g_hardcore,2043
 onlinegame,2291
 sv_maxclients,2299
 cl_motdString,3680
-com_completionResolveCommand,5369
-cl_paused,183
 sv_paused,5351
+com_completionResolveCommand,5369
+systemlink,5075
