@@ -434,6 +434,11 @@ namespace demonware
 
 			original_imports[result->first] = result->second;
 		}
+
+		BOOL WINAPI internet_get_connected_state_stub(LPDWORD flags, DWORD reserved)
+		{
+			return TRUE;
+		}
 	}
 
 	class component final : public generic_component
@@ -474,6 +479,10 @@ namespace demonware
 			if (game::environment::is_mp())
 			{
 				register_hook("gethostbyname", io::gethostbyname_stub);
+
+				// Allow offline play
+				auto* internet_state_import = utils::nt::library{}.get_iat_entry("wininet.dll", "InternetGetConnectedState");
+				if (internet_state_import) utils::hook::set(internet_state_import, internet_get_connected_state_stub);
 			}
 		}
 
