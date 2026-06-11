@@ -233,4 +233,23 @@ namespace game
 		const auto* systemlink = game::Dvar_FindMalleableVar("5075"); // systemlink
 		return systemlink && systemlink->current.enabled;
 	}
+
+	namespace hks
+	{
+		cclosure* cclosure_Create(lua_function func)
+		{
+			const auto state = *game::hks::lua_state;
+
+			game::hks::hksi_lua_pushcclosure(state, func, 0, nullptr, 0, 0);
+
+			auto* obj = state->m_apistack.top - 1;
+			auto* closure = obj->v.cClosure;
+
+			state->m_apistack.top--;
+
+			return closure;
+		}
+	}
 }
+
+

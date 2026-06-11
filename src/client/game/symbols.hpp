@@ -96,6 +96,7 @@ namespace game
 	WEAK symbol<void(XZoneInfo* zoneInfo, unsigned int zoneCount, DBSyncMode syncMode)> DB_LoadXAssets{ 0xA4F60, 0x2ADB50 };
 	WEAK symbol<void(const char* zoneName, int zoneFlags, int isBaseMap)> DB_TryLoadXFileInternal{ 0xACE30, 0x2AF980 };
 	WEAK symbol<void(uint16_t* zoneIndices, unsigned int zoneCount, bool createDefault)> DB_UnloadXZones{ 0xADE50, 0x2B05D0 };
+	WEAK symbol<XAssetHeader(XAssetType type, const char* name, int allowCreateDefault)> DB_FindXAssetHeader{ 0xA1080, 0x2AB340 };
 	WEAK symbol<void()> DB_SyncXAsset{ 0xACA60 };
 
 	WEAK symbol<void(const char* mapName, const char* gameType)> CL_PreloadMap{ 0x83950 };
@@ -172,5 +173,37 @@ namespace game
 
 		WEAK symbol<mp::client_t*> svs_clients{ 0xC5FBA58 };
 		WEAK symbol<mp::gentity_s> g_entities{ 0x9ED4430 };
+	}
+
+	WEAK symbol<void(bool frontend, bool cg)> LUI_CoD_Init{ 0x318A00, 0x19CA30 };
+	WEAK symbol<void()> LUI_CoD_Shutdown{ 0x31B6F0, 0x19EF50 };
+	WEAK symbol<void(bool cg)> LUI_CoD_Restart{ 0x3200A0, 0x1A3810 };
+	WEAK symbol<void()> LUI_EnterCriticalSection{ 0xBE8D0, 0x18B1F0 };
+	WEAK symbol<void()> LUI_LeaveCriticalSection{ 0xC5F80, 0x191FB0 };
+
+	namespace hks
+	{
+		WEAK symbol<lua_State*> lua_state{ 0x1BD3D08, 0x2A39810 };
+		WEAK symbol<void(lua_State* s, const char* str, int l)> hksi_lua_pushlstring{ 0x104620, 0x2B830 };
+		WEAK symbol<HksObject*(HksObject* result, lua_State* s, const HksObject* table, const HksObject* key)> hks_obj_getfield{ 0x2D8580, 0x192211 };
+		WEAK symbol<void(lua_State* s, const HksObject* tbl, const HksObject* key, const HksObject* val)> hks_obj_settable{ 0x2D96B0, 0x14DA70 };
+		WEAK symbol<HksObject*(HksObject* result, lua_State* s, const HksObject* table, const HksObject* key)> hks_obj_gettable{ 0x2D8AA0, 0x14CE60 };
+		WEAK symbol<void(lua_State* s, int nargs, int nresults, const unsigned int* pc)> vm_call_internal{ 0x308800, 0x17CDF0 };
+		WEAK symbol<HashTable*(lua_State* s, unsigned int arraySize, unsigned int hashSize)> Hashtable_Create{ 0x2C8490, 0x13C850 };
+		WEAK symbol<int(lua_State* s, int t)> hksi_luaL_ref{ 0x2DB960, 0x14FE50 };
+		WEAK symbol<void(lua_State* s, int t, int ref)> hksi_luaL_unref{ 0x2DBC10, 0x150100 };
+		WEAK symbol<int(lua_State* s, const HksCompilerSettings* options, const char* buff, unsigned int sz, const char* name)> hksi_hksL_loadbuffer{ 0x2DA020, 0x14E510 };
+		WEAK symbol<int(lua_State* state, void* compiler_options, void* reader, void* reader_data, const char* chunk_name)> load{ 0x2D7D10, 0x14C0D0 };
+		WEAK symbol<int(lua_State* s, const char* what, lua_Debug* ar)> hksi_lua_getinfo{ 0x2DC230, 0x150720 };
+		WEAK symbol<int(lua_State* s, int level, lua_Debug* ar)> hksi_lua_getstack{ 0x2DCB60, 0x151050 };
+		WEAK symbol<void(lua_State* s, const char* fmt, ...)> hksi_luaL_error{ 0x2DB890, 0x14FD80 };
+		WEAK symbol<const char*> s_compilerTypeName{ 0xF7B340, 0xAC1830 };
+
+		WEAK symbol<int(lua_State* s)> package_require{ 0x2C3080, 0x137440 };
+		WEAK symbol<int(lua_State* s)> base_print{ 0x2BA3F0, 0x12E7B0 };
+
+		// cclosure_Create is inlined, we'll use this to reimplement cclosure_Create
+		WEAK symbol<void(lua_State* s, lua_function function, int num_upvalues, 
+			const char* name, int internal_, int profilerTreatClosureAsFunc)> hksi_lua_pushcclosure{ 0x2DAB70, 0x14F060 };
 	}
 }

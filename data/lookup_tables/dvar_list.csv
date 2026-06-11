@@ -5,6 +5,7 @@ playlistFilename,1369
 playlistAggrFilename,1415
 playListUpdateCheckMinutes,1580
 dedicated_dhclient,1591
+lui_memErrorsFatal,1626
 mapname,1673
 g_gametype,1924
 com_errorMessage,1943

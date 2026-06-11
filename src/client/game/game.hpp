@@ -127,6 +127,11 @@ namespace game
 
 	bool is_server_running();
 	bool is_local_play();
+
+	namespace hks
+	{
+		cclosure* cclosure_Create(lua_function func);
+	}
 }
 
 inline size_t operator"" _g(const size_t val)
