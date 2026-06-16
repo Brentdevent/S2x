@@ -815,7 +815,9 @@ namespace game
 		struct lua_Debug
 		{
 			int event;
+			char __pad0[4];
 			const char* name;
+			char name_buffer[16];
 			const char* namewhat;
 			const char* what;
 			const char* source;
@@ -828,7 +830,9 @@ namespace game
 			char short_src[512];
 			int callstack_level;
 			int is_tail_call;
+			char __pad1[8];
 		};
+		static_assert(sizeof(lua_Debug) == 0x260);
 
 		using lua_function = int(__fastcall*)(lua_State*);
 
