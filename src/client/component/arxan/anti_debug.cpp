@@ -164,8 +164,6 @@ namespace arxan::anti_debug
 			{
 				restore_tls_callbacks();
 
-				component_loader::post_thread_setup();
-
 				create_thread_hook.clear();
 				return CreateThread(thread_attributes, stack_size, start_address, parameter, creation_flags,
 					thread_id);
@@ -421,6 +419,8 @@ namespace arxan::anti_debug
 			// The game uses ThreadHideFromDebugger to hide threads from the debugger
 			if (thread_information_class == ThreadHideFromDebugger)
 			{
+				component_loader::post_thread_setup();
+
 				// The game verifies NtSetInformationThread integrity before actually hiding the thread.
 				// It provides an invalid handle to NtSetInformationThread and expects STATUS_INVALID_HANDLE in return.
 				if (!is_valid_thread_handle(thread_handle))

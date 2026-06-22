@@ -247,7 +247,7 @@ namespace arxan::code_healing
 
 			if (!jump_target)
 			{
-				throw std::runtime_error("Failed to find jump target for split eax healing function");
+				throw std::runtime_error(utils::string::va("Failed to find jump target for split eax healing function: %llX", game::derelocate(game_address)));
 			}
 
 			const auto stub = utils::hook::assemble([jump_target](utils::hook::assembler& a)

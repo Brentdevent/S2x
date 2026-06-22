@@ -128,7 +128,7 @@ namespace arxan::integrity
 
 			if ((next_inst & 0xFF00FFFF) != 0xFF004583)
 			{
-				throw std::runtime_error(utils::string::va("Unable to patch intact basic block: %llX", game_address));
+				throw std::runtime_error(utils::string::va("Unable to patch intact basic block: %llX", game::derelocate(game_address)));
 			}
 
 			const auto other_frame_offset = static_cast<uint8_t>(next_inst >> 16);
@@ -182,7 +182,7 @@ namespace arxan::integrity
 
 			if (!(p[0] == 0x83 && p[1] == 0x85 && p[6] == 0xFF))
 			{
-				throw std::runtime_error(utils::string::va("Unable to patch intact basic block: %llX", game_address));
+				throw std::runtime_error(utils::string::va("Unable to patch intact basic block: %llX", game::derelocate(game_address)));
 			}
 
 			const auto other_frame_offset = *reinterpret_cast<uint32_t*>(next_inst_addr + 2);
