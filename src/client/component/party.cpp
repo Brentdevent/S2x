@@ -82,16 +82,16 @@ namespace party
 		{
 			if (set_gametype)
 			{
-				game::Dvar_SetStringByName("1924", gametype.data()); // g_gametype
+				game::Dvar_SetStringByName("g_gametype", gametype.data());
 			}
 
-			game::Dvar_SetStringByName("1673", map_name.data()); // mapname
-			game::Dvar_SetIntByName("864", map_index);           // ui_mapname
+			game::Dvar_SetStringByName("mapname", map_name.data());
+			game::Dvar_SetIntByName("ui_mapname", map_index);
 		}
 
 		std::string get_current_mapname()
 		{
-			const auto* dvar = game::Dvar_FindMalleableVar("1673"); // mapname
+			const auto* dvar = game::Dvar_FindMalleableVar("mapname");
 			if (dvar && dvar->current.string)
 			{
 				return dvar->current.string;
@@ -102,7 +102,7 @@ namespace party
 
 		std::string get_current_gametype()
 		{
-			const auto* dvar = game::Dvar_FindMalleableVar("1924"); // g_gametype
+			const auto* dvar = game::Dvar_FindMalleableVar("g_gametype");
 			if (dvar && dvar->current.string)
 			{
 				return dvar->current.string;
@@ -118,7 +118,7 @@ namespace party
 				return params[2];
 			}
 
-			const auto* g_gametype = game::Dvar_FindMalleableVar("1924"); // g_gametype
+			const auto* g_gametype = game::Dvar_FindMalleableVar("g_gametype");
 			return g_gametype ? g_gametype->current.string : "dm";
 		}
 
@@ -168,7 +168,7 @@ namespace party
 			}
 
 			const auto clamped_max_clients = std::clamp(max_clients, 2, total_max_clients);
-			game::Dvar_SetIntByName("2299", clamped_max_clients); // sv_maxclients
+			game::Dvar_SetIntByName("sv_maxclients", clamped_max_clients);
 
 			console::info(
 				"Connecting to %s on map '%s' gametype '%s'\n",

@@ -37,7 +37,7 @@ namespace patches
 
 		bool is_full_hub()
 		{
-			const auto* mapname = game::Dvar_FindMalleableVar("1673");
+			const auto* mapname = game::Dvar_FindMalleableVar("mapname");
 			return mapname && mapname->current.string &&
 				   mapname->current.string == "mp_hub_allies"s;
 		}

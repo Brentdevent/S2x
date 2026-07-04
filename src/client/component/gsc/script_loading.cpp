@@ -262,7 +262,7 @@ namespace gsc
 
 			load(base_dir);
 
-			const auto* map_name = game::Dvar_FindMalleableVar("1673"); // mapname
+			const auto* map_name = game::Dvar_FindMalleableVar("mapname");
 
 			if (game::environment::is_sp())
 			{
@@ -280,7 +280,7 @@ namespace gsc
 
 				load(base_dir / game_folder / map_name->current.string);
 
-				const auto* game_type = game::Dvar_FindMalleableVar("1924"); // g_gametype
+				const auto* game_type = game::Dvar_FindMalleableVar("g_gametype");
 				load(base_dir / game_folder / game_type->current.string);
 			}
 		}

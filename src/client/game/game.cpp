@@ -220,7 +220,7 @@ namespace game
 
 	bool is_server_running()
 	{
-		const auto* com_sv_running = game::Dvar_FindMalleableVar("1080"); // com_sv_running
+		const auto* com_sv_running = game::Dvar_FindMalleableVar("com_sv_running");
 
 		return com_sv_running &&
 			com_sv_running->current.enabled &&
@@ -230,7 +230,7 @@ namespace game
 
 	bool is_local_play()
 	{
-		const auto* systemlink = game::Dvar_FindMalleableVar("5075"); // systemlink
+		const auto* systemlink = game::Dvar_FindMalleableVar("systemlink");
 		return systemlink && systemlink->current.enabled;
 	}
 
