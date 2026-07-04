@@ -45,6 +45,29 @@ namespace party
 			return true;
 		}
 
+		void set_max_agents(const uint8_t amount)
+		{
+			// part of handleGo command sets max_agents in the party data
+			const auto lobby_ref = utils::hook::invoke<void*>(0x470D30_g, 0);
+			const auto party = utils::hook::invoke<std::uintptr_t>(0x470F20_g, lobby_ref);
+
+			if (!party)
+			{
+				return;
+			}
+
+			const auto v27 = utils::hook::invoke<std::uintptr_t>(0x47D290_g, party);
+			const auto v28 = utils::hook::invoke<unsigned int>(0x470D50_g, v27);
+			const auto settings = utils::hook::invoke<std::uintptr_t>(0x924650_g, v28);
+
+			if (!settings)
+			{
+				return;
+			}
+
+			*reinterpret_cast<std::uint8_t*>(settings + 0x31) = amount;
+		}
+
 		void set_party_map_settings(const std::string& map_name, const std::string& gametype)
 		{
 			game::UI_SetMap(map_name.data(), gametype.data());
@@ -230,52 +253,17 @@ namespace party
 			cl_connect_hook.invoke<void>();
 		}
 
-		void set_client_team(const int client_num, const int team)
-		{
-			if (client_num < 0 || client_num >= total_max_clients)
+		void perform_game_init()
+		{	
+			game::Cbuf_AddText(0, "setgameprivatematch 1\n");
+
+			if (!game::environment::is_zombies())
 			{
-				console::error("invalid client num %d\n", client_num);
-				return;
+				game::Cbuf_AddText(0, "exec default_xboxlive.cfg\n");
+
+				// Fix paratroopers scorestreak
+				set_max_agents(6);
 			}
-
-			auto& ent = game::mp::g_entities[client_num];
-
-			if (!ent.client)
-			{
-				console::error("client %d has no gclient\n", client_num);
-				return;
-			}
-
-			const auto old_team = ent.client->team;
-			ent.client->team = team;
-
-			console::info("set client %d team %d -> %d\n", client_num, old_team, team);
-		}
-
-		void assign_team_when_ready()
-		{
-			scheduler::loop([]()
-			{
-				if (!game::is_server_running())
-				{
-					return scheduler::cond_continue;
-				}
-
-				auto& ent = game::mp::g_entities[0];
-
-				if (!ent.client)
-				{
-					return scheduler::cond_continue;
-				}
-
-				if (ent.client->team == 0)
-				{
-					ent.client->team = 2; // TEAM_ALLIES
-				}
-
-				return scheduler::cond_end;
-
-			}, scheduler::pipeline::server, 500ms);
 		}
 
 		void start_map(const command::params& params)
@@ -291,6 +279,8 @@ namespace party
 				// TODO: implement mid match map changing.
 				return;
 			}
+
+			perform_game_init();
 
 			const std::string map_name = params[1];
 			const std::string gametype = get_gametype_or_default(params);
@@ -310,27 +300,6 @@ namespace party
 			set_party_map_settings(map_name, gametype);
 			set_map_dvars(map_name, gametype, map_index, has_gametype);
 			start_server();
-
-			// Dirty hack but this needs GSC/LUA fixes.
-			// Probably breaks when networking gets implemented.
-			assign_team_when_ready();
-		}
-
-		void set_team_command(const command::params& params)
-		{
-			if (params.size() < 2)
-			{
-				console::info("usage: setteam <team> [clientnum]\n");
-				console::info("teams: 0 = none, 1 = axis, 2 = allies, 3 = spectator\n");
-				return;
-			}
-
-			const auto team = std::atoi(params[1]);
-			const auto client_num = params.size() >= 3
-				? std::atoi(params[2])
-				: 0;
-
-			set_client_team(client_num, team);
 		}
 	}
 
@@ -372,6 +341,9 @@ namespace party
 	public:
 		void post_unpack() override
 		{
+			// Fixes team setting + enables team switching
+			game::Dvar_RegisterBool("3193", true, game::DVAR_FLAG_READ);
+
 			cl_connect_hook.create(game::CL_Connect, cl_connect_stub);
 
 			command::add("map_restart", []()
@@ -391,12 +363,6 @@ namespace party
 			command::add("map", [](const command::params& params)
 			{
 				start_map(params);
-			});
-
-			// This is a temporary command until we have proper team management in place.
-			command::add("setTeam", [](const command::params& params)
-			{
-				set_team_command(params);
 			});
 
 			command::add("reconnect", [](const command::params&)
