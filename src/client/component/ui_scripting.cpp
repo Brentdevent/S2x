@@ -464,25 +464,8 @@ namespace ui_scripting
 			{
 				globals.load_raw_script = true;
 				globals.raw_script_name = target_script;
-
-				console::debug("[HKS] require asset state=%p type=%d module='%s' script='%s' resolved='%s'\n",
-					active_lua_state,
-					static_cast<int>(type),
-					name_.data(),
-					require_script.data(),
-					target_script.data());
-
 				header.luaFile = reinterpret_cast<game::LuaFile*>(1);
 				return header;
-			}
-
-			if (!name_.starts_with("ui/LUI/"))
-			{
-				console::debug("[HKS] require asset state=%p type=%d module='%s' not found beside '%s', falling back to DB\n",
-					active_lua_state,
-					static_cast<int>(type),
-					name_.data(),
-					require_script.data());
 			}
 
 			return game::DB_FindXAssetHeader(type, name, allow_create_default);
@@ -529,7 +512,6 @@ namespace ui_scripting
 
 				globals.loaded_scripts.push_back({ script_name, require_root });
 
-				active_lua_state = previous_active_state;
 				active_lua_state = previous_active_state;
 				active_lua_globals = previous_active_globals;
 
