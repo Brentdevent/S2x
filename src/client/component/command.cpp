@@ -287,34 +287,6 @@ namespace command
 		add_server_raw(command.data());
 	}
 
-	void dump_gsc_function_table()
-	{
-		const auto base = reinterpret_cast<std::uintptr_t>(GetModuleHandleA(nullptr));
-
-		// From your screenshot: <s2_sp64_ship.exe> + 0x9D1E000
-		const auto table = base + 0x9D1E000;
-
-		constexpr std::size_t count = 0x3C8; // adjust to your actual builtin count
-
-		for (std::size_t i = 0; i < count; ++i)
-		{
-			const auto va = *reinterpret_cast<std::uintptr_t*>(table + (i * sizeof(std::uintptr_t)));
-
-			if (va == 0)
-			{
-				console::info("{ 0x%03zX, 0x000000 }, // null\n", i + 1);
-				continue;
-			}
-
-			const auto rva = va - base;
-
-			console::info("{ 0x%03zX, 0x%06llX }, // VA: 0x%llX\n",
-				i + 1,
-				static_cast<unsigned long long>(rva),
-				static_cast<unsigned long long>(va));
-		}
-	}
-
 	struct component final : generic_component
 	{
 		void post_unpack() override
@@ -331,11 +303,6 @@ namespace command
 			command::add("quit", []()
 			{
 				game::Com_Quit_f();
-			});
-
-			command::add("dump_gsc_function_table", []()
-			{
-				dump_gsc_function_table();
 			});
 		}
 	};
