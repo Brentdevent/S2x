@@ -199,9 +199,15 @@ namespace
 		return value.has_value() && value.value() == "1";
 	}
 
+	bool has_dedicated_argument()
+	{
+		const auto value = utils::flags::get_set_value("dedicated");
+		return utils::flags::has_flag("-dedicated") || (value.has_value() && value.value() == "1");
+	}
+
 	launcher::mode detect_mode_from_arguments()
 	{
-		if (utils::flags::has_flag("-dedicated"))
+		if (has_dedicated_argument())
 		{
 			return launcher::mode::server;
 		}
@@ -274,7 +280,7 @@ int main()
 			const auto mp_binary = "s2_mp64_ship.exe"s;
 			const auto sp_binary = "s2_sp64_ship.exe"s;
 
-			const auto& binary_to_load = game::environment::is_mp() ? mp_binary : sp_binary;
+			const auto& binary_to_load = game::environment::is_sp() ? sp_binary : mp_binary;
 			
 			if (!utils::io::file_exists(binary_to_load))
 			{

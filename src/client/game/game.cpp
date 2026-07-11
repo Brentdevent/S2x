@@ -53,6 +53,7 @@ namespace game
 			switch (_mode)
 			{
 			case launcher::mode::zombies:
+			case launcher::mode::server:
 				return launcher::mode::multiplayer;
 			default:
 				return _mode;
@@ -86,8 +87,7 @@ namespace game
 
 		bool is_dedi()
 		{
-			static const auto dedicated = utils::flags::has_flag("-dedicated");
-			return dedicated;
+			return get_real_mode() == launcher::mode::server;
 		}
 
 		void set_mode(const launcher::mode _mode)

@@ -21,9 +21,9 @@ namespace network
 		utils::hook::detour cl_dispatch_connectionless_packet_hook;
 		utils::hook::detour sv_direct_connect_hook;
 
-		std::unordered_map<std::string, callback>& get_callbacks()
+		std::unordered_map<std::string, std::vector<callback>>& get_callbacks()
 		{
-			static std::unordered_map<std::string, callback> callbacks{};
+			static std::unordered_map<std::string, std::vector<callback>> callbacks{};
 			return callbacks;
 		}
 
@@ -63,23 +63,26 @@ namespace network
 				static_cast<std::size_t>(message->cursize) - payload_offset
 			);
 
-			try
+			for (const auto& callback : handler->second)
 			{
-				console::debug(
-					"[network] handling OOB command \"%s\" from %s\n",
-					command_string.data(),
-					net_adr_to_string(*address)
-				);
+				try
+				{
+					console::debug(
+						"[network] handling OOB command \"%s\" from %s\n",
+						command_string.data(),
+						net_adr_to_string(*address)
+					);
 
-				handler->second(*address, payload);
-			}
-			catch (const std::exception& e)
-			{
-				console::error("[network] command \"%s\" failed: %s\n", command_string.data(), e.what());
-			}
-			catch (...)
-			{
-				console::error("[network] command \"%s\" failed with unknown exception\n", command_string.data());
+					callback(*address, payload);
+				}
+				catch (const std::exception& e)
+				{
+					console::error("[network] command \"%s\" failed: %s\n", command_string.data(), e.what());
+				}
+				catch (...)
+				{
+					console::error("[network] command \"%s\" failed with unknown exception\n", command_string.data());
+				}
 			}
 
 			return true;
@@ -211,7 +214,7 @@ namespace network
 
 	void on(const std::string& command, const callback& callback)
 	{
-		get_callbacks()[utils::string::to_lower(command)] = callback;
+		get_callbacks()[utils::string::to_lower(command)].push_back(callback);
 	}
 
 	void send(const game::netadr_s& address, const std::string& command, const std::string& data, const char separator)

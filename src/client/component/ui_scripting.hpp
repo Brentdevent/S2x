@@ -42,8 +42,14 @@ namespace ui_scripting
 		return wrap_function(std::function(f));
 	}
 
+	game::hks::cclosure* convert_function(const std::function<arguments(const function_arguments&)>& f);
+
 	template <typename F>
-	game::hks::cclosure* convert_function(F f);
+	game::hks::cclosure* convert_function(F f)
+	{
+		return convert_function(std::function<arguments(const function_arguments&)>(wrap_function(f)));
+	}
 
 	table get_globals();
+	void on_start(const std::function<void()>& callback);
 }

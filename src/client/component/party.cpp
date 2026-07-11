@@ -16,6 +16,8 @@
 
 namespace party
 {
+	int get_connected_client_count();
+
 	namespace
 	{
 		utils::hook::detour cl_connect_hook;
@@ -109,6 +111,17 @@ namespace party
 			}
 
 			return "dm";
+		}
+
+		std::string get_current_hostname()
+		{
+			const auto* dvar = game::Dvar_FindMalleableVar("sv_hostname");
+			if (dvar && dvar->current.string && dvar->current.string[0])
+			{
+				return dvar->current.string;
+			}
+
+			return "S2x Server";
 		}
 
 		std::string get_gametype_or_default(const command::params& params)
@@ -254,8 +267,8 @@ namespace party
 		}
 
 		void perform_game_init()
-		{	
-			game::Cbuf_AddText(0, "setgameprivatematch 1\n");
+		{
+			//game::Cbuf_AddText(0, "setgameprivatematch 1\n");
 
 			if (!game::environment::is_zombies())
 			{
@@ -300,6 +313,32 @@ namespace party
 			set_party_map_settings(map_name, gametype);
 			set_map_dvars(map_name, gametype, map_index, has_gametype);
 			start_server();
+		}
+
+		void send_info_response(const game::netadr_s& from, const std::string_view& data, const std::string& response_command)
+		{
+			utils::info_string info{};
+
+			const auto mapname = get_current_mapname();
+			const auto gametype = get_current_gametype();
+			const auto hostname = get_current_hostname();
+
+			info.set("challenge", std::string{ data });
+			info.set("gamename", "S2");
+			info.set("hostname", hostname);
+			info.set("sv_hostname", hostname);
+			info.set("mapname", mapname);
+			info.set("gametype", gametype);
+			info.set("clients", std::to_string(get_connected_client_count()));
+			info.set("bots", "0");
+			info.set("sv_maxclients", std::to_string(*game::sv_maxclients));
+			info.set("sv_running", game::is_server_running() ? "1" : "0");
+			info.set("protocol", std::to_string(PROTOCOL));
+
+			auto payload = info.build();
+			payload.append("\\s2x\\1");
+
+			network::send(from, response_command, payload, '\n');
 		}
 	}
 
@@ -372,33 +411,16 @@ namespace party
 
 			network::on("s2x_getInfo", [](const game::netadr_s& from, const std::string_view& data)
 			{
-				utils::info_string info{};
+				send_info_response(from, data, "s2x_infoResponse");
+			});
 
-				const auto mapname = get_current_mapname();
-				const auto gametype = get_current_gametype();
-
-				info.set("challenge", std::string{ data });
-				info.set("gamename", "S2");
-				info.set("mapname", mapname);
-				info.set("gametype", gametype);
-				info.set("clients", std::to_string(get_connected_client_count()));
-				//info.set("botcount", "0");
-				info.set("sv_maxclients", std::to_string(*game::sv_maxclients));
-				info.set("sv_running", game::is_server_running() ? "1" : "0");
-				info.set("protocol", std::to_string(PROTOCOL));
-
-				network::send(from, "s2x_infoResponse", info.build(), '\n');
+			network::on("getinfo", [](const game::netadr_s& from, const std::string_view& data)
+			{
+				send_info_response(from, data, "infoResponse");
 			});
 
 			network::on("s2x_infoResponse", [](const game::netadr_s& from, const std::string_view& data)
 			{
-				console::info(
-					"[party] getInfo from %s challenge=%.*s\n",
-					network::net_adr_to_string(from),
-					static_cast<int>(data.size()),
-					data.data()
-				);
-
 				const utils::info_string info{ std::string{data} };
 
 				const auto challenge = info.get("challenge");
@@ -407,6 +429,13 @@ namespace party
 					// Not our connect query, or stale response.
 					return;
 				}
+
+				console::info(
+					"[party] getInfo from %s challenge=%.*s\n",
+					network::net_adr_to_string(from),
+					static_cast<int>(data.size()),
+					data.data()
+				);
 
 				const auto protocol = std::atoi(info.get("protocol").data());
 				if (protocol != PROTOCOL)

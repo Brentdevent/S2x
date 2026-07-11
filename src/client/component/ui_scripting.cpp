@@ -22,6 +22,7 @@ namespace ui_scripting
 	namespace
 	{
 		std::unordered_map<game::hks::cclosure*, std::function<arguments(const function_arguments& args)>> converted_functions;
+		std::vector<std::function<void()>> start_callbacks;
 
 		utils::hook::detour hks_start_hook;
 		utils::hook::detour hks_shutdown_hook;
@@ -337,6 +338,21 @@ namespace ui_scripting
 			};
 		}
 
+		void run_start_callbacks()
+		{
+			for (const auto& callback : start_callbacks)
+			{
+				try
+				{
+					callback();
+				}
+				catch (const std::exception& e)
+				{
+					console::error("Failed to run LUI start callback: %s\n", e.what());
+				}
+			}
+		}
+
 		void enable_globals()
 		{
 			const auto lua = get_globals();
@@ -376,6 +392,8 @@ namespace ui_scripting
 					load_scripts((std::filesystem::path(path) / "ui_scripts/mp").generic_string());
 				}
 			}
+
+			run_start_callbacks();
 		}
 
 		void try_start()
@@ -586,12 +604,16 @@ namespace ui_scripting
 		return state->globals.v.table;
 	}
 
-	template <typename F>
-	game::hks::cclosure* convert_function(F f)
+	game::hks::cclosure* convert_function(const std::function<arguments(const function_arguments&)>& f)
 	{
 		const auto closure = game::hks::cclosure_Create(main_handler);
-		converted_functions[closure] = wrap_function(f);
+		converted_functions[closure] = f;
 		return closure;
+	}
+
+	void on_start(const std::function<void()>& callback)
+	{
+		start_callbacks.push_back(callback);
 	}
 
 	class component final : public generic_component
