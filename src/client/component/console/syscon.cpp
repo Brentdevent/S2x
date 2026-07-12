@@ -85,77 +85,114 @@ namespace syscon
 		return DefWindowProcA(hwnd, umsg, wparam, lparam);
 	}
 
-	unsigned int Conbuf_CleanText(const char* source, char* target, size_t size)
+	unsigned int Conbuf_CleanText(const char* source, char* target, const std::size_t size)
 	{
-		char* b = target;
-		int i = 0;
-		while (source && source[i] && (reinterpret_cast<size_t>(b) - reinterpret_cast<size_t>(target)) < (size - 1))
+		if (!target || size == 0)
 		{
-			if (source[i] == '\n' && source[i + 1] == '\r')
-			{
-				b[0] = '\r';
-				b[1] = '\n';
-				b += 2;
-				i++;
-			}
-			else if (source[i] == '\r' || source[i] == '\n')
-			{
-				b[0] = '\r';
-				b[1] = '\n';
-				b += 2;
-			}
-			else if (source[0] == '^' && source[1] && source[1] != '^' && source[1] >= 48 && source[1] <= 64) // Q_IsColorString
-			{
-				i++;
-			}
-			else
-			{
-				*b = source[i];
-				b++;
-			}
-			i++;
+			return 0;
 		}
 
-		*b = '\0';
-		return static_cast<unsigned int>(b - target);
+		if (!source)
+		{
+			target[0] = '\0';
+			return 0;
+		}
+
+		std::size_t input = 0;
+		std::size_t output = 0;
+
+		while (source[input] != '\0')
+		{
+			// Q_IsColorString
+			if (source[input] == '^' &&
+				source[input + 1] != '\0' &&
+				source[input + 1] != '^' &&
+				source[input + 1] >= '0' &&
+				source[input + 1] <= '@')
+			{
+				input += 2;
+				continue;
+			}
+
+			if (source[input] == '\r' || source[input] == '\n')
+			{
+				// Reserve two bytes for CRLF and one for the terminator.
+				if (output + 2 >= size)
+				{
+					break;
+				}
+
+				const auto first = source[input++];
+
+				// Consume either CRLF or LFCR as one newline.
+				if ((first == '\r' && source[input] == '\n') ||
+					(first == '\n' && source[input] == '\r'))
+				{
+					++input;
+				}
+
+				target[output++] = '\r';
+				target[output++] = '\n';
+				continue;
+			}
+
+			// Reserve one byte for the terminator.
+			if (output + 1 >= size)
+			{
+				break;
+			}
+
+			target[output++] = source[input++];
+		}
+
+		target[output] = '\0';
+		return static_cast<unsigned int>(output);
 	}
 
 	void Conbuf_AppendText(const char* pmsg)
 	{
-		const char* msg;
-		unsigned int buf_len;
 		static unsigned int s_total_chars = 0;
 
-		if (s_wcd.hwndBuffer)
+		if (!s_wcd.hwndBuffer || !pmsg)
 		{
-			// if the message is REALLY long, use just the last portion of it
-			if (strlen(pmsg) > ((sizeof(s_wcd.cleanBuffer) / 2) - 1))
-			{
-				msg = pmsg + strlen(pmsg) - ((sizeof(s_wcd.cleanBuffer) / 2) + 1);
-			}
-			else
-			{
-				msg = pmsg;
-			}
-
-			// copy into an intermediate buffer
-			buf_len = Conbuf_CleanText(msg, s_wcd.cleanBuffer, sizeof(s_wcd.cleanBuffer));
-
-			s_total_chars += buf_len;
-
-			if (s_total_chars <= sizeof(s_wcd.cleanBuffer))
-			{
-				SendMessageA(s_wcd.hwndBuffer, EM_SETSEL, 0xFFFF, 0xFFFF);
-			}
-			else
-			{
-				SendMessageA(s_wcd.hwndBuffer, EM_SETSEL, 0, -1);
-				s_total_chars = buf_len;
-			}
-			SendMessageA(s_wcd.hwndBuffer, EM_LINESCROLL, 0, 0xFFFF);
-			SendMessageA(s_wcd.hwndBuffer, EM_SCROLLCARET, 0, 0);
-			SendMessageA(s_wcd.hwndBuffer, EM_REPLACESEL, 0, reinterpret_cast<LPARAM>(s_wcd.cleanBuffer));
+			return;
 		}
+
+		const auto length = std::strlen(pmsg);
+		constexpr auto buffer_size = sizeof(s_wcd.cleanBuffer);
+
+		// Worst case: every input character expands to CRLF.
+		constexpr auto max_input_length = (buffer_size - 1) / 2;
+
+		const char* msg = pmsg;
+		if (length > max_input_length)
+		{
+			msg = pmsg + (length - max_input_length);
+		}
+
+		const auto buffer_length =
+			Conbuf_CleanText(msg, s_wcd.cleanBuffer, buffer_size);
+
+		s_total_chars += buffer_length;
+
+		if (s_total_chars <= buffer_size)
+		{
+			SendMessageA(s_wcd.hwndBuffer, EM_SETSEL, 0xFFFF, 0xFFFF);
+		}
+		else
+		{
+			SendMessageA(s_wcd.hwndBuffer, EM_SETSEL, 0, -1);
+			s_total_chars = buffer_length;
+		}
+
+		SendMessageA(s_wcd.hwndBuffer, EM_LINESCROLL, 0, 0xFFFF);
+		SendMessageA(s_wcd.hwndBuffer, EM_SCROLLCARET, 0, 0);
+		SendMessageA(
+			s_wcd.hwndBuffer,
+			EM_REPLACESEL,
+			FALSE,
+			reinterpret_cast<LPARAM>(s_wcd.cleanBuffer)
+		);
 	}
 
 	void Sys_Print(const char* msg)
