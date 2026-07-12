@@ -34,12 +34,13 @@ namespace party
 
 		connect_state_t connect_state{};
 		bool dedicated_map_transition_started{};
+		bool listen_map_transition_in_progress{};
 
 		bool get_map_index(const std::string& map_name, int& map_index)
 		{
 			map_index = game::UI_GetListIndexFromMapName(map_name.data());
 
-			if (map_index < 0)
+			if (map_index <= 0)
 			{
 				console::error("Map '%s' not found in UI list.\n", map_name.data());
 				return false;
@@ -134,6 +135,13 @@ namespace party
 
 			const auto* g_gametype = game::Dvar_FindMalleableVar("g_gametype");
 			return g_gametype ? g_gametype->current.string : "dm";
+		}
+
+		bool is_valid_gametype(const std::string& gametype)
+		{
+			// The stock helper returns its input pointer when the gametype is absent
+			// from maps/mp/gametypes/_gametypes.txt.
+			return utils::hook::invoke<const char*>(0x6500E0_g, gametype.data()) != gametype.data();
 		}
 
 		void start_server_ui()
@@ -273,6 +281,63 @@ namespace party
 			}
 		}
 
+		void restart_map()
+		{
+			*game::sv_map_restart = 1;
+			*game::sv_loadScripts = 1;
+			*game::sv_migrate = 0;
+
+			game::mp::SV_MapRestart(*game::sv_migrate, *game::sv_loadScripts);
+		}
+
+		void start_validated_map(const std::string& map_name, const std::string& gametype,
+			const int map_index, const bool set_gametype)
+		{
+			perform_game_init();
+			set_party_map_settings(map_name, gametype);
+			set_map_dvars(map_name, gametype, map_index, set_gametype);
+			start_server(map_name);
+		}
+
+		void start_listen_map_transition(const std::string& map_name, const std::string& gametype,
+			const int map_index, const bool set_gametype)
+		{
+			listen_map_transition_in_progress = true;
+			const auto start_time = std::chrono::steady_clock::now();
+
+			const auto* args = "Leave";
+			game::UI_RunMenuScript(0, &args);
+
+			// S2's Leave menu script queues "disconnect\n" in the command buffer.
+			// Wait for that command and its UI transition to complete on later main frames.
+			scheduler::schedule([map_name, gametype, map_index, set_gametype, start_time,
+				map_start_requested = false]() mutable
+			{
+				if (!map_start_requested && !com_sv_running() && !game::SV_Loaded()
+					&& *game::frontend_state != 0)
+				{
+					map_start_requested = true;
+					start_validated_map(map_name, gametype, map_index, set_gametype);
+				}
+
+				if (map_start_requested && game::is_server_running()
+					&& get_current_mapname() == map_name)
+				{
+					listen_map_transition_in_progress = false;
+					return scheduler::cond_end;
+				}
+
+				if (std::chrono::steady_clock::now() - start_time >= 30s)
+				{
+					console::error("Listen map transition to '%s' timed out.\n", map_name.data());
+					listen_map_transition_in_progress = false;
+					return scheduler::cond_end;
+				}
+
+				return scheduler::cond_continue;
+			}, scheduler::pipeline::main);
+		}
+
 		void connect_to_server(const game::netadr_s& target, const std::string& mapname,
 			const std::string& gametype, const int max_clients)
 		{
@@ -384,15 +449,25 @@ namespace party
 				return;
 			}
 
-			if (game::is_server_running())
+			if (listen_map_transition_in_progress)
 			{
-				// TODO: implement mid match map changing.
+				console::error("A map transition is already in progress.\n");
 				return;
 			}
 
-			const std::string map_name = params[1];
+			const auto map_name = utils::string::to_lower(params[1]);
 			const std::string gametype = get_gametype_or_default(params);
 			const bool has_gametype = params.size() >= 3;
+			if (!validate_map_and_gametype(map_name, gametype))
+			{
+				return;
+			}
+
+			if (has_gametype && !is_valid_gametype(gametype))
+			{
+				console::error("Gametype '%s' is not available locally.\n", gametype.data());
+				return;
+			}
 
 			int map_index = 0;
 			if (!get_map_index(map_name, map_index))
@@ -400,7 +475,27 @@ namespace party
 				return;
 			}
 
-			if (game::environment::is_dedi())
+			const auto server_running = game::is_server_running();
+			if (server_running && get_current_mapname() == map_name)
+			{
+				restart_map();
+				return;
+			}
+
+			const auto is_dedicated = game::environment::is_dedi();
+			if (is_dedicated && server_running)
+			{
+				console::info("Live dedicated map changing is not implemented yet.\n");
+				return;
+			}
+
+			if (!is_dedicated && server_running)
+			{
+				start_listen_map_transition(map_name, gametype, map_index, has_gametype);
+				return;
+			}
+
+			if (is_dedicated)
 			{
 				if (!game::virtual_lobby_loaded())
 				{
@@ -417,16 +512,12 @@ namespace party
 				dedicated_map_transition_started = true;
 			}
 
-			perform_game_init();
-
 			console::info("Starting map '%s' index %d gametype '%s'\n",
 				map_name.data(),
 				map_index,
 				gametype.data());
 
-			set_party_map_settings(map_name, gametype);
-			set_map_dvars(map_name, gametype, map_index, has_gametype);
-			start_server(map_name);
+			start_validated_map(map_name, gametype, map_index, has_gametype);
 		}
 
 		void send_info_response(const game::netadr_s& from, const std::string_view& data, const std::string& response_command)
@@ -501,11 +592,7 @@ namespace party
 
 			command::add("map_restart", []()
 			{
-				*game::sv_map_restart = 1;
-				*game::sv_loadScripts = 1;
-				*game::sv_migrate = 0;
-
-				game::mp::SV_MapRestart(*game::sv_migrate, *game::sv_loadScripts);
+				restart_map();
 			});
 
 			command::add("fast_restart", []()
