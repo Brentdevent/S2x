@@ -105,6 +105,7 @@ namespace game
 
 	WEAK symbol<void(const char* mapName, const char* gameType)> CL_PreloadMap{ 0x83950 };
 	WEAK symbol<void(const char* mapName)> CL_PreloadMap2{ 0x837E0 };
+	WEAK symbol<void(unsigned int localClientNum)> CL_CheckForResend{ 0x6AF20 };
 	WEAK symbol<void(int a, int b)> CL_VirtualLobbyShutdown{ 0x8BB80 };
 	WEAK symbol<bool(int localClientNum, netadr_s* from, msg_t* msg, int time)> CL_DispatchConnectionlessPacket{ 0x6F7E0 };
 	WEAK symbol<void(int localClientNum, void* sessionInfo, netadr_s* to, const char* mapname, const char* gametype)> CL_ConnectAndPreloadMap{ 0x6CCA0 };
@@ -113,6 +114,7 @@ namespace game
 	WEAK symbol<void(uint16_t ent, const char* menu)> CG_RegisterHubVendorTarget{ 0x2ED20 };
 
 	WEAK symbol<void(int localClientNum, const char** args)> UI_RunMenuScript{ 0x746A50 };
+	WEAK symbol<void(int localClientNum)> UI_StartServer{ 0x74A440 };
 	WEAK symbol<int(const char* mapName)> UI_GetListIndexFromMapName{ 0x650510 };
 	WEAK symbol<void(const char* mapname, const char* gametype)> UI_SetMap{ 0x74A050 };
 	WEAK symbol<void(int localClientNum)> UI_Map{ 0x744C30 };
@@ -216,6 +218,9 @@ namespace game
 	
 	WEAK symbol<int> sv_maxclients{ 0xC5FBA50 };
 	WEAK symbol<int> sv_migrate{ 0xBB4FE68 };
+	WEAK symbol<int> g_skipReadAlwaysLoadedAssets{ 0x11112E4 };
+	WEAK symbol<int> frontend_state{ 0xE236DA0 };
+	WEAK symbol<char> databaseCompletedEvent2{ 0x27CEC67 };
 
 	WEAK symbol<char> virtualLobby_Loaded{ 0x1BD36F8 };
 

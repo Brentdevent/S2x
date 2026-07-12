@@ -22,7 +22,7 @@ namespace server_list
 {
 	namespace
 	{
-		constexpr auto default_master_server_name = "server.alterware.dev";
+		constexpr auto default_master_server_name = "server.master.dev";
 		constexpr auto default_master_server_port = 20810;
 		constexpr auto master_game = "S2";
 		constexpr auto server_timeout = 10s;

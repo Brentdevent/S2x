@@ -6,8 +6,6 @@
 #include "game/game.hpp"
 
 #include "console/console.hpp"
-#include "scheduler.hpp"
-#include "command.hpp"
 #include "party.hpp"
 
 #include <utils/hook.hpp>

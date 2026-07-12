@@ -33,6 +33,7 @@ namespace party
 		};
 
 		connect_state_t connect_state{};
+		bool dedicated_map_transition_started{};
 
 		bool get_map_index(const std::string& map_name, int& map_index)
 		{
@@ -49,7 +50,7 @@ namespace party
 
 		void set_max_agents(const uint8_t amount)
 		{
-			// part of handleGo command sets max_agents in the party data
+			// Part of handleGo sets max_agents in the party data.
 			const auto lobby_ref = utils::hook::invoke<void*>(0x470D30_g, 0);
 			const auto party = utils::hook::invoke<std::uintptr_t>(0x470F20_g, lobby_ref);
 
@@ -68,6 +69,13 @@ namespace party
 			}
 
 			*reinterpret_cast<std::uint8_t*>(settings + 0x31) = amount;
+		}
+
+		void set_game_is_ranked_match(const int local_client_num, const bool ranked)
+		{
+			auto* const local_data = utils::hook::invoke<void*>(0x470D30_g, local_client_num);
+			auto* const state = utils::hook::invoke<std::byte*>(0x470F20_g, local_data);
+			utils::hook::invoke<void>(0x197430_g, state + 0x250, ranked ? 1 : 0);
 		}
 
 		void set_party_map_settings(const std::string& map_name, const std::string& gametype)
@@ -135,12 +143,118 @@ namespace party
 			return g_gametype ? g_gametype->current.string : "dm";
 		}
 
-		void start_server()
+		void start_server_ui()
 		{
 			*game::sv_migrate = 0;
 
 			const auto* args = "StartServer";
 			game::UI_RunMenuScript(0, &args);
+		}
+
+		bool com_sv_running()
+		{
+			const auto* dvar = game::Dvar_FindMalleableVar("com_sv_running");
+			return dvar && dvar->current.enabled;
+		}
+
+		void log_dedicated_start_state(const char* stage)
+		{
+			console::info(
+				"Dedicated direct map start state [%s]: virtualLobby_Loaded=%d, com_sv_running=%d, "
+				"SV_Loaded=%d, frontend_state=%d, databaseCompletedEvent2=%d, "
+				"g_skipReadAlwaysLoadedAssets=%d.\n",
+				stage,
+				game::virtual_lobby_loaded(),
+				com_sv_running(),
+				game::SV_Loaded(),
+				*game::frontend_state,
+				*game::databaseCompletedEvent2,
+				*game::g_skipReadAlwaysLoadedAssets
+			);
+		}
+
+		void monitor_dedicated_map_start(const std::string& map_name)
+		{
+			const auto start_time = std::chrono::steady_clock::now();
+
+			scheduler::schedule([map_name, start_time]()
+			{
+				if (com_sv_running() && game::SV_Loaded() && !game::virtual_lobby_loaded())
+				{
+					log_dedicated_start_state("map running");
+					console::info(
+						"Dedicated direct map start: deferred UI_Map executed and map '%s' is running.\n",
+						map_name.data()
+					);
+
+					return scheduler::cond_end;
+				}
+
+				if (std::chrono::steady_clock::now() - start_time >= 30s)
+				{
+					log_dedicated_start_state("map start timeout");
+					console::error(
+						"Dedicated direct map start: map '%s' did not reach com_sv_running. "
+						"The legacy path was not started.\n",
+						map_name.data()
+					);
+
+					return scheduler::cond_end;
+				}
+
+				return scheduler::cond_continue;
+			}, scheduler::pipeline::main);
+		}
+
+		void start_dedicated_server_direct(const std::string& map_name)
+		{
+			constexpr auto local_client = 0;
+
+			log_dedicated_start_state("before native transition");
+			console::info(
+				"Dedicated direct map start: requesting the native frontend/hub transition for map '%s'.\n",
+				map_name.data()
+			);
+
+			// UI_RunMenuScript's StartServer branch only parses the script name and calls
+			// UI_StartServer(localClientNum). Calling it directly preserves the working native path:
+			// virtual-lobby shutdown, render/cinematic synchronization, frontend_state = 0,
+			// party gametype refresh, and deferred UI_Map queueing.
+			game::UI_StartServer(local_client);
+
+			// UI_Map runs from the engine command-function queue on a later Cbuf execution.
+			// This lets command text queued by perform_game_init() drain after the map command
+			// returns. UI_Map then sets g_skipReadAlwaysLoadedAssets to 1, synchronizes the DB, and calls
+			// SV_StartMapForParty(0, activePartyMap, false, false). SV_SpawnServer then requests
+			// the 0x88 level-zone transition; the DB logger reports each hub zone actually unloaded.
+			log_dedicated_start_state("UI_Map queued");
+			console::info("Dedicated direct map start: waiting for the deferred native map start.\n");
+			monitor_dedicated_map_start(map_name);
+		}
+
+		void start_server(const std::string& map_name)
+		{
+			if (!game::environment::is_dedi())
+			{
+				start_server_ui();
+				return;
+			}
+
+			const auto* use_direct_start = game::Dvar_FindMalleableVar("dedicated_use_direct_map_start");
+			if (!use_direct_start)
+			{
+				console::error("Dedicated map start stopped: dedicated_use_direct_map_start is not registered.\n");
+				return;
+			}
+
+			if (use_direct_start->current.enabled)
+			{
+				start_dedicated_server_direct(map_name);
+				return;
+			}
+
+			console::warn("Dedicated map start: using the legacy UI StartServer path.\n");
+			start_server_ui();
 		}
 
 		bool validate_map_and_gametype(const std::string& mapname, const std::string& gametype)
@@ -167,7 +281,21 @@ namespace party
 			return true;
 		}
 
-		void connect_to_server(const game::netadr_s& target, const std::string& mapname, const std::string& gametype, const int max_clients)
+		void perform_game_init()
+		{
+			if (!game::environment::is_zombies())
+			{
+				game::Cbuf_AddText(0, "exec default_xboxlive.cfg\n");
+
+				if (!game::environment::is_dedi())
+				{
+					set_max_agents(6);
+				}
+			}
+		}
+
+		void connect_to_server(const game::netadr_s& target, const std::string& mapname,
+			const std::string& gametype, const int max_clients)
 		{
 			if (!validate_map_and_gametype(mapname, gametype))
 			{
@@ -193,6 +321,8 @@ namespace party
 			set_party_map_settings(mapname, gametype);
 			set_map_dvars(mapname, gametype, map_index, true);
 
+			perform_game_init();
+
 			char session_info[0x100]{};
 			auto target_copy = target;
 
@@ -213,9 +343,10 @@ namespace party
 				return;
 			}
 
-			if (game::virtualLobby_Loaded)
+			if (!game::virtual_lobby_loaded())
 			{
-				game::CL_VirtualLobbyShutdown(0, 0);
+				console::error("Cannot connect: virtual lobby is not loaded.\n");
+				return;
 			}
 
 			connect_state.host = target;
@@ -266,19 +397,6 @@ namespace party
 			cl_connect_hook.invoke<void>();
 		}
 
-		void perform_game_init()
-		{
-			//game::Cbuf_AddText(0, "setgameprivatematch 1\n");
-
-			if (!game::environment::is_zombies())
-			{
-				game::Cbuf_AddText(0, "exec default_xboxlive.cfg\n");
-
-				// Fix paratroopers scorestreak
-				set_max_agents(6);
-			}
-		}
-
 		void start_map(const command::params& params)
 		{
 			if (params.size() < 2)
@@ -293,8 +411,6 @@ namespace party
 				return;
 			}
 
-			perform_game_init();
-
 			const std::string map_name = params[1];
 			const std::string gametype = get_gametype_or_default(params);
 			const bool has_gametype = params.size() >= 3;
@@ -305,6 +421,25 @@ namespace party
 				return;
 			}
 
+			if (game::environment::is_dedi())
+			{
+				if (!game::virtual_lobby_loaded())
+				{
+					console::info("Ignoring early dedicated map command until the virtual lobby is loaded.\n");
+					return;
+				}
+
+				if (dedicated_map_transition_started)
+				{
+					console::info("Ignoring duplicate dedicated map transition for '%s'.\n", map_name.data());
+					return;
+				}
+
+				dedicated_map_transition_started = true;
+			}
+
+			perform_game_init();
+
 			console::info("Starting map '%s' index %d gametype '%s'\n",
 				map_name.data(),
 				map_index,
@@ -312,7 +447,7 @@ namespace party
 
 			set_party_map_settings(map_name, gametype);
 			set_map_dvars(map_name, gametype, map_index, has_gametype);
-			start_server();
+			start_server(map_name);
 		}
 
 		void send_info_response(const game::netadr_s& from, const std::string_view& data, const std::string& response_command)
@@ -414,10 +549,10 @@ namespace party
 				send_info_response(from, data, "s2x_infoResponse");
 			});
 
-			network::on("getinfo", [](const game::netadr_s& from, const std::string_view& data)
+			/*network::on("getinfo", [](const game::netadr_s& from, const std::string_view& data)
 			{
 				send_info_response(from, data, "infoResponse");
-			});
+			});*/
 
 			network::on("s2x_infoResponse", [](const game::netadr_s& from, const std::string_view& data)
 			{
@@ -482,7 +617,16 @@ namespace party
 
 				scheduler::once([target, mapname, gametype, server_max_clients]()
 				{
-					connect_to_server(target, mapname, gametype, server_max_clients);
+					if (game::virtual_lobby_loaded())
+					{
+						console::info("Leaving virtual lobby before direct connection.\n");
+						game::CL_VirtualLobbyShutdown(0, 0);
+					}
+
+					scheduler::once([target, mapname, gametype, server_max_clients]()
+					{
+						connect_to_server(target, mapname, gametype, server_max_clients);
+					}, scheduler::pipeline::main);
 				}, scheduler::pipeline::main);
 			});
 		}
