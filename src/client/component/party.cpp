@@ -71,13 +71,6 @@ namespace party
 			*reinterpret_cast<std::uint8_t*>(settings + 0x31) = amount;
 		}
 
-		void set_game_is_ranked_match(const int local_client_num, const bool ranked)
-		{
-			auto* const local_data = utils::hook::invoke<void*>(0x470D30_g, local_client_num);
-			auto* const state = utils::hook::invoke<std::byte*>(0x470F20_g, local_data);
-			utils::hook::invoke<void>(0x197430_g, state + 0x250, ranked ? 1 : 0);
-		}
-
 		void set_party_map_settings(const std::string& map_name, const std::string& gametype)
 		{
 			game::UI_SetMap(map_name.data(), gametype.data());
@@ -240,21 +233,7 @@ namespace party
 				return;
 			}
 
-			const auto* use_direct_start = game::Dvar_FindMalleableVar("dedicated_use_direct_map_start");
-			if (!use_direct_start)
-			{
-				console::error("Dedicated map start stopped: dedicated_use_direct_map_start is not registered.\n");
-				return;
-			}
-
-			if (use_direct_start->current.enabled)
-			{
-				start_dedicated_server_direct(map_name);
-				return;
-			}
-
-			console::warn("Dedicated map start: using the legacy UI StartServer path.\n");
-			start_server_ui();
+			start_dedicated_server_direct(map_name);
 		}
 
 		bool validate_map_and_gametype(const std::string& mapname, const std::string& gametype)

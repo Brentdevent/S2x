@@ -13,57 +13,9 @@ namespace dedicated
 {
 	namespace
 	{
-		constexpr std::array<std::uint8_t, 6> gamestate_guard_original_bytes{
-			0x0F, 0x84, 0x4B, 0x01, 0x00, 0x00
-		};
-
 		utils::hook::detour cl_check_for_resend_hook;
-		std::array<std::uint8_t, gamestate_guard_original_bytes.size()> gamestate_guard_actual_bytes{};
-		bool gamestate_guard_patch_applied{};
+
 		game::dvar_t* sv_lanOnly;
-
-		bool apply_gamestate_guard_patch()
-		{
-			auto* const guard = reinterpret_cast<std::uint8_t*>(0xF44F3_g);
-			std::memcpy(
-				gamestate_guard_actual_bytes.data(),
-				guard,
-				gamestate_guard_actual_bytes.size()
-			);
-
-			if (gamestate_guard_actual_bytes != gamestate_guard_original_bytes)
-			{
-				return false;
-			}
-
-			// Dedicated remote clients must pass the cached local-address guard and continue
-			// through the engine's unchanged server-ID and reliable-sequence checks.
-			utils::hook::nop(guard, gamestate_guard_original_bytes.size());
-			return true;
-		}
-
-		void log_gamestate_guard_patch_status()
-		{
-			if (gamestate_guard_patch_applied)
-			{
-				console::info(
-					"Dedicated gamestate guard patch applied: verified 0F 84 4B 01 00 00 at "
-					"0xF44F3 and NOPed exactly six bytes.\n"
-				);
-				return;
-			}
-
-			console::error(
-				"Dedicated gamestate guard patch not applied: expected 0F 84 4B 01 00 00 at "
-				"0xF44F3, found %02X %02X %02X %02X %02X %02X. Startup will continue.\n",
-				gamestate_guard_actual_bytes[0],
-				gamestate_guard_actual_bytes[1],
-				gamestate_guard_actual_bytes[2],
-				gamestate_guard_actual_bytes[3],
-				gamestate_guard_actual_bytes[4],
-				gamestate_guard_actual_bytes[5]
-			);
-		}
 
 		void cl_check_for_resend_stub(const unsigned int)
 		{
@@ -115,7 +67,6 @@ namespace dedicated
 			console::info("==================================\n");
 			console::info("S2x Dedicated Server\n");
 			console::info("==================================\n");
-			log_gamestate_guard_patch_status();
 			console::set_title("S2x Dedicated Server");
 
 			const auto command = build_startup_map_command();
@@ -129,10 +80,7 @@ namespace dedicated
 			}
 
 			console::info("Waiting for the virtual lobby to initialize...\n");
-
-			const auto start_time = std::chrono::steady_clock::now();
-
-			scheduler::schedule([command, start_time]()
+			scheduler::schedule([command]()
 			{
 				if (game::virtual_lobby_loaded())
 				{
@@ -140,16 +88,6 @@ namespace dedicated
 					console::info("Executing dedicated startup command: %s", command.data());
 
 					game::Cbuf_AddText(0, command.data());
-					return scheduler::cond_end;
-				}
-
-				if (std::chrono::steady_clock::now() - start_time >= 30s)
-				{
-					console::error(
-						"Timed out waiting for the virtual lobby. "
-						"The startup map command was not executed.\n"
-					);
-
 					return scheduler::cond_end;
 				}
 
@@ -170,10 +108,11 @@ namespace dedicated
 
 			game::Dvar_RegisterBool("dedicated", true, game::DVAR_FLAG_READ);
 			sv_lanOnly = game::Dvar_RegisterBool("sv_lanOnly", false, game::DVAR_FLAG_NONE);
-			game::Dvar_RegisterBool("dedicated_use_direct_map_start", true, game::DVAR_FLAG_NONE);
 
-			gamestate_guard_patch_applied = apply_gamestate_guard_patch();
 			cl_check_for_resend_hook.create(game::CL_CheckForResend, cl_check_for_resend_stub);
+
+			// Bypass the gamestate guard
+			utils::hook::nop(0xF44F3_g, 6);
 
 			// TODO: Add killserver only after a safe S2 shutdown wrapper or flow is confirmed.
 			scheduler::once(run_startup, scheduler::pipeline::main, 1s);

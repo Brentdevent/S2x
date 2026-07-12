@@ -17,18 +17,11 @@ namespace network
 	{
 		utils::hook::detour sys_send_packet_hook;
 		utils::hook::detour cl_dispatch_connectionless_packet_hook;
-		utils::hook::detour sv_direct_connect_hook;
 
 		std::unordered_map<std::string, std::vector<callback>>& get_callbacks()
 		{
 			static std::unordered_map<std::string, std::vector<callback>> callbacks{};
 			return callbacks;
-		}
-
-		void* sv_direct_connect_stub(game::netadr_s* from, bool allow_bot_kick)
-		{
-			console::info("[network] client connection request from %s\n", network::net_adr_to_string(*from));
-			return sv_direct_connect_hook.invoke<void*>(from, allow_bot_kick);
 		}
 
 		bool handle_command(game::netadr_s* address, const char* command, game::msg_t* message)
@@ -311,7 +304,6 @@ namespace network
 				game::CL_DispatchConnectionlessPacket, cl_dispatch_connectionless_packet_stub
 			);
 
-			sv_direct_connect_hook.create(game::SV_DirectConnect, sv_direct_connect_stub);
 			sys_send_packet_hook.create(game::Sys_SendPacket, sys_send_packet_stub);
 
 			// Handle xuid without secure connection
