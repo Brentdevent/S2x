@@ -408,10 +408,10 @@ namespace ui_scripting
 			}
 		}
 
-		void* hks_start_stub(char a1)
+		void hks_start_stub(const bool frontend, const bool cg)
 		{
 			const auto _0 = utils::finally(&try_start);
-			return hks_start_hook.invoke<void*>(a1);
+			hks_start_hook.invoke<void>(frontend, cg);
 		}
 
 		void hks_shutdown_stub()
