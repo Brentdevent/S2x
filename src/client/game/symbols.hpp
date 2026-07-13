@@ -127,8 +127,25 @@ namespace game
 	WEAK symbol<void(const netadr_s* address, sockaddr* s)> NetadrToSockadr{ 0x75F9E0 };
 
 	WEAK symbol<void*(int unk)> Lobby_GetPartyData{ 0x47D050 };
+	WEAK symbol<void*(int localClientNum)> Lobby_GetLocalClientData{ 0x470D30 };
+	WEAK symbol<void*(void* localClientData)> Lobby_GetPartyDataFromLocalClient{ 0x470F20 };
+	WEAK symbol<void*()> Party_GetPrivatePartyData{ 0x47E350 };
+	WEAK symbol<bool(void* partyData)> Party_IsRunning{ 0x47A6C0 };
+	WEAK symbol<bool(void* partyData)> Party_AreWeHost{ 0x47A6F0 };
+	WEAK symbol<bool(void* partyData)> Party_IsWaitingForMembers{ 0x4819A0 };
+	WEAK symbol<void(void* settings, bool privateMatch)> PartySettings_SetPrivateMatch{ 0x1973F0 };
+	WEAK symbol<void(void* settings, bool publicMatch)> PartySettings_SetPublicMatch{ 0x197440 };
+	WEAK symbol<void(void* settings, bool rankedMatch)> PartySettings_SetRankedMatch{ 0x197430 };
+	WEAK symbol<void()> PartyHost_NotifyPrivateMatchCreated{ 0x12A2F0 };
+	WEAK symbol<const char*()> PartyHost_EndMatch{ 0x6DFEB0 };
+	WEAK symbol<const char*(void* partyData)> Party_GetMapName{ 0x1970E0 };
+	WEAK symbol<const char*(void* partyData)> Party_GetGameType{ 0x1970A0 };
 	WEAK symbol<void(void* partyData, const char* gametype)> Party_SetGameType{ 0x1973A0 };
 	WEAK symbol<void(void* partyData, const char* mapname)> Party_SetMapName{ 0x1973C0 };
+	WEAK symbol<void*(int sessionIndex)> Session_GetData{ 0x6FDE10 };
+	WEAK symbol<void(const void* address, char* buffer)> Session_HostAddressToString{ 0x66EDD0 };
+	WEAK symbol<void(const void* key, char* buffer)> Session_KeyToString{ 0x66D970 };
+	WEAK symbol<void(std::uint64_t sessionId, char* buffer)> Session_IdToString{ 0x66D9B0 };
 
 	WEAK symbol<bool()> BG_BotFastFileEnabled{ 0x3879A0 };
 	WEAK symbol<bool()> BG_BotSystemEnabled{ 0x388180 };

@@ -56,16 +56,6 @@ namespace network
 
 		void enable_raw_reliable_messages()
 		{
-			constexpr std::array<std::uint8_t, 6> expected_admission_branch{
-				0x0F, 0x84, 0xBD, 0x00, 0x00, 0x00
-			};
-			const auto admission_branch = reinterpret_cast<const std::uint8_t*>(0x76E87C_g);
-			if (!std::equal(expected_admission_branch.begin(), expected_admission_branch.end(), admission_branch))
-			{
-				console::error("[network] Raw reliable-message patch was not applied: unexpected game bytes.\n");
-				return;
-			}
-
 			const auto continue_scan = 0x76E882_g;
 			const auto reject_address = 0x76E93F_g;
 			const auto admission_stub = utils::hook::assemble([continue_scan, reject_address](utils::hook::assembler& a)
@@ -87,26 +77,12 @@ namespace network
 				a.jmp(reinterpret_cast<void*>(reject_address));
 			});
 
-			utils::hook::nop(0x76E87C_g, expected_admission_branch.size());
+			utils::hook::nop(0x76E87C_g, 6);
 			utils::hook::jump(0x76E87C_g, admission_stub);
 		}
 
 		void preserve_raw_session_addresses()
 		{
-			constexpr std::array<std::uint8_t, 15> expected{
-				0xE8, 0x22, 0x85, 0xFD, 0xFF,
-				0x3B, 0x43, 0x10,
-				0x75, 0x1B,
-				0x83, 0x3B, 0x02,
-				0x74, 0x16
-			};
-			const auto address = reinterpret_cast<const std::uint8_t*>(0x8281F9_g);
-			if (!std::equal(expected.begin(), expected.end(), address))
-			{
-				console::error("[network] Raw session-address patch was not applied: unexpected game bytes.\n");
-				return;
-			}
-
 			const auto preserve_address = 0x82821E_g;
 			const auto convert_to_loopback = 0x828208_g;
 			const auto get_invalid_handle_index = 0x800720_g;
@@ -133,7 +109,7 @@ namespace network
 					a.jmp(reinterpret_cast<void*>(preserve_address));
 				});
 
-			utils::hook::nop(0x8281F9_g, expected.size());
+			utils::hook::nop(0x8281F9_g, 15);
 			utils::hook::jump(0x8281F9_g, stub);
 		}
 
