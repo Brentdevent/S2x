@@ -17,6 +17,125 @@ namespace network
 	{
 		utils::hook::detour sys_send_packet_hook;
 		utils::hook::detour cl_dispatch_connectionless_packet_hook;
+		utils::hook::detour net_compare_adr_hook;
+
+		bool is_raw_network_address(const game::netadr_s* address)
+		{
+			if (!address || game::is_local_play())
+			{
+				return false;
+			}
+
+			const auto type = address->type;
+			const auto invalid_handle_index = *reinterpret_cast<const std::uint32_t*>(0xF9D514_g);
+			return (type == game::NA_IP || type == game::NA_BROADCAST)
+				&& address->addrHandleIndex == invalid_handle_index;
+		}
+
+		int net_compare_adr_stub(const game::netadr_s* a, const game::netadr_s* b)
+		{
+			if (!is_raw_network_address(a) || !is_raw_network_address(b))
+			{
+				return net_compare_adr_hook.invoke<int>(a, b);
+			}
+
+			if (a->type != b->type)
+			{
+				return false;
+			}
+
+			if (a->localNetID != b->localNetID
+				&& a->localNetID != game::NS_SERVER
+				&& b->localNetID != game::NS_SERVER)
+			{
+				return false;
+			}
+
+			return a->addr == b->addr && a->port == b->port;
+		}
+
+		void enable_raw_reliable_messages()
+		{
+			constexpr std::array<std::uint8_t, 6> expected_admission_branch{
+				0x0F, 0x84, 0xBD, 0x00, 0x00, 0x00
+			};
+			const auto admission_branch = reinterpret_cast<const std::uint8_t*>(0x76E87C_g);
+			if (!std::equal(expected_admission_branch.begin(), expected_admission_branch.end(), admission_branch))
+			{
+				console::error("[network] Raw reliable-message patch was not applied: unexpected game bytes.\n");
+				return;
+			}
+
+			const auto continue_scan = 0x76E882_g;
+			const auto reject_address = 0x76E93F_g;
+			const auto admission_stub = utils::hook::assemble([continue_scan, reject_address](utils::hook::assembler& a)
+			{
+				const auto admit = a.new_label();
+				const auto reject = a.new_label();
+
+				// Preserve the stock secure-handle path. Only raw S2x addresses may bypass it.
+				a.jnz(admit);
+				a.mov(rcx, r15);
+				a.call_aligned(is_raw_network_address);
+				a.test(al, al);
+				a.jz(reject);
+
+				a.bind(admit);
+				a.jmp(reinterpret_cast<void*>(continue_scan));
+
+				a.bind(reject);
+				a.jmp(reinterpret_cast<void*>(reject_address));
+			});
+
+			utils::hook::nop(0x76E87C_g, expected_admission_branch.size());
+			utils::hook::jump(0x76E87C_g, admission_stub);
+		}
+
+		void preserve_raw_session_addresses()
+		{
+			constexpr std::array<std::uint8_t, 15> expected{
+				0xE8, 0x22, 0x85, 0xFD, 0xFF,
+				0x3B, 0x43, 0x10,
+				0x75, 0x1B,
+				0x83, 0x3B, 0x02,
+				0x74, 0x16
+			};
+			const auto address = reinterpret_cast<const std::uint8_t*>(0x8281F9_g);
+			if (!std::equal(expected.begin(), expected.end(), address))
+			{
+				console::error("[network] Raw session-address patch was not applied: unexpected game bytes.\n");
+				return;
+			}
+
+			const auto preserve_address = 0x82821E_g;
+			const auto convert_to_loopback = 0x828208_g;
+			const auto get_invalid_handle_index = 0x800720_g;
+			const auto stub = utils::hook::assemble(
+				[preserve_address, convert_to_loopback, get_invalid_handle_index](utils::hook::assembler& a)
+				{
+					const auto preserve = a.new_label();
+
+					// Stock S2 treats an invalid secure handle as a local peer. Raw S2x
+					// UDP peers use that marker too, but must retain their IP endpoint.
+					a.mov(rcx, rbx);
+					a.call_aligned(is_raw_network_address);
+					a.test(al, al);
+					a.jnz(preserve);
+
+					a.call_aligned(reinterpret_cast<void*>(get_invalid_handle_index));
+					a.cmp(eax, dword_ptr(rbx, 0x10));
+					a.jne(preserve);
+					a.cmp(dword_ptr(rbx), 2);
+					a.je(preserve);
+					a.jmp(reinterpret_cast<void*>(convert_to_loopback));
+
+					a.bind(preserve);
+					a.jmp(reinterpret_cast<void*>(preserve_address));
+				});
+
+			utils::hook::nop(0x8281F9_g, expected.size());
+			utils::hook::jump(0x8281F9_g, stub);
+		}
 
 		std::unordered_map<std::string, std::vector<callback>>& get_callbacks()
 		{
@@ -94,6 +213,15 @@ namespace network
 				message ? message->cursize : -1,
 				message ? message->readcount : -1
 			);
+
+			const std::string_view command_view = command ? command : "";
+			if (command_view.ends_with("pa_joinfailed") && message && message->data
+				&& message->readcount >= 0 && message->readcount + 4 <= message->cursize)
+			{
+				std::uint32_t reason{};
+				std::memcpy(&reason, message->data + message->readcount, sizeof(reason));
+				console::error("[network] Hosted party join rejected with reason %u.\n", reason);
+			}
 
 			if (handle_command(from, command, message))
 			{
@@ -300,6 +428,10 @@ namespace network
 	public:
 		void post_unpack() override
 		{
+			net_compare_adr_hook.create(game::NET_CompareAdr, net_compare_adr_stub);
+			enable_raw_reliable_messages();
+			preserve_raw_session_addresses();
+
 			cl_dispatch_connectionless_packet_hook.create(
 				game::CL_DispatchConnectionlessPacket, cl_dispatch_connectionless_packet_stub
 			);

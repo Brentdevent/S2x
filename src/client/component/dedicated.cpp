@@ -2,11 +2,11 @@
 #include "loader/component_loader.hpp"
 
 #include "console/console.hpp"
+#include "party.hpp"
 #include "scheduler.hpp"
 
 #include "game/game.hpp"
 
-#include <utils/flags.hpp>
 #include <utils/hook.hpp>
 
 namespace dedicated
@@ -17,31 +17,40 @@ namespace dedicated
 
 		game::dvar_t* sv_lanOnly;
 
-		void cl_check_for_resend_stub(const unsigned int)
+		void disable_p2p_auth_ticket_validation()
 		{
-			// A dedicated process has no local frontend client to reconnect to its server.
+			constexpr std::array<std::uint8_t, 11> expected{
+				0x44, 0x38, 0x7C, 0x24, 0x70,
+				0x0F, 0x85, 0x16, 0x01, 0x00, 0x00
+			};
+			const auto address = reinterpret_cast<const std::uint8_t*>(0x486E87_g);
+			if (!std::equal(expected.begin(), expected.end(), address))
+			{
+				console::error("Dedicated party: P2P-auth bypass was not applied: unexpected game bytes.\n");
+				return;
+			}
+
+			// Preserve the stock host-identity setup used by pa_joined, then treat this
+			// raw dedicated member as authenticated and continue with member validation.
+			constexpr std::array<std::uint8_t, 5> mark_authenticated{
+				0xC6, 0x44, 0x24, 0x70, 0x01
+			};
+			utils::hook::copy(0x486E87_g, mark_authenticated.data(), mark_authenticated.size());
+			utils::hook::jump(0x486E8C_g, 0x486FA8_g);
+			utils::hook::nop(0x486E91_g, 1);
 		}
 
-		std::string build_startup_map_command()
+		void cl_check_for_resend_stub(const unsigned int local_client_num)
 		{
-			const auto map = utils::flags::get_plus_value("map");
-			if (!map.has_value() || map.value().empty())
+			if (game::virtual_lobby_loaded())
 			{
-				return {};
+				// PartyHost_Frame requires the frontend owner to finish its virtual-lobby
+				// connection before the native prematch state machine can start a match.
+				cl_check_for_resend_hook.invoke<void>(local_client_num);
 			}
 
-			std::string command = "map ";
-			command.append(map.value());
-
-			const auto gametype = utils::flags::get_set_value("g_gametype");
-			if (gametype.has_value() && !gametype.value().empty())
-			{
-				command.push_back(' ');
-				command.append(gametype.value());
-			}
-
-			command.push_back('\n');
-			return command;
+			// Virtual-lobby shutdown clears the loaded flag before gameplay reconnects,
+			// keeping the dedicated process out of gameplay server-client slots.
 		}
 
 		void perform_online_game_init()
@@ -69,25 +78,40 @@ namespace dedicated
 			console::info("==================================\n");
 			console::set_title("S2x Dedicated Server");
 
-			const auto command = build_startup_map_command();
-			if (command.empty())
-			{
-				console::info(
-					"Dedicated mode is active. "
-					"Use +map <mapname> [+set g_gametype <gametype>] to auto-start a map.\n"
-				);
-				return;
-			}
-
 			console::info("Waiting for the virtual lobby to initialize...\n");
-			scheduler::schedule([command]()
+			scheduler::schedule([private_party_requested = false,
+				private_party_start_time = std::chrono::steady_clock::time_point{}]() mutable
 			{
-				if (game::virtual_lobby_loaded())
+				if (!private_party_requested)
 				{
-					console::info("Virtual lobby initialized.\n");
-					console::info("Executing dedicated startup command: %s", command.data());
+					if (!game::virtual_lobby_loaded())
+					{
+						return scheduler::cond_continue;
+					}
 
-					game::Cbuf_AddText(0, command.data());
+					console::info("Virtual lobby initialized.\n");
+					if (party::dedicated_private_party_ready())
+					{
+						game::Cbuf_AddText(0, "map mp_shipment_s2 undead\n");
+						return scheduler::cond_end;
+					}
+
+					private_party_requested = true;
+					private_party_start_time = std::chrono::steady_clock::now();
+					game::Cbuf_AddText(0, "xstartprivateparty\n");
+					console::info("Waiting for the online private party to initialize...\n");
+					return scheduler::cond_continue;
+				}
+
+				if (party::dedicated_private_party_ready())
+				{
+					game::Cbuf_AddText(0, "map mp_shipment_s2 undead\n");
+					return scheduler::cond_end;
+				}
+
+				if (std::chrono::steady_clock::now() - private_party_start_time >= 30s)
+				{
+					console::error("Dedicated party: online private-party creation timed out.\n");
 					return scheduler::cond_end;
 				}
 
@@ -110,6 +134,7 @@ namespace dedicated
 			sv_lanOnly = game::Dvar_RegisterBool("sv_lanOnly", false, game::DVAR_FLAG_NONE);
 
 			cl_check_for_resend_hook.create(game::CL_CheckForResend, cl_check_for_resend_stub);
+			disable_p2p_auth_ticket_validation();
 
 			// Bypass the gamestate guard
 			utils::hook::nop(0xF44F3_g, 6);
