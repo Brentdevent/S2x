@@ -8,6 +8,9 @@
 #include "network.hpp"
 
 #include "game/dvars.hpp"
+#include "game/ui_scripting/execution.hpp"
+
+#include "ui_scripting.hpp"
 
 #include "console/console.hpp"
 
@@ -43,9 +46,18 @@ namespace party
 			bool active{};
 			game::netadr_s target{};
 			std::string session_id{};
+			std::string gametype{};
 		};
 
 		hosted_party_join_state_t hosted_party_join_state{};
+
+		struct hosted_dedicated_party_state_t
+		{
+			std::string session_id{};
+			std::string gametype{};
+		};
+
+		hosted_dedicated_party_state_t hosted_dedicated_party_state{};
 
 		bool get_map_index(const std::string& map_name, int& map_index)
 		{
@@ -328,6 +340,7 @@ namespace party
 				return;
 			}
 
+			hosted_dedicated_party_state = {};
 			connect_state.host = target;
 			connect_state.challenge = utils::cryptography::random::get_challenge();
 			connect_state.host_defined = true;
@@ -467,10 +480,81 @@ namespace party
 			return hosted_party_join_state.session_id == session_id.data();
 		}
 
+		std::string get_hosted_dedicated_party_gametype()
+		{
+			auto* game_lobby = game::Lobby_GetPartyData(0);
+			if (game::environment::is_dedi())
+			{
+				if (!dedicated_party::is_active() || !game_lobby)
+				{
+					return {};
+				}
+
+				const auto* gametype = game::Party_GetGameType(game_lobby);
+				return gametype ? gametype : "";
+			}
+
+			if (hosted_dedicated_party_state.gametype.empty())
+			{
+				return {};
+			}
+
+			if (game_lobby && game::Party_IsRunning(game_lobby)
+				&& !game::Party_AreWeHost(game_lobby))
+			{
+				const auto* gametype = game::Party_GetGameType(game_lobby);
+				if (gametype && gametype[0])
+				{
+					hosted_dedicated_party_state.gametype = gametype;
+					return gametype;
+				}
+			}
+
+			if (!game::virtual_lobby_loaded())
+			{
+				return hosted_dedicated_party_state.gametype;
+			}
+
+			return {};
+		}
+
+		void install_lobby_functions()
+		{
+			const auto lua = ui_scripting::get_globals();
+			auto lobby_value = lua.get("Lobby");
+
+			ui_scripting::table lobby{};
+			if (lobby_value.is<ui_scripting::table>())
+			{
+				lobby = lobby_value.as<ui_scripting::table>();
+			}
+			else
+			{
+				lua["Lobby"] = lobby;
+			}
+
+			lobby["GetDedicatedPartyGameType"] = []
+			{
+				return get_hosted_dedicated_party_gametype();
+			};
+		}
+
 		bool party_atomic_setup_potential_host_stub(const int controller_index, const void* session_info,
 			const int party_type, const int max_players, const int a5, const int a6, void* join_info)
 		{
 			const auto is_hosted_party_join = pending_hosted_party_join_matches(session_info);
+			if (!is_hosted_party_join && session_info
+				&& !hosted_dedicated_party_state.session_id.empty())
+			{
+				std::array<char, 17> session_id{};
+				game::Session_IdToString(
+					*reinterpret_cast<const std::uint64_t*>(session_info), session_id.data());
+				if (hosted_dedicated_party_state.session_id != session_id.data())
+				{
+					hosted_dedicated_party_state = {};
+				}
+			}
+
 			const auto result = party_atomic_setup_potential_host_hook.invoke<bool>(
 				controller_index, session_info, party_type, max_players, a5, a6, join_info);
 
@@ -480,6 +564,8 @@ namespace party
 			}
 
 			const auto target = hosted_party_join_state.target;
+			const auto session_id = hosted_party_join_state.session_id;
+			const auto gametype = hosted_party_join_state.gametype;
 			hosted_party_join_state = {};
 
 			if (!join_info)
@@ -518,6 +604,7 @@ namespace party
 			const auto join_info_address = reinterpret_cast<std::uintptr_t>(join_info);
 			*reinterpret_cast<game::netadr_s*>(join_info_address + address_offset) = target;
 			*reinterpret_cast<std::uint8_t*>(join_info_address + address_valid_offset) = 1;
+			hosted_dedicated_party_state = {session_id, gametype};
 
 			console::info("Hosted dedicated lobby: joining through %s.\n",
 				network::net_adr_to_string(target));
@@ -557,7 +644,7 @@ namespace party
 			{
 				// This is the seven-argument command emitted by S2's stock JoinServer menu.
 				// CL_Connect parses the session descriptor and calls PartyAtomic_RequestJoin.
-				hosted_party_join_state = {true, target, session_id};
+				hosted_party_join_state = {true, target, session_id, gametype};
 				game::Cbuf_AddText(0, utils::string::va("connect %s %s %s 0 0 %s %s\n",
 					host_address.data(), key.data(), session_id.data(), map_name.data(), gametype.data()));
 			}, scheduler::pipeline::main);
@@ -681,6 +768,8 @@ namespace party
 				party_atomic_setup_potential_host_hook.create(
 					0x497EF0_g, party_atomic_setup_potential_host_stub);
 			}
+
+			ui_scripting::on_start(install_lobby_functions);
 
 			command::add("map_restart", []()
 			{

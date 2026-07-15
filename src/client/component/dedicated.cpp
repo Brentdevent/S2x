@@ -7,6 +7,8 @@
 
 #include "game/game.hpp"
 
+#include "component/gsc/script_extension.hpp"
+
 #include <utils/hook.hpp>
 
 namespace dedicated
@@ -42,6 +44,11 @@ namespace dedicated
 
 			// Virtual-lobby shutdown clears the loaded flag before gameplay reconnects,
 			// keeping the dedicated process out of gameplay server-client slots.
+		}
+
+		void gscr_is_using_match_rules_data_stub()
+		{
+			game::Scr_AddInt(0);
 		}
 
 		void perform_online_game_init()
@@ -99,6 +106,7 @@ namespace dedicated
 
 			cl_check_for_resend_hook.create(game::CL_CheckForResend, cl_check_for_resend_stub);
 			disable_p2p_auth_ticket_validation();
+			gsc::override_function("isusingmatchrulesdata", gscr_is_using_match_rules_data_stub);
 
 			// Bypass the gamestate guard
 			utils::hook::nop(0xF44F3_g, 6);

@@ -10,6 +10,9 @@
 
 #include "game/dvars.hpp"
 #include "game/game.hpp"
+#include "game/ui_scripting/execution.hpp"
+
+#include "ui_scripting.hpp"
 
 #include <utils/hook.hpp>
 
@@ -17,8 +20,6 @@ namespace dedicated_party
 {
 	namespace
 	{
-		utils::hook::detour match_end_hook;
-
 		constexpr std::ptrdiff_t session_id_offset = 52;
 		constexpr std::ptrdiff_t session_host_address_offset = 60;
 		constexpr std::ptrdiff_t session_key_offset = 97;
@@ -51,6 +52,7 @@ namespace dedicated_party
 			void* private_party{};
 			void* game_lobby{};
 			bool countdown_logged{};
+			bool public_gameplay_pending{};
 			std::chrono::steady_clock::time_point stage_started{};
 		};
 
@@ -122,20 +124,18 @@ namespace dedicated_party
 			set_party_is_ranked_match(party_data, ranked);
 		}
 
-		const char* match_end_stub()
+		void reset_party_launch_deadline()
 		{
-			const auto* reason = match_end_hook.invoke<const char*>();
-
-			if (dedicated_party_state.stage == dedicated_party_stage::match_running
-				|| dedicated_party_state.stage == dedicated_party_stage::ending_match)
+			if (!dedicated_party_state.game_lobby)
 			{
-				// Keep gameplay public through stock result processing, then restore the
-				// private hosted-lobby mode before the next server frame handles teardown.
-				set_party_is_private_match(dedicated_party_state.game_lobby, true);
-				set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
+				return;
 			}
 
-			return reason;
+			// PartyHost_Frame only rebuilds its native countdown deadline when this
+			// field is zero. The private postgame state reset leaves the old value intact.
+			constexpr std::ptrdiff_t launch_deadline_offset = 0x186430;
+			*reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::uintptr_t>(
+				dedicated_party_state.game_lobby) + launch_deadline_offset) = 0;
 		}
 
 		bool party_is_owned_by_local_client_zero(void* party_data)
@@ -161,23 +161,28 @@ namespace dedicated_party
 				reinterpret_cast<std::uintptr_t>(party_data) + host_state_offset) & host_state_mask;
 		}
 
-		bool is_party_prematch_state(void* party_data)
+		void reset_party_launch_state()
 		{
-			const auto state = get_party_host_state(party_data);
-			return state == 4 || state == 8 || state == 16 || state == 32;
+			reset_party_launch_deadline();
+
+			if (dedicated_party_state.game_lobby
+				&& get_party_host_state(dedicated_party_state.game_lobby) != 4)
+			{
+				// PartyHost_Frame uses this native setter to return an interrupted launch
+				// to prematch state 4 and broadcast the new state to party members.
+				game::PartyHost_SetState(dedicated_party_state.game_lobby, 4);
+			}
 		}
 
-		bool parties_are_intact()
+		bool hosted_game_lobby_is_ready()
 		{
-			const auto private_party = get_private_party_data();
-			const auto game_lobby = game::Lobby_GetPartyData(0);
+			const auto game_lobby = dedicated_party_state.game_lobby;
 
-			return private_party == dedicated_party_state.private_party
-				&& game_lobby == dedicated_party_state.game_lobby
-				&& is_active_party_host(private_party)
+			return game::virtual_lobby_loaded()
+				&& game_lobby
 				&& is_active_party_host(game_lobby)
-				&& party_is_owned_by_local_client_zero(private_party)
-				&& party_is_owned_by_local_client_zero(game_lobby);
+				&& party_is_owned_by_local_client_zero(game_lobby)
+				&& get_party_host_state(game_lobby) == 4;
 		}
 
 		bool is_session_hex_string(const std::string& value, const std::size_t expected_size)
@@ -240,15 +245,73 @@ namespace dedicated_party
 			game::Dvar_SetIntByName("901", dedicated_lobby_time->current.integer);
 		}
 
-		void apply_match(const dedicated_match_t& match)
+		bool set_match_rules_gametype(const std::string& gametype)
+		{
+			if (!*game::hks::lui_lua_state)
+			{
+				return false;
+			}
+
+			game::LUI_EnterCriticalSection();
+
+			bool success = false;
+			try
+			{
+				const auto match_rules_value = ui_scripting::get_globals().get("MatchRules");
+				if (match_rules_value.is<ui_scripting::table>())
+				{
+					const auto set_data = match_rules_value.as<ui_scripting::table>().get("SetData");
+					if (set_data.is<ui_scripting::function>())
+					{
+						const auto result = set_data("gametype", gametype);
+						success = !result.empty() && result[0].is<bool>() && result[0].as<bool>();
+					}
+				}
+			}
+			catch (const std::exception& e)
+			{
+				console::error("Dedicated party: failed to update match rules: %s\n", e.what());
+			}
+
+			game::LUI_LeaveCriticalSection();
+			return success;
+		}
+
+		void prepare_match_settings(const dedicated_match_t& match)
+		{
+			if (!set_match_rules_gametype(match.gametype))
+			{
+				console::error("Dedicated party: failed to select match-rules gametype '%s'.\n",
+					match.gametype.data());
+			}
+
+			// Stock private-lobby setup resets gameplay dvars after selecting its
+			// MatchRules recipe, then publishes the updated state before xpartygo.
+			game::Cbuf_AddText(0, "exec default_xboxlive.cfg\n");
+			game::Cbuf_AddText(0, "xupdatepartystate\n");
+		}
+
+		void prepare_postmatch_lobby()
 		{
 			apply_lobby_time();
 			set_party_is_private_match(dedicated_party_state.game_lobby, true);
 			set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
+			reset_party_launch_state();
+		}
+
+		void apply_match(const dedicated_match_t& match)
+		{
+			apply_lobby_time();
+			reset_party_launch_state();
+
+			set_party_is_private_match(dedicated_party_state.game_lobby, true);
+			set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
 			party::apply_map_settings(match.map_name, match.gametype, match.map_index);
+			prepare_match_settings(match);
 
 			dedicated_party_state.current_match = match;
 			dedicated_party_state.countdown_logged = false;
+			dedicated_party_state.public_gameplay_pending = true;
 
 			for (std::size_t i = 0; i < dedicated_party_state.rotation.size(); ++i)
 			{
@@ -267,6 +330,23 @@ namespace dedicated_party
 			// This is the stock outer action used by the private-lobby Start button.
 			// PartyHost_Frame owns the resulting countdown, preload, and match start.
 			game::Cbuf_AddText(0, "xpartygo\n");
+		}
+
+		std::int64_t party_host_start_match_stub(void* party_data, void* active_client)
+		{
+			if (dedicated_party_state.stage == dedicated_party_stage::waiting_for_countdown
+				&& party_data == dedicated_party_state.game_lobby
+				&& dedicated_party_state.public_gameplay_pending)
+			{
+				dedicated_party_state.public_gameplay_pending = false;
+				set_party_is_private_match(party_data, false);
+				set_party_is_ranked_match(party_data, false);
+				party::apply_map_settings(dedicated_party_state.current_match.map_name,
+					dedicated_party_state.current_match.gametype,
+					dedicated_party_state.current_match.map_index);
+			}
+
+			return game::PartyHost_StartMatch(party_data, active_client);
 		}
 
 		void fail_lifecycle(const char* message)
@@ -301,7 +381,9 @@ namespace dedicated_party
 			case dedicated_party_stage::waiting_for_private_party:
 			{
 				auto* private_party = get_private_party_data();
-				if (is_party_host_ready(private_party) && party_is_owned_by_local_client_zero(private_party))
+				if (game::CL_IsLocalClientInGame(0)
+					&& is_party_host_ready(private_party)
+					&& party_is_owned_by_local_client_zero(private_party))
 				{
 					dedicated_party_state.private_party = private_party;
 					console::info("Dedicated party: private party created.\n");
@@ -314,8 +396,8 @@ namespace dedicated_party
 
 					set_stage(dedicated_party_stage::waiting_for_game_lobby);
 
-					// Use the stock outer command so its wrapper establishes the command-scoped
-					// host-creation state and runs after this party-frame callback returns.
+					// Run the host-creation command after this PartyHost frame returns. The
+					// active-client gate above ensures the virtual-lobby handshake is complete.
 					game::Cbuf_AddText(0, "xstartprivatematch\n");
 				}
 				else if (stage_timed_out(30s))
@@ -354,16 +436,16 @@ namespace dedicated_party
 
 			case dedicated_party_stage::waiting_for_countdown:
 			{
+				const auto host_state = get_party_host_state(dedicated_party_state.game_lobby);
 				if (!dedicated_party_state.countdown_logged
-					&& get_party_host_state(dedicated_party_state.game_lobby) == 32)
+					&& host_state == 32)
 				{
 					dedicated_party_state.countdown_logged = true;
-					set_party_is_private_match(dedicated_party_state.game_lobby, false);
-					set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
 					console::info("Dedicated party: countdown started.\n");
 				}
 
 				if (party::server_running() && game::SV_Loaded()
+					&& !game::virtual_lobby_loaded()
 					&& party::loaded_map_name() == dedicated_party_state.current_match.map_name
 					&& party::loaded_gametype() == dedicated_party_state.current_match.gametype)
 				{
@@ -387,6 +469,7 @@ namespace dedicated_party
 			case dedicated_party_stage::match_running:
 				if (!party::server_running() && !game::SV_Loaded())
 				{
+					prepare_postmatch_lobby();
 					console::info("Dedicated party: match ended.\n");
 					set_stage(dedicated_party_stage::waiting_for_lobby);
 				}
@@ -395,6 +478,7 @@ namespace dedicated_party
 			case dedicated_party_stage::ending_match:
 				if (!party::server_running() && !game::SV_Loaded())
 				{
+					prepare_postmatch_lobby();
 					console::info("Dedicated party: match ended.\n");
 					set_stage(dedicated_party_stage::waiting_for_lobby);
 				}
@@ -407,8 +491,7 @@ namespace dedicated_party
 
 			case dedicated_party_stage::waiting_for_lobby:
 				if (!party::server_running() && !game::SV_Loaded()
-					&& parties_are_intact()
-					&& is_party_prematch_state(dedicated_party_state.game_lobby))
+					&& hosted_game_lobby_is_ready())
 				{
 					console::info("Dedicated party: returned to lobby.\n");
 					apply_match(take_next_match());
@@ -452,8 +535,8 @@ namespace dedicated_party
 		}
 
 		dedicated_party_state = {};
-		if (!make_match("mp_shipment_s2", "undead", dedicated_party_state.rotation[0])
-			|| !make_match("mp_airship", "undead", dedicated_party_state.rotation[1]))
+		if (!make_match("mp_shipment_s2", "dm", dedicated_party_state.rotation[0])
+			|| !make_match("mp_airship", "dm", dedicated_party_state.rotation[1]))
 		{
 			fail_lifecycle("the proof-of-concept rotation is not available locally.");
 			return;
@@ -550,8 +633,8 @@ namespace dedicated_party
 			}
 
 			dedicated_lobby_time = game::Dvar_RegisterInt(
-				"dedicated_lobby_time", 15, 0, 60, game::DVAR_FLAG_NONE);
-			match_end_hook.create(game::PartyHost_EndMatch, match_end_stub);
+				"dedicated_lobby_time", 30, 0, 60, game::DVAR_FLAG_NONE);
+			utils::hook::call(0x48B768_g, party_host_start_match_stub);
 
 			command::add("dedicated_end_match", [](const command::params&)
 			{

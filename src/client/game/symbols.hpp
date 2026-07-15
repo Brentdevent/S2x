@@ -87,7 +87,6 @@ namespace game
 	WEAK symbol<void()> Cmd_EndTokenizedString{ 0x64AA00, 0x465410 };
 	WEAK symbol<void(const char* cmdName, void(__fastcall* function)(), cmd_function_s* allocedCmd)> Cmd_AddCommandInternal{ 0x64A6B0, 0x465150 };
 	WEAK symbol<void(const char* cmdName, void(__fastcall* function)(), cmd_function_s* allocedCmd)> Cmd_AddServerCommandInternal{ 0x64A720, 0x4651C0 };
-
 	WEAK symbol<void(int localClientNum, const char* map, bool mapIsPreloaded)> SV_StartMap{ 0x6D8200 };
 	WEAK symbol<void(const char* reason)> SV_Shutdown{ 0x6DBF50 };
 	WEAK symbol<bool()> SV_Loaded{ 0x6DB810 };
@@ -105,6 +104,7 @@ namespace game
 	WEAK symbol<void(const char* mapName, const char* gameType)> CL_PreloadMap{ 0x83950 };
 	WEAK symbol<void(const char* mapName)> CL_PreloadMap2{ 0x837E0 };
 	WEAK symbol<void(unsigned int localClientNum)> CL_CheckForResend{ 0x6AF20 };
+	WEAK symbol<bool(int localClientNum)> CL_IsLocalClientInGame{ 0x7E110 };
 	WEAK symbol<void(int a, int b)> CL_VirtualLobbyShutdown{ 0x8BB80 };
 	WEAK symbol<bool(int localClientNum, netadr_s* from, msg_t* msg, int time)> CL_DispatchConnectionlessPacket{ 0x6F7E0 };
 	WEAK symbol<void(int localClientNum, void* sessionInfo, netadr_s* to, const char* mapname, const char* gametype)> CL_ConnectAndPreloadMap{ 0x6CCA0 };
@@ -137,6 +137,8 @@ namespace game
 	WEAK symbol<void(void* settings, bool publicMatch)> PartySettings_SetPublicMatch{ 0x197440 };
 	WEAK symbol<void(void* settings, bool rankedMatch)> PartySettings_SetRankedMatch{ 0x197430 };
 	WEAK symbol<void()> PartyHost_NotifyPrivateMatchCreated{ 0x12A2F0 };
+	WEAK symbol<std::int64_t(void* partyData, std::uint8_t state)> PartyHost_SetState{ 0x494930 };
+	WEAK symbol<std::int64_t(void* partyData, void* activeClient)> PartyHost_StartMatch{ 0x491A80 };
 	WEAK symbol<const char*()> PartyHost_EndMatch{ 0x6DFEB0 };
 	WEAK symbol<const char*(void* partyData)> Party_GetMapName{ 0x1970E0 };
 	WEAK symbol<const char*(void* partyData)> Party_GetGameType{ 0x1970A0 };
