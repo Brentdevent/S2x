@@ -23,6 +23,11 @@ namespace dedicated_party
 		constexpr std::ptrdiff_t session_id_offset = 52;
 		constexpr std::ptrdiff_t session_host_address_offset = 60;
 		constexpr std::ptrdiff_t session_key_offset = 97;
+		constexpr std::ptrdiff_t party_settings_offset = 0x250;
+		constexpr std::ptrdiff_t party_active_client_offset = 0x186400;
+		constexpr std::ptrdiff_t party_launch_deadline_offset = 0x186430;
+		constexpr std::ptrdiff_t party_host_state_offset = 0x186490;
+		constexpr std::uint32_t party_host_state_mask = 0xFC;
 
 		struct dedicated_match_t
 		{
@@ -94,7 +99,8 @@ namespace dedicated_party
 				return;
 			}
 
-			auto* settings = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(party_data) + 0x250);
+			auto* settings = reinterpret_cast<void*>(
+				reinterpret_cast<std::uintptr_t>(party_data) + party_settings_offset);
 			game::PartySettings_SetPrivateMatch(settings, private_match);
 			game::PartySettings_SetPublicMatch(settings, !private_match);
 		}
@@ -106,8 +112,15 @@ namespace dedicated_party
 				return;
 			}
 
-			auto* settings = reinterpret_cast<void*>(reinterpret_cast<std::uintptr_t>(party_data) + 0x250);
+			auto* settings = reinterpret_cast<void*>(
+				reinterpret_cast<std::uintptr_t>(party_data) + party_settings_offset);
 			game::PartySettings_SetRankedMatch(settings, ranked);
+		}
+
+		void configure_public_lobby()
+		{
+			set_party_is_private_match(dedicated_party_state.game_lobby, false);
+			set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
 		}
 
 		void set_game_is_private_match(const int local_client_num, const bool private_match)
@@ -138,9 +151,8 @@ namespace dedicated_party
 
 			// PartyHost_Frame only rebuilds its native countdown deadline when this
 			// field is zero. The private postgame state reset leaves the old value intact.
-			constexpr std::ptrdiff_t launch_deadline_offset = 0x186430;
 			*reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::uintptr_t>(
-				dedicated_party_state.game_lobby) + launch_deadline_offset) = 0;
+				dedicated_party_state.game_lobby) + party_launch_deadline_offset) = 0;
 		}
 
 		bool party_is_owned_by_local_client_zero(void* party_data)
@@ -151,19 +163,16 @@ namespace dedicated_party
 			}
 
 			// Party_Frame reads the stored PartyActiveClient from this field for hosts.
-			constexpr std::ptrdiff_t active_client_offset = 1598464;
 			const auto* active_client = reinterpret_cast<const std::uint32_t*>(
-				reinterpret_cast<std::uintptr_t>(party_data) + active_client_offset);
+				reinterpret_cast<std::uintptr_t>(party_data) + party_active_client_offset);
 			return active_client[0] == 0;
 		}
 
 		std::uint32_t get_party_host_state(void* party_data)
 		{
-			constexpr std::ptrdiff_t host_state_offset = 1598608;
-			constexpr std::uint32_t host_state_mask = 0xFC;
-
 			return *reinterpret_cast<const std::uint32_t*>(
-				reinterpret_cast<std::uintptr_t>(party_data) + host_state_offset) & host_state_mask;
+				reinterpret_cast<std::uintptr_t>(party_data) + party_host_state_offset)
+				& party_host_state_mask;
 		}
 
 		void reset_party_launch_state()
@@ -298,8 +307,7 @@ namespace dedicated_party
 		void prepare_postmatch_lobby()
 		{
 			apply_lobby_time();
-			set_party_is_private_match(dedicated_party_state.game_lobby, false);
-			set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
+			configure_public_lobby();
 			reset_party_launch_state();
 		}
 
@@ -324,8 +332,7 @@ namespace dedicated_party
 			apply_lobby_time();
 			reset_party_launch_state();
 
-			set_party_is_private_match(dedicated_party_state.game_lobby, false);
-			set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
+			configure_public_lobby();
 			prepare_match_settings(match);
 
 			dedicated_party_state.current_match = match;
