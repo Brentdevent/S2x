@@ -1,26 +1,90 @@
 
-if not Lobby.GameTypeNamePatched then
-	Lobby.GameTypeNamePatched = true
-	local stockGameTypeName = Lobby.GameTypeName
+local function GetDedicatedPartyGameType()
+	if Lobby.GetDedicatedPartyGameType then
+		return Lobby.GetDedicatedPartyGameType()
+	end
 
-	Lobby.GameTypeName = function( ... )
-		local gametype = Lobby.GetDedicatedPartyGameType and Lobby.GetDedicatedPartyGameType()
-		if gametype and gametype ~= "" then
-			local displayName = Engine.TableLookup(
-				GameTypesTable.File,
-				GameTypesTable.Cols.Ref,
-				gametype,
-				GameTypesTable.Cols.Name
-			)
+	return nil
+end
 
-			if displayName and displayName ~= "" then
-				return displayName
-			end
+local function GetDedicatedPartyGameTypeName()
+	local gametype = GetDedicatedPartyGameType()
+	if gametype and gametype ~= "" then
+		return Engine.TableLookup(
+			GameTypesTable.File,
+			GameTypesTable.Cols.Ref,
+			gametype,
+			GameTypesTable.Cols.Name
+		)
+	end
+
+	return nil
+end
+
+if not Lobby.S2xStockGameTypeName then
+	Lobby.S2xStockGameTypeName = Lobby.GameTypeName
+end
+
+local stockGameTypeName = Lobby.S2xStockGameTypeName
+Lobby.GameTypeName = function( ... )
+	local displayName = GetDedicatedPartyGameTypeName()
+	if displayName and displayName ~= "" then
+		return displayName
+	end
+
+	return stockGameTypeName( ... )
+end
+
+
+if Lobby.GameTypeNameAbbreviated and not Lobby.S2xStockGameTypeNameAbbreviated then
+	Lobby.S2xStockGameTypeNameAbbreviated = Lobby.GameTypeNameAbbreviated
+end
+
+if Lobby.S2xStockGameTypeNameAbbreviated then
+	local stockGameTypeNameAbbreviated = Lobby.S2xStockGameTypeNameAbbreviated
+	Lobby.GameTypeNameAbbreviated = function( ... )
+		local displayName = GetDedicatedPartyGameTypeName()
+		if displayName and displayName ~= "" then
+			return displayName
 		end
 
-		return stockGameTypeName( ... )
+		return stockGameTypeNameAbbreviated( ... )
 	end
 end
+
+
+if GameX and GameX.GetGameMode and not GameX.S2xStockGetGameMode then
+	GameX.S2xStockGetGameMode = GameX.GetGameMode
+end
+
+if GameX and GameX.S2xStockGetGameMode then
+	local stockGetGameMode = GameX.S2xStockGetGameMode
+	GameX.GetGameMode = function( ... )
+		local gametype = GetDedicatedPartyGameType()
+		if gametype and gametype ~= "" then
+			return gametype
+		end
+
+		return stockGetGameMode( ... )
+	end
+end
+
+
+if GetGameModeName and not S2xStockGetGameModeName then
+	S2xStockGetGameModeName = GetGameModeName
+end
+
+if S2xStockGetGameModeName then
+	GetGameModeName = function( ... )
+		local gametype = GetDedicatedPartyGameType()
+		if gametype and gametype ~= "" then
+			return Engine.Localize( Lobby.GameTypeName() )
+		end
+
+		return S2xStockGetGameModeName( ... )
+	end
+end
+
 
 function CanChangeTeam()
 	local f7_local0 = GameX.GetGameMode()

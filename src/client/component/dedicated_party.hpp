@@ -15,6 +15,7 @@ namespace dedicated_party
 
 	void start();
 	bool is_active();
+	std::string get_current_gametype();
 	bool set_next_match(const std::string& map_name, const std::string& gametype, int map_index);
 	bool get_connect_info(connect_info& info);
 }

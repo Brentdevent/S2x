@@ -36,6 +36,8 @@ namespace dedicated_party
 			inactive,
 			waiting_for_private_party,
 			waiting_for_game_lobby,
+			waiting_for_match_settings,
+			waiting_for_intermission,
 			waiting_for_countdown,
 			match_running,
 			ending_match,
@@ -45,14 +47,12 @@ namespace dedicated_party
 		struct dedicated_party_state_t
 		{
 			dedicated_party_stage stage{ dedicated_party_stage::inactive };
-			std::array<dedicated_match_t, 2> rotation{};
+			std::array<dedicated_match_t, 3> rotation{};
 			std::optional<dedicated_match_t> requested_next_match{};
 			dedicated_match_t current_match{};
 			std::size_t rotation_index{};
 			void* private_party{};
 			void* game_lobby{};
-			bool countdown_logged{};
-			bool public_gameplay_pending{};
 			std::chrono::steady_clock::time_point stage_started{};
 		};
 
@@ -122,6 +122,11 @@ namespace dedicated_party
 			auto* local_data = game::Lobby_GetLocalClientData(local_client_num);
 			auto* party_data = game::Lobby_GetPartyDataFromLocalClient(local_data);
 			set_party_is_ranked_match(party_data, ranked);
+		}
+
+		std::uint32_t xpartygo_private_match_stub(void*)
+		{
+			return 1;
 		}
 
 		void reset_party_launch_deadline()
@@ -285,18 +290,33 @@ namespace dedicated_party
 					match.gametype.data());
 			}
 
-			// Stock private-lobby setup resets gameplay dvars after selecting its
-			// MatchRules recipe, then publishes the updated state before xpartygo.
+			// Stock lobby setup restores its gameplay defaults asynchronously. The
+			// selected map and gametype are applied on the following main frame.
 			game::Cbuf_AddText(0, "exec default_xboxlive.cfg\n");
-			game::Cbuf_AddText(0, "xupdatepartystate\n");
 		}
 
 		void prepare_postmatch_lobby()
 		{
 			apply_lobby_time();
-			set_party_is_private_match(dedicated_party_state.game_lobby, true);
+			set_party_is_private_match(dedicated_party_state.game_lobby, false);
 			set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
 			reset_party_launch_state();
+		}
+
+		void apply_dedicated_match_settings(const dedicated_match_t& match)
+		{
+			party::apply_map_settings(match.map_name, match.gametype, match.map_index);
+
+			// PartyHost_StartMatch sends the hosted party fields in its go message, but
+			// initializes g_gametype from the launch state selected by sub_470D30(1).
+			// UI_SetMap may target a different state while the public lobby is active.
+			auto* launch_state = game::Lobby_GetPartyDataFromLocalClient(
+				game::Lobby_GetLocalClientData(1));
+			if (launch_state)
+			{
+				game::Party_SetMapName(launch_state, match.map_name.data());
+				game::Party_SetGameType(launch_state, match.gametype.data());
+			}
 		}
 
 		void apply_match(const dedicated_match_t& match)
@@ -304,14 +324,11 @@ namespace dedicated_party
 			apply_lobby_time();
 			reset_party_launch_state();
 
-			set_party_is_private_match(dedicated_party_state.game_lobby, true);
+			set_party_is_private_match(dedicated_party_state.game_lobby, false);
 			set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
-			party::apply_map_settings(match.map_name, match.gametype, match.map_index);
 			prepare_match_settings(match);
 
 			dedicated_party_state.current_match = match;
-			dedicated_party_state.countdown_logged = false;
-			dedicated_party_state.public_gameplay_pending = true;
 
 			for (std::size_t i = 0; i < dedicated_party_state.rotation.size(); ++i)
 			{
@@ -325,25 +342,49 @@ namespace dedicated_party
 
 			console::info("Dedicated party: selected next map %s %s.\n",
 				match.map_name.data(), match.gametype.data());
-			set_stage(dedicated_party_stage::waiting_for_countdown);
+			set_stage(dedicated_party_stage::waiting_for_match_settings);
+		}
 
-			// This is the stock outer action used by the private-lobby Start button.
-			// PartyHost_Frame owns the resulting countdown, preload, and match start.
-			game::Cbuf_AddText(0, "xpartygo\n");
+		std::int64_t party_host_auto_start_stub(void* party_data, void* active_client)
+		{
+			if (party_data == dedicated_party_state.game_lobby)
+			{
+				if (dedicated_party_state.stage != dedicated_party_stage::waiting_for_countdown)
+				{
+					return 0;
+				}
+
+			}
+
+			return game::PartyHost_AutoStart(party_data, active_client);
 		}
 
 		std::int64_t party_host_start_match_stub(void* party_data, void* active_client)
 		{
-			if (dedicated_party_state.stage == dedicated_party_stage::waiting_for_countdown
-				&& party_data == dedicated_party_state.game_lobby
-				&& dedicated_party_state.public_gameplay_pending)
+			if (party_data == dedicated_party_state.game_lobby
+				&& dedicated_party_state.stage == dedicated_party_stage::waiting_for_countdown)
 			{
-				dedicated_party_state.public_gameplay_pending = false;
-				set_party_is_private_match(party_data, false);
-				set_party_is_ranked_match(party_data, false);
-				party::apply_map_settings(dedicated_party_state.current_match.map_name,
-					dedicated_party_state.current_match.gametype,
-					dedicated_party_state.current_match.map_index);
+				auto* launch_state = game::Lobby_GetPartyDataFromLocalClient(
+					game::Lobby_GetLocalClientData(1));
+				const auto* party_gametype = game::Party_GetGameType(party_data);
+				const auto* launch_gametype = launch_state
+					? game::Party_GetGameType(launch_state)
+					: "";
+				const std::string_view party_gametype_value = party_gametype ? party_gametype : "";
+				const std::string_view launch_gametype_value = launch_gametype ? launch_gametype : "";
+				if (dedicated_party_state.current_match.gametype != party_gametype_value
+					|| dedicated_party_state.current_match.gametype != launch_gametype_value)
+				{
+					console::info(
+						"Dedicated party: correcting launch gametype party='%s' state='%s' to '%s'.\n",
+						party_gametype ? party_gametype : "",
+						launch_gametype ? launch_gametype : "",
+						dedicated_party_state.current_match.gametype.data());
+				}
+
+				// PartyHost_StartMatch reads these fields for the final go message and
+				// server preload. Public auto-start may have selected a playlist entry.
+				apply_dedicated_match_settings(dedicated_party_state.current_match);
 			}
 
 			return game::PartyHost_StartMatch(party_data, active_client);
@@ -389,8 +430,8 @@ namespace dedicated_party
 					console::info("Dedicated party: private party created.\n");
 
 					apply_lobby_time();
-					// xpartygo only starts a locally hosted countdown for private matches. The
-					// gameplay state becomes public again once that start has been committed.
+					// The stock command creates the hosted game-lobby object as a private match.
+					// Once created, apply_match keeps that game lobby public for its lifetime.
 					set_game_is_private_match(0, true);
 					set_game_is_ranked_match(0, false);
 
@@ -434,16 +475,47 @@ namespace dedicated_party
 				break;
 			}
 
+			case dedicated_party_stage::waiting_for_match_settings:
+			{
+				// default_xboxlive.cfg executes in the stock main frame before this
+				// pipeline. Apply and publish the requested mode afterward so public
+				// team assignment and remote lobby state use the same gametype.
+				apply_dedicated_match_settings(dedicated_party_state.current_match);
+				game::Cbuf_AddText(0, "xupdatepartystate\n");
+				console::info("Dedicated party: countdown started.\n");
+				set_stage(dedicated_party_stage::waiting_for_intermission);
+				break;
+			}
+
+			case dedicated_party_stage::waiting_for_intermission:
+			{
+				if (stage_timed_out(std::chrono::seconds{
+					dedicated_lobby_time->current.integer }))
+				{
+					// Stock public matches prepare their teams before the final start request.
+					// The dedicated xpartygo shim otherwise takes the private-match shortcut
+					// and leaves Raid party members without an assigned team.
+					if (get_party_host_state(dedicated_party_state.game_lobby) == 4)
+					{
+						game::PartyHost_PreMatch(dedicated_party_state.game_lobby, 0);
+					}
+
+					if (get_party_host_state(dedicated_party_state.game_lobby) != 32)
+					{
+						break;
+					}
+
+					set_stage(dedicated_party_stage::waiting_for_countdown);
+
+					// This is the stock outer action used by the lobby Start button. The
+					// dedicated command shims only relax its private-match eligibility checks.
+					game::Cbuf_AddText(0, "xpartygo\n");
+				}
+				break;
+			}
+
 			case dedicated_party_stage::waiting_for_countdown:
 			{
-				const auto host_state = get_party_host_state(dedicated_party_state.game_lobby);
-				if (!dedicated_party_state.countdown_logged
-					&& host_state == 32)
-				{
-					dedicated_party_state.countdown_logged = true;
-					console::info("Dedicated party: countdown started.\n");
-				}
-
 				if (party::server_running() && game::SV_Loaded()
 					&& !game::virtual_lobby_loaded()
 					&& party::loaded_map_name() == dedicated_party_state.current_match.map_name
@@ -457,8 +529,7 @@ namespace dedicated_party
 					console::info("Dedicated party: match started.\n");
 					set_stage(dedicated_party_stage::match_running);
 				}
-				else if (stage_timed_out(
-					std::chrono::seconds{ dedicated_lobby_time->current.integer + 60 }))
+				else if (stage_timed_out(60s))
 				{
 					fail_lifecycle("native match start timed out.");
 					return scheduler::cond_end;
@@ -535,8 +606,9 @@ namespace dedicated_party
 		}
 
 		dedicated_party_state = {};
-		if (!make_match("mp_shipment_s2", "dm", dedicated_party_state.rotation[0])
-			|| !make_match("mp_airship", "dm", dedicated_party_state.rotation[1]))
+		if (!make_match("mp_shipment_s2", "dom", dedicated_party_state.rotation[0])
+			|| !make_match("mp_raid_d_day", "raid", dedicated_party_state.rotation[1])
+			|| !make_match("mp_airship", "dm", dedicated_party_state.rotation[2]))
 		{
 			fail_lifecycle("the proof-of-concept rotation is not available locally.");
 			return;
@@ -557,6 +629,16 @@ namespace dedicated_party
 	bool is_active()
 	{
 		return dedicated_party_state.stage != dedicated_party_stage::inactive;
+	}
+
+	std::string get_current_gametype()
+	{
+		if (!is_active())
+		{
+			return {};
+		}
+
+		return dedicated_party_state.current_match.gametype;
 	}
 
 	bool set_next_match(const std::string& map_name, const std::string& gametype, const int map_index)
@@ -602,9 +684,8 @@ namespace dedicated_party
 		game::Session_IdToString(
 			*reinterpret_cast<const std::uint64_t*>(session + session_id_offset), session_id.data());
 
-		const auto* map_name = game::Party_GetMapName(game_lobby);
-		const auto* gametype = game::Party_GetGameType(game_lobby);
-		if (!map_name || !gametype)
+		if (dedicated_party_state.current_match.map_name.empty()
+			|| dedicated_party_state.current_match.gametype.empty())
 		{
 			return false;
 		}
@@ -612,8 +693,8 @@ namespace dedicated_party
 		info.host_address = host_address.data();
 		info.key = key.data();
 		info.session_id = session_id.data();
-		info.map_name = map_name;
-		info.gametype = gametype;
+		info.map_name = dedicated_party_state.current_match.map_name;
+		info.gametype = dedicated_party_state.current_match.gametype;
 
 		return is_session_hex_string(info.host_address, 80)
 			&& is_session_hex_string(info.key, 32)
@@ -633,8 +714,24 @@ namespace dedicated_party
 			}
 
 			dedicated_lobby_time = game::Dvar_RegisterInt(
-				"dedicated_lobby_time", 30, 0, 60, game::DVAR_FLAG_NONE);
-			utils::hook::call(0x48B768_g, party_host_start_match_stub);
+				"dedicated_lobby_time", 60, 0, 120, game::DVAR_FLAG_NONE);
+
+			// CL_Live_PartyGo checks the private-match flag three times: before leaving
+			// the virtual lobby, as the fallback when the normal local host check fails,
+			// and before requesting the match. Only this command sees the dedicated
+			// public game lobby as private; the stored party state remains public.
+			utils::hook::call(0x7F18C_g, xpartygo_private_match_stub);
+			utils::hook::call(0x7F1B7_g, xpartygo_private_match_stub);
+			utils::hook::call(0x7F1C3_g, xpartygo_private_match_stub);
+
+			// PartyHost_Frame has separate public/private auto-start sites. Both stay
+			// gated until our dedicated intermission has elapsed.
+			utils::hook::call(0x48B605_g, party_host_auto_start_stub);
+			utils::hook::call(0x48B768_g, party_host_auto_start_stub);
+
+			// This is the final PartyHost_StartMatch call after public playlist setup.
+			// Reapply the rotation settings before it broadcasts the go message.
+			utils::hook::call(0x48B214_g, party_host_start_match_stub);
 
 			command::add("dedicated_end_match", [](const command::params&)
 			{

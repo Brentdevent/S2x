@@ -138,7 +138,11 @@ namespace game
 	WEAK symbol<void(void* settings, bool rankedMatch)> PartySettings_SetRankedMatch{ 0x197430 };
 	WEAK symbol<void()> PartyHost_NotifyPrivateMatchCreated{ 0x12A2F0 };
 	WEAK symbol<std::int64_t(void* partyData, std::uint8_t state)> PartyHost_SetState{ 0x494930 };
-	WEAK symbol<std::int64_t(void* partyData, void* activeClient)> PartyHost_StartMatch{ 0x491A80 };
+	WEAK symbol<void(void* partyData, unsigned int localControllerIndex)> PartyHost_PreMatch{ 0x48D8C0 };
+	WEAK symbol<std::int64_t(void* partyData, void* activeClient)> PartyHost_StartMatch{ 0x4917B0 };
+	WEAK symbol<std::int64_t(void* partyData, void* activeClient)> PartyHost_AutoStart{ 0x491A80 };
+	WEAK symbol<std::int64_t(void* partyData, void* commandData, netadr_s* from, msg_t* msg)> PartyClient_HandleGo{ 0x4728F0 };
+	WEAK symbol<void(void* partyData, std::uint32_t* activeClient, netadr_s* from)> PartyClient_ProcessPartyState{ 0x4777E0 };
 	WEAK symbol<const char*()> PartyHost_EndMatch{ 0x6DFEB0 };
 	WEAK symbol<const char*(void* partyData)> Party_GetMapName{ 0x1970E0 };
 	WEAK symbol<const char*(void* partyData)> Party_GetGameType{ 0x1970A0 };
