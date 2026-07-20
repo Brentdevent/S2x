@@ -14,7 +14,9 @@
 
 #include "ui_scripting.hpp"
 
+#include <utils/flags.hpp>
 #include <utils/hook.hpp>
+#include <utils/string.hpp>
 
 namespace dedicated_party
 {
@@ -28,13 +30,6 @@ namespace dedicated_party
 		constexpr std::ptrdiff_t party_launch_deadline_offset = 0x186430;
 		constexpr std::ptrdiff_t party_host_state_offset = 0x186490;
 		constexpr std::uint32_t party_host_state_mask = 0xFC;
-
-		struct dedicated_match_t
-		{
-			std::string map_name{};
-			std::string gametype{};
-			int map_index{};
-		};
 
 		enum class dedicated_party_stage
 		{
@@ -52,10 +47,11 @@ namespace dedicated_party
 		struct dedicated_party_state_t
 		{
 			dedicated_party_stage stage{ dedicated_party_stage::inactive };
-			std::array<dedicated_match_t, 3> rotation{};
+			std::vector<dedicated_match_t> rotation{};
 			std::optional<dedicated_match_t> requested_next_match{};
+			std::optional<dedicated_match_t> requested_rotation_match{};
 			dedicated_match_t current_match{};
-			std::size_t rotation_index{};
+			std::size_t next_rotation_index{};
 			void* private_party{};
 			void* game_lobby{};
 			std::chrono::steady_clock::time_point stage_started{};
@@ -63,6 +59,8 @@ namespace dedicated_party
 
 		dedicated_party_state_t dedicated_party_state{};
 		game::dvar_t* dedicated_lobby_time{};
+		game::dvar_t* sv_maprotation{};
+		bool map_rotate_requested{};
 
 		void set_stage(const dedicated_party_stage stage)
 		{
@@ -246,6 +244,118 @@ namespace dedicated_party
 			return true;
 		}
 
+		bool parse_map_rotation(std::vector<dedicated_match_t>& rotation)
+		{
+			rotation.clear();
+			if (!sv_maprotation || !sv_maprotation->current.string
+				|| !sv_maprotation->current.string[0])
+			{
+				console::error("Dedicated map rotation: sv_maprotation is empty.\n");
+				return false;
+			}
+
+			std::istringstream stream{ sv_maprotation->current.string };
+			std::string token{};
+			auto gametype = utils::string::to_lower(party::loaded_gametype());
+			bool gametype_needs_map = false;
+
+			while (stream >> token)
+			{
+				const auto keyword = utils::string::to_lower(token);
+				if (keyword == "gametype")
+				{
+					if (gametype_needs_map)
+					{
+						console::error(
+							"Dedicated map rotation: gametype '%s' is not followed by a map.\n",
+							gametype.data());
+					}
+
+					if (!(stream >> gametype))
+					{
+						console::error(
+							"Dedicated map rotation: 'gametype' is missing its value.\n");
+						break;
+					}
+
+					gametype = utils::string::to_lower(gametype);
+					gametype_needs_map = true;
+					continue;
+				}
+
+				if (keyword == "map")
+				{
+					std::string map_name{};
+					if (!(stream >> map_name))
+					{
+						console::error("Dedicated map rotation: 'map' is missing its value.\n");
+						break;
+					}
+
+					map_name = utils::string::to_lower(map_name);
+					gametype_needs_map = false;
+
+					dedicated_match_t match{};
+					if (!make_match(map_name, gametype, match))
+					{
+						console::error(
+							"Dedicated map rotation: skipping invalid entry '%s %s'.\n",
+							map_name.data(), gametype.data());
+						continue;
+					}
+
+					rotation.emplace_back(std::move(match));
+					continue;
+				}
+
+				console::error(
+					"Dedicated map rotation: unexpected token '%s'; expected 'gametype' or 'map'.\n",
+					token.data());
+			}
+
+			if (gametype_needs_map)
+			{
+				console::error(
+					"Dedicated map rotation: gametype '%s' is not followed by a map.\n",
+					gametype.data());
+			}
+
+			if (rotation.empty())
+			{
+				console::error("Dedicated map rotation: no valid matches were found.\n");
+				return false;
+			}
+
+			return true;
+		}
+
+		void handle_map_rotate()
+		{
+			if (!sv_maprotation)
+			{
+				map_rotate_requested = true;
+				return;
+			}
+
+			if (!is_active())
+			{
+				std::vector<dedicated_match_t> rotation{};
+				if (!parse_map_rotation(rotation) || !set_rotation(std::move(rotation)))
+				{
+					return;
+				}
+
+				map_rotate_requested = false;
+				start();
+				return;
+			}
+
+			if (!rotate())
+			{
+				console::error("Dedicated map rotation is not available.\n");
+			}
+		}
+
 		void apply_lobby_time()
 		{
 			if (!dedicated_lobby_time)
@@ -337,16 +447,6 @@ namespace dedicated_party
 
 			dedicated_party_state.current_match = match;
 
-			for (std::size_t i = 0; i < dedicated_party_state.rotation.size(); ++i)
-			{
-				if (dedicated_party_state.rotation[i].map_name == match.map_name
-					&& dedicated_party_state.rotation[i].gametype == match.gametype)
-				{
-					dedicated_party_state.rotation_index = i;
-					break;
-				}
-			}
-
 			console::info("Dedicated party: selected next map %s %s.\n",
 				match.map_name.data(), match.gametype.data());
 			set_stage(dedicated_party_stage::waiting_for_match_settings);
@@ -408,6 +508,14 @@ namespace dedicated_party
 			return std::chrono::steady_clock::now() - dedicated_party_state.stage_started >= timeout;
 		}
 
+		dedicated_match_t take_rotation_match()
+		{
+			const auto index = dedicated_party_state.next_rotation_index;
+			dedicated_party_state.next_rotation_index =
+				(index + 1) % dedicated_party_state.rotation.size();
+			return dedicated_party_state.rotation[index];
+		}
+
 		dedicated_match_t take_next_match()
 		{
 			if (dedicated_party_state.requested_next_match.has_value())
@@ -417,9 +525,14 @@ namespace dedicated_party
 				return match;
 			}
 
-			const auto next_index = (dedicated_party_state.rotation_index + 1)
-				% dedicated_party_state.rotation.size();
-			return dedicated_party_state.rotation[next_index];
+			if (dedicated_party_state.requested_rotation_match.has_value())
+			{
+				auto match = std::move(*dedicated_party_state.requested_rotation_match);
+				dedicated_party_state.requested_rotation_match.reset();
+				return match;
+			}
+
+			return take_rotation_match();
 		}
 
 		bool run_lifecycle()
@@ -472,7 +585,7 @@ namespace dedicated_party
 					// the hosted game lobby has completed creation.
 					game::PartyHost_NotifyPrivateMatchCreated();
 					console::info("Dedicated party: game lobby created.\n");
-					apply_match(dedicated_party_state.rotation[0]);
+					apply_match(take_next_match());
 				}
 				else if (stage_timed_out(30s))
 				{
@@ -607,19 +720,31 @@ namespace dedicated_party
 
 	void start()
 	{
-		if (!game::environment::is_dedi() || is_active())
+		if (!game::environment::is_dedi() || is_active()
+			|| !game::virtual_lobby_loaded())
 		{
 			return;
 		}
 
-		dedicated_party_state = {};
-		if (!make_match("mp_shipment_s2", "dom", dedicated_party_state.rotation[0])
-			|| !make_match("mp_raid_d_day", "raid", dedicated_party_state.rotation[1])
-			|| !make_match("mp_airship", "dm", dedicated_party_state.rotation[2]))
+		if (dedicated_party_state.rotation.empty() && map_rotate_requested)
 		{
-			fail_lifecycle("the proof-of-concept rotation is not available locally.");
+			std::vector<dedicated_match_t> rotation{};
+			if (!parse_map_rotation(rotation) || !set_rotation(std::move(rotation)))
+			{
+				return;
+			}
+
+			map_rotate_requested = false;
+		}
+
+		if (dedicated_party_state.rotation.empty())
+		{
 			return;
 		}
+
+		auto rotation = std::move(dedicated_party_state.rotation);
+		dedicated_party_state = {};
+		dedicated_party_state.rotation = std::move(rotation);
 
 		apply_lobby_time();
 		set_stage(dedicated_party_stage::waiting_for_private_party);
@@ -646,6 +771,51 @@ namespace dedicated_party
 		}
 
 		return dedicated_party_state.current_match.gametype;
+	}
+
+	bool set_rotation(std::vector<dedicated_match_t> rotation)
+	{
+		if (is_active() || rotation.empty())
+		{
+			return false;
+		}
+
+		dedicated_party_state.rotation = std::move(rotation);
+		dedicated_party_state.next_rotation_index = 0;
+		dedicated_party_state.requested_next_match.reset();
+		dedicated_party_state.requested_rotation_match.reset();
+
+		console::info("Dedicated map rotation:\n");
+		for (std::size_t i = 0; i < dedicated_party_state.rotation.size(); ++i)
+		{
+			const auto& match = dedicated_party_state.rotation[i];
+			console::info("%zu. %s %s\n", i + 1,
+				match.map_name.data(), match.gametype.data());
+		}
+
+		return true;
+	}
+
+	bool rotate()
+	{
+		if (!is_active() || dedicated_party_state.rotation.empty())
+		{
+			return false;
+		}
+
+		dedicated_party_state.requested_rotation_match = take_rotation_match();
+		if (!party::server_running()
+			&& (dedicated_party_state.stage == dedicated_party_stage::waiting_for_match_settings
+				|| dedicated_party_state.stage == dedicated_party_stage::waiting_for_intermission))
+		{
+			apply_match(take_next_match());
+			return true;
+		}
+
+		const auto& match = *dedicated_party_state.requested_rotation_match;
+		console::info("Next dedicated rotation match set to %s %s.\n",
+			match.map_name.data(), match.gametype.data());
+		return true;
 	}
 
 	bool set_next_match(const std::string& map_name, const std::string& gametype, const int map_index)
@@ -722,6 +892,13 @@ namespace dedicated_party
 
 			dedicated_lobby_time = game::Dvar_RegisterInt(
 				"dedicated_lobby_time", 60, 0, 120, game::DVAR_FLAG_NONE);
+			map_rotate_requested = utils::flags::has_flag("+map_rotate");
+
+			scheduler::once([]
+			{
+				sv_maprotation = game::Dvar_RegisterString(
+					"sv_maprotation", "", game::DVAR_FLAG_NONE);
+			}, scheduler::pipeline::main);
 
 			// CL_Live_PartyGo checks the private-match flag three times: before leaving
 			// the virtual lobby, as the fallback when the normal local host check fails,
@@ -744,6 +921,8 @@ namespace dedicated_party
 			{
 				end_match();
 			});
+
+			command::add("map_rotate", handle_map_rotate);
 		}
 	};
 }

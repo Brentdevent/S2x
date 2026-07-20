@@ -9,7 +9,9 @@
 
 #include "component/gsc/script_extension.hpp"
 
+#include <utils/flags.hpp>
 #include <utils/hook.hpp>
+#include <utils/string.hpp>
 
 namespace dedicated
 {
@@ -51,6 +53,16 @@ namespace dedicated
 			game::Scr_AddInt(0);
 		}
 
+		void queue_startup_config(const int local_client)
+		{
+			const auto config = utils::flags::get_plus_value("exec");
+			if (config)
+			{
+				console::info("Queueing dedicated startup config '%s'.\n", config->data());
+				game::Cbuf_AddText(local_client, utils::string::va("exec %s\n", config->data()));
+			}
+		}
+
 		void perform_online_game_init()
 		{
 			constexpr auto local_client = 0;
@@ -64,6 +76,7 @@ namespace dedicated
 			game::Cbuf_AddText(local_client, "setgameprivatematch 0\n");
 
 			game::Cbuf_AddText(local_client, "exec default_xboxlive.cfg\n");
+			queue_startup_config(local_client);
 			game::Cbuf_AddText(local_client, "virtuallobby\n");
 		}
 

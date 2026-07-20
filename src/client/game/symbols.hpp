@@ -87,6 +87,11 @@ namespace game
 	WEAK symbol<void()> Cmd_EndTokenizedString{ 0x64AA00, 0x465410 };
 	WEAK symbol<void(const char* cmdName, void(__fastcall* function)(), cmd_function_s* allocedCmd)> Cmd_AddCommandInternal{ 0x64A6B0, 0x465150 };
 	WEAK symbol<void(const char* cmdName, void(__fastcall* function)(), cmd_function_s* allocedCmd)> Cmd_AddServerCommandInternal{ 0x64A720, 0x4651C0 };
+	WEAK symbol<char*(const char* filename, char* buffer, int size)> DB_ReadRawFile{ 0xA7330, 0x2AED30 };
+	WEAK symbol<std::int64_t(const char* filename, char** buffer)> FS_ReadFile{ 0x7583C0, 0x4C0E60 };
+	WEAK symbol<void(void* buffer)> FS_FreeFile{ 0x7583B0, 0x4C0E50 };
+	WEAK symbol<void(const char* gameName)> FS_Startup{ 0x757330, 0x4BFDF0 };
+	WEAK symbol<void(const char* path, const char* dir)> FS_AddLocalizedGameDirectory{ 0x755850, 0x4BE590 };
 	WEAK symbol<void(int localClientNum, const char* map, bool mapIsPreloaded)> SV_StartMap{ 0x6D8200 };
 	WEAK symbol<void(const char* reason)> SV_Shutdown{ 0x6DBF50 };
 	WEAK symbol<bool()> SV_Loaded{ 0x6DB810 };

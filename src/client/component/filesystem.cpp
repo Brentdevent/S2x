@@ -6,13 +6,78 @@
 
 #include "game/game.hpp"
 
+#include <utils/hook.hpp>
 #include <utils/io.hpp>
+#include <utils/nt.hpp>
 
 namespace filesystem
 {
 	namespace
 	{
+		utils::hook::detour fs_startup_hook;
+
 		bool initialized = false;
+		bool custom_path_registered = false;
+
+		void register_custom_path()
+		{
+			if (custom_path_registered)
+			{
+				return;
+			}
+
+			custom_path_registered = true;
+
+			const auto game_dir = utils::nt::library{}.get_folder().string();
+			const auto appdata_dir = game::get_appdata_path().string();
+
+			game::FS_AddLocalizedGameDirectory(game_dir.data(), "s2x");
+			game::FS_AddLocalizedGameDirectory(appdata_dir.data(), "data");
+		}
+
+		void fs_startup_stub(const char* game_name)
+		{
+			custom_path_registered = false;
+			fs_startup_hook.invoke<void>(game_name);
+		}
+
+		void register_custom_path_stub(const char* path, const char* dir)
+		{
+			register_custom_path();
+			game::FS_AddLocalizedGameDirectory(path, dir);
+		}
+
+		char* read_raw_file_for_exec_stub(const char* filename, char* buffer, const int size)
+		{
+			if (!filename || !buffer || size <= 0)
+			{
+				return nullptr;
+			}
+
+			if (auto* result = game::DB_ReadRawFile(filename, buffer, size))
+			{
+				return result;
+			}
+
+			char* loose_buffer{};
+			const auto length = game::FS_ReadFile(filename, &loose_buffer);
+			if (length < 0 || !loose_buffer)
+			{
+				return nullptr;
+			}
+
+			if (length >= size)
+			{
+				game::FS_FreeFile(loose_buffer);
+				console::error("Config file '%s' exceeds the exec buffer size.\n", filename);
+				return nullptr;
+			}
+
+			std::memcpy(buffer, loose_buffer, static_cast<std::size_t>(length));
+			buffer[length] = '\0';
+			game::FS_FreeFile(loose_buffer);
+			return buffer;
+		}
 
 		std::deque<std::filesystem::path>& get_search_paths_internal()
 		{
@@ -44,7 +109,9 @@ namespace filesystem
 
 			initialized = true;
 
-			const auto base = std::filesystem::current_path();
+			const auto base = std::filesystem::path{
+				utils::nt::library{}.get_folder()
+			};
 
 			register_path(base / "main");
 			register_path(base / "raw");
@@ -75,6 +142,11 @@ namespace filesystem
 
 	bool read_file(const std::string& path, std::string* data, std::string* real_path)
 	{
+		if (!data)
+		{
+			return false;
+		}
+
 		check_for_startup();
 
 		for (const auto& search_path : get_search_paths_internal())
@@ -190,6 +262,21 @@ namespace filesystem
 		void post_unpack() override
 		{
 			startup();
+
+			// Register the custom directories in the engine search path on every FS startup.
+			fs_startup_hook.create(game::FS_Startup, fs_startup_stub);
+			utils::hook::call(game::select(0x757FCD, 0x4C0A8D), register_custom_path_stub);
+			utils::hook::call(game::select(0x757FE0, 0x4C0AA0), register_custom_path_stub);
+			utils::hook::call(game::select(0x75803E, 0x4C0AFE), register_custom_path_stub);
+			utils::hook::call(game::select(0x75807D, 0x4C0B3D), register_custom_path_stub);
+			utils::hook::call(game::select(0x7580DB, 0x4C0B9B), register_custom_path_stub);
+			utils::hook::call(game::select(0x75811A, 0x4C0BDA), register_custom_path_stub);
+
+			// Initial FS startup has completed before component post-unpack callbacks run.
+			register_custom_path();
+
+			// Generic exec reads packaged RawFile assets first; allow loose configs as a fallback.
+			utils::hook::call(game::select(0x64AF66, 0x465864), read_raw_file_for_exec_stub);
 		}
 	};
 }
