@@ -26,10 +26,14 @@ namespace dedicated_party
 		constexpr std::ptrdiff_t session_host_address_offset = 60;
 		constexpr std::ptrdiff_t session_key_offset = 97;
 		constexpr std::ptrdiff_t party_settings_offset = 0x250;
+		constexpr std::ptrdiff_t party_max_members_offset = 0x254;
+		constexpr std::ptrdiff_t party_members_offset = 0x3F8;
+		constexpr std::ptrdiff_t party_member_stride = 0x81C0;
 		constexpr std::ptrdiff_t party_active_client_offset = 0x186400;
 		constexpr std::ptrdiff_t party_launch_deadline_offset = 0x186430;
 		constexpr std::ptrdiff_t party_host_state_offset = 0x186490;
 		constexpr std::uint32_t party_host_state_mask = 0xFC;
+		constexpr auto party_member_limit = 48;
 
 		enum class dedicated_party_stage
 		{
@@ -204,6 +208,41 @@ namespace dedicated_party
 				{
 					return std::isxdigit(character) != 0;
 				});
+		}
+
+		int get_remote_party_member_count(const void* party_data)
+		{
+			if (!party_data)
+			{
+				return 0;
+			}
+
+			auto count = 0;
+			const auto base = reinterpret_cast<std::uintptr_t>(party_data);
+			for (auto index = 0; index < party_member_limit; ++index)
+			{
+				const auto state = *reinterpret_cast<const std::uint8_t*>(
+					base + party_members_offset + party_member_stride * index);
+				if ((state & 0xFC) != 0 || state == 1)
+				{
+					++count;
+				}
+			}
+
+			// The dedicated frontend owner is a real party member but not a player.
+			return std::clamp(count - 1, 0, party_member_limit);
+		}
+
+		int get_party_max_members(const void* party_data)
+		{
+			if (!party_data)
+			{
+				return 0;
+			}
+
+			const auto value = *reinterpret_cast<const int*>(
+				reinterpret_cast<std::uintptr_t>(party_data) + party_max_members_offset);
+			return std::clamp(value, 0, party_member_limit);
 		}
 
 		bool has_local_gameplay_client()
@@ -872,6 +911,9 @@ namespace dedicated_party
 		info.session_id = session_id.data();
 		info.map_name = dedicated_party_state.current_match.map_name;
 		info.gametype = dedicated_party_state.current_match.gametype;
+		info.member_count = get_remote_party_member_count(game_lobby);
+		info.max_members = get_party_max_members(game_lobby);
+		info.match_running = party::server_running();
 
 		return is_session_hex_string(info.host_address, 80)
 			&& is_session_hex_string(info.key, 32)

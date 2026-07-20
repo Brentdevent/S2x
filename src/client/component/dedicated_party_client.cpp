@@ -18,6 +18,8 @@
 #include <utils/info_string.hpp>
 #include <utils/string.hpp>
 
+#include <charconv>
+
 namespace dedicated_party_client
 {
 	namespace
@@ -49,6 +51,19 @@ namespace dedicated_party_client
 		hosted_party_join_state_t hosted_party_join_state{};
 		hosted_dedicated_party_state_t hosted_dedicated_party_state{};
 		bool hosted_dedicated_go_in_progress{};
+
+		bool parse_protocol(const std::string& value, int& protocol)
+		{
+			if (value.empty())
+			{
+				return false;
+			}
+
+			const auto [end, error] = std::from_chars(
+				value.data(), value.data() + value.size(), protocol);
+			return error == std::errc{} && end == value.data() + value.size()
+				&& protocol >= 0;
+		}
 
 		bool is_session_hex_string(const std::string& value, const std::size_t expected_size)
 		{
@@ -371,10 +386,10 @@ namespace dedicated_party_client
 			return false;
 		}
 
-		const auto protocol = std::atoi(info.get("protocol").data());
-		if (protocol != PROTOCOL)
+		int protocol{};
+		if (!parse_protocol(info.get("protocol"), protocol) || protocol != PROTOCOL)
 		{
-			console::error("Connection failed: invalid protocol %i.\n", protocol);
+			console::error("Connection failed: invalid protocol.\n");
 			return true;
 		}
 

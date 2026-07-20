@@ -11,6 +11,8 @@
 #include "game/demonware/servers/umbrella_server.hpp"
 #include "game/demonware/server_registry.hpp"
 
+#include "master_server.hpp"
+
 #define TCP_BLOCKING true
 #define UDP_BLOCKING false
 
@@ -307,10 +309,30 @@ namespace demonware
 			int recvfrom_stub(const SOCKET s, char* buf, const int len, const int flags, struct sockaddr* from,
 			                  int* fromlen)
 			{
+				const auto receive_packet = [&]()
+				{
+					const auto result = recvfrom(s, buf, len, flags, from, fromlen);
+					if (result <= 0 || !from || !fromlen || *fromlen < sizeof(sockaddr_in)
+						|| from->sa_family != AF_INET)
+					{
+						return result;
+					}
+
+					const auto* address = reinterpret_cast<const sockaddr_in*>(from);
+					if (s == *game::ip_socket && master_server::handle_incoming_packet(
+						buf, result, address->sin_addr.s_addr, address->sin_port))
+					{
+						WSASetLastError(WSAEWOULDBLOCK);
+						return SOCKET_ERROR;
+					}
+
+					return result;
+				};
+
 				// Not supported yet
 				if (is_socket_blocking(s, UDP_BLOCKING))
 				{
-					return recvfrom(s, buf, len, flags, from, fromlen);
+					return receive_packet();
 				}
 
 				size_t result = 0;
@@ -328,7 +350,7 @@ namespace demonware
 					return static_cast<int>(result);
 				}
 
-				return recvfrom(s, buf, len, flags, from, fromlen);
+				return receive_packet();
 			}
 
 			int select_stub(const int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptfds,

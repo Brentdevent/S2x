@@ -6,6 +6,7 @@
 #include "game/game.hpp"
 
 #include "console/console.hpp"
+#include "master_server.hpp"
 #include "party.hpp"
 
 #include <utils/hook.hpp>
@@ -126,18 +127,9 @@ namespace network
 				return false;
 			}
 
-			const auto command_string = utils::string::to_lower(command);
-			const auto& callbacks = get_callbacks();
-
-			const auto handler = callbacks.find(command_string);
-			if (handler == callbacks.end())
-			{
-				return false;
-			}
-
 			// OOB packet format:
 			// FF FF FF FF <command> <separator> <payload>
-			const auto payload_offset = command_string.size() + 5;
+			const auto payload_offset = std::strlen(command) + 5;
 
 			if (message->cursize < 0 || static_cast<std::size_t>(message->cursize) < payload_offset)
 			{
@@ -149,29 +141,7 @@ namespace network
 				static_cast<std::size_t>(message->cursize) - payload_offset
 			);
 
-			for (const auto& callback : handler->second)
-			{
-				try
-				{
-					console::debug(
-						"[network] handling OOB command \"%s\" from %s\n",
-						command_string.data(),
-						net_adr_to_string(*address)
-					);
-
-					callback(*address, payload);
-				}
-				catch (const std::exception& e)
-				{
-					console::error("[network] command \"%s\" failed: %s\n", command_string.data(), e.what());
-				}
-				catch (...)
-				{
-					console::error("[network] command \"%s\" failed with unknown exception\n", command_string.data());
-				}
-			}
-
-			return true;
+			return dispatch(*address, command, payload);
 		}
 
 		bool cl_dispatch_connectionless_packet_stub(
@@ -251,15 +221,23 @@ namespace network
 				return 0;
 			}
 
-			std::vector<char> buffer(payload_size + packet_trailer_size);
-	
-			const auto checksum = game::Sys_ChecksumCopy(buffer.data(), data, static_cast<int>(payload_size));
-			buffer[payload_size + 0] = static_cast<char>((checksum >> 8) & 0xFF);
-			buffer[payload_size + 1] = static_cast<char>(checksum & 0xFF);
-			buffer[payload_size + 2] = static_cast<char>(
-				(static_cast<int>(sock) & 0xF) |
-				((static_cast<int>(to->localNetID) & 0xF) << 4)
-			);
+			const auto use_standard_master_protocol = master_server::is_master_address(*to);
+			std::vector<char> buffer(payload_size + (use_standard_master_protocol ? 0 : packet_trailer_size));
+
+			if (use_standard_master_protocol)
+			{
+				std::memcpy(buffer.data(), data, payload_size);
+			}
+			else
+			{
+				const auto checksum = game::Sys_ChecksumCopy(buffer.data(), data, static_cast<int>(payload_size));
+				buffer[payload_size + 0] = static_cast<char>((checksum >> 8) & 0xFF);
+				buffer[payload_size + 1] = static_cast<char>(checksum & 0xFF);
+				buffer[payload_size + 2] = static_cast<char>(
+					(static_cast<int>(sock) & 0xF) |
+					((static_cast<int>(to->localNetID) & 0xF) << 4)
+				);
+			}
 
 			sockaddr_in address{};
 			address.sin_family = AF_INET;
@@ -302,7 +280,7 @@ namespace network
 					return;
 				}
 
-				console::info("%s", message.data());
+				console::info("%.*s", static_cast<int>(message.size()), message.data());
 			});
 		}
 	}
@@ -310,6 +288,41 @@ namespace network
 	void on(const std::string& command, const callback& callback)
 	{
 		get_callbacks()[utils::string::to_lower(command)].push_back(callback);
+	}
+
+	bool dispatch(const game::netadr_s& address, const std::string_view& command, const std::string_view& data)
+	{
+		const auto command_string = utils::string::to_lower(std::string{command});
+		const auto& callbacks = get_callbacks();
+		const auto handler = callbacks.find(command_string);
+		if (handler == callbacks.end())
+		{
+			return false;
+		}
+
+		for (const auto& callback : handler->second)
+		{
+			try
+			{
+				console::debug(
+					"[network] handling OOB command \"%s\" from %s\n",
+					command_string.data(),
+					net_adr_to_string(address)
+				);
+
+				callback(address, data);
+			}
+			catch (const std::exception& e)
+			{
+				console::error("[network] command \"%s\" failed: %s\n", command_string.data(), e.what());
+			}
+			catch (...)
+			{
+				console::error("[network] command \"%s\" failed with unknown exception\n", command_string.data());
+			}
+		}
+
+		return true;
 	}
 
 	void send(const game::netadr_s& address, const std::string& command, const std::string& data, const char separator)

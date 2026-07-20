@@ -19,6 +19,9 @@ namespace dedicated_party
 		std::string session_id{};
 		std::string map_name{};
 		std::string gametype{};
+		int member_count{};
+		int max_members{};
+		bool match_running{};
 	};
 
 	void start();

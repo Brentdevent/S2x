@@ -17,6 +17,8 @@
 #include <utils/cryptography.hpp>
 #include <utils/info_string.hpp>
 
+#include <charconv>
+
 namespace party
 {
 	int get_connected_client_count();
@@ -27,6 +29,7 @@ namespace party
 
 		// Technically max clients is 48, but needs more patches to work properly
 		constexpr int total_max_clients = 18;
+		constexpr int total_max_party_members = 48;
 
 		struct connect_state_t
 		{
@@ -37,6 +40,34 @@ namespace party
 
 		connect_state_t connect_state{};
 		bool listen_map_transition_in_progress{};
+
+		bool parse_info_int(const std::string& value, const int minimum,
+			const int maximum, int& result)
+		{
+			if (value.empty())
+			{
+				return false;
+			}
+
+			int parsed{};
+			const auto [end, error] = std::from_chars(
+				value.data(), value.data() + value.size(), parsed);
+			if (error != std::errc{} || end != value.data() + value.size()
+				|| parsed < minimum || parsed > maximum)
+			{
+				return false;
+			}
+
+			result = parsed;
+			return true;
+		}
+
+		bool is_matching_ip_endpoint(const game::netadr_s& lhs, const game::netadr_s& rhs)
+		{
+			const auto lhs_is_ip = lhs.type == game::NA_IP || lhs.type == game::NA_BROADCAST;
+			const auto rhs_is_ip = rhs.type == game::NA_IP || rhs.type == game::NA_BROADCAST;
+			return lhs_is_ip && rhs_is_ip && lhs.addr == rhs.addr && lhs.port == rhs.port;
+		}
 
 		bool get_map_index(const std::string& map_name, int& map_index)
 		{
@@ -440,13 +471,56 @@ namespace party
 			start_validated_map(map_name, gametype, map_index, has_gametype);
 		}
 
+		int get_bot_count()
+		{
+			int count = 0;
+			auto* clients = *game::mp::svs_clients;
+
+			if (!clients)
+			{
+				return 0;
+			}
+
+			for (int i = 0; i < *game::sv_maxclients; ++i)
+			{
+				const auto& client = clients[i];
+				if (client.state != 0 && (client.remoteAddress.type == game::NA_BOT || client.testClient != 0))
+				{
+					++count;
+				}
+			}
+
+			return count;
+		}
+
 		void send_info_response(const game::netadr_s& from, const std::string_view& data, const std::string& response_command)
 		{
+			if (data.empty() || data.size() > 128)
+			{
+				return;
+			}
+
 			utils::info_string info{};
 
-			const auto mapname = get_current_mapname();
-			const auto gametype = get_current_gametype();
+			auto mapname = get_current_mapname();
+			auto gametype = get_current_gametype();
 			const auto hostname = get_current_hostname();
+			auto clients = get_connected_client_count();
+			auto bots = get_bot_count();
+			auto max_clients = *game::sv_maxclients > 0 ? *game::sv_maxclients : total_max_clients;
+			auto match_running = game::is_server_running();
+
+			dedicated_party::connect_info party_connect_info{};
+			const auto has_party_session = dedicated_party::get_connect_info(party_connect_info);
+			if (has_party_session)
+			{
+				mapname = party_connect_info.map_name;
+				gametype = party_connect_info.gametype;
+				max_clients = party_connect_info.max_members;
+				clients = std::clamp(party_connect_info.member_count, 0, max_clients);
+				bots = std::clamp(bots, 0, clients);
+				match_running = party_connect_info.match_running;
+			}
 
 			info.set("challenge", std::string{ data });
 			info.set("gamename", "S2");
@@ -454,14 +528,14 @@ namespace party
 			info.set("sv_hostname", hostname);
 			info.set("mapname", mapname);
 			info.set("gametype", gametype);
-			info.set("clients", std::to_string(get_connected_client_count()));
-			info.set("bots", "0");
-			info.set("sv_maxclients", std::to_string(*game::sv_maxclients));
-			info.set("sv_running", game::is_server_running() ? "1" : "0");
+			info.set("clients", std::to_string(clients));
+			info.set("bots", std::to_string(bots));
+			info.set("sv_maxclients", std::to_string(max_clients));
+			info.set("sv_running", match_running ? "1" : "0");
 			info.set("protocol", std::to_string(PROTOCOL));
+			info.set("s2x", "1");
 
-			dedicated_party::connect_info party_connect_info{};
-			if (dedicated_party::get_connect_info(party_connect_info))
+			if (has_party_session && response_command == "s2x_infoResponse")
 			{
 				info.set("party_session", "1");
 				info.set("session_host", party_connect_info.host_address);
@@ -471,10 +545,7 @@ namespace party
 				info.set("party_gametype", party_connect_info.gametype);
 			}
 
-			auto payload = info.build();
-			payload.append("\\s2x\\1");
-
-			network::send(from, response_command, payload, '\n');
+			network::send(from, response_command, info.build(), '\n');
 		}
 	}
 
@@ -577,16 +648,18 @@ namespace party
 				send_info_response(from, data, "s2x_infoResponse");
 			});
 
-			/*network::on("getinfo", [](const game::netadr_s& from, const std::string_view& data)
+			network::on("getinfo", [](const game::netadr_s& from, const std::string_view& data)
 			{
 				send_info_response(from, data, "infoResponse");
-			});*/
+			});
 
 			network::on("s2x_infoResponse", [](const game::netadr_s& from, const std::string_view& data)
 			{
 				const utils::info_string info{ std::string{data} };
 				const auto challenge = info.get("challenge");
-				const auto connect_response = challenge == connect_state.challenge;
+				const auto connect_response = connect_state.host_defined
+					&& challenge == connect_state.challenge
+					&& is_matching_ip_endpoint(from, connect_state.host);
 				if (dedicated_party_client::try_handle_sync_response(from, info, challenge))
 				{
 					return;
@@ -597,10 +670,11 @@ namespace party
 					return;
 				}
 
-				const auto protocol = std::atoi(info.get("protocol").data());
-				if (protocol != PROTOCOL)
+				int protocol{};
+				if (!parse_info_int(info.get("protocol"), 0, std::numeric_limits<int>::max(), protocol)
+					|| protocol != PROTOCOL)
 				{
-					console::error("Connection failed: invalid protocol %i.\n", protocol);
+					console::error("Connection failed: invalid protocol.\n");
 					return;
 				}
 
@@ -611,18 +685,33 @@ namespace party
 					return;
 				}
 
-				console::info(
-					"[party] getInfo from %s challenge=%.*s\n",
-					network::net_adr_to_string(from),
-					static_cast<int>(data.size()),
-					data.data()
-				);
+				int client_count{};
+				int bot_count{};
+				int max_clients{};
+				if (!parse_info_int(info.get("clients"), 0, total_max_party_members, client_count)
+					|| !parse_info_int(info.get("bots"), 0, total_max_party_members, bot_count)
+					|| !parse_info_int(info.get("sv_maxclients"), 1, total_max_party_members, max_clients)
+					|| client_count > max_clients || bot_count > client_count)
+				{
+					console::error("Connection failed: invalid server player counts.\n");
+					return;
+				}
+
+				console::info("[party] validated server response from %s.\n",
+					network::net_adr_to_string(from));
 
 				// A hosted dedicated lobby remains joinable between gameplay servers. Hand
 				// its stock session descriptor to CL_Connect before applying direct-game
 				// connection requirements such as sv_running.
 				if (dedicated_party_client::try_handle_join(from, info))
 				{
+					return;
+				}
+
+				if (max_clients > total_max_clients)
+				{
+					console::error("Connection failed: direct-game capacity %i exceeds the supported limit of %i.\n",
+						max_clients, total_max_clients);
 					return;
 				}
 
@@ -641,21 +730,18 @@ namespace party
 					return;
 				}
 
-				const auto max_clients = std::atoi(info.get("sv_maxclients").data());
-				const auto server_max_clients = max_clients > 0 ? max_clients : total_max_clients;
-
 				console::info(
-					"Server response from %s: map='%s' gametype='%s' clients=%s/%s\n",
+					"Server response from %s: map='%s' gametype='%s' clients=%i/%i\n",
 					network::net_adr_to_string(from),
 					mapname.data(),
 					gametype.data(),
-					info.get("clients").data(),
-					info.get("sv_maxclients").data()
+					client_count,
+					max_clients
 				);
 
 				auto target = from;
 
-				scheduler::once([target, mapname, gametype, server_max_clients]()
+				scheduler::once([target, mapname, gametype, max_clients]()
 				{
 					if (game::virtual_lobby_loaded())
 					{
@@ -663,9 +749,9 @@ namespace party
 						game::CL_VirtualLobbyShutdown(0, 0);
 					}
 
-					scheduler::once([target, mapname, gametype, server_max_clients]()
+					scheduler::once([target, mapname, gametype, max_clients]()
 					{
-						connect_to_server(target, mapname, gametype, server_max_clients);
+						connect_to_server(target, mapname, gametype, max_clients);
 					}, scheduler::pipeline::main);
 				}, scheduler::pipeline::main);
 			});

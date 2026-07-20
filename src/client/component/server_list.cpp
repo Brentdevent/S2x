@@ -2,6 +2,7 @@
 #include "loader/component_loader.hpp"
 
 #include "command.hpp"
+#include "master_server.hpp"
 #include "network.hpp"
 #include "scheduler.hpp"
 
@@ -17,27 +18,22 @@
 #include <utils/string.hpp>
 
 #include <algorithm>
+#include <charconv>
 
 namespace server_list
 {
 	namespace
 	{
-		constexpr auto default_master_server_name = "server.master.dev";
-		constexpr auto default_master_server_port = 20810;
-		constexpr auto master_game = "S2";
 		constexpr auto server_timeout = 10s;
 		constexpr auto master_timeout = 5s;
-		constexpr auto heartbeat_interval = 2min;
 		constexpr auto server_limit = 128ull;
 		constexpr auto query_limit = 3ull;
+		constexpr auto max_server_clients = 48;
 
 		struct server_info
 		{
 			game::netadr_s address{};
 			std::string address_string{};
-			std::string challenge{};
-			std::chrono::steady_clock::time_point query_start{};
-			bool queried{};
 			bool valid{};
 
 			std::string hostname{};
@@ -68,37 +64,25 @@ namespace server_list
 		std::vector<server_info> servers;
 		master_state_t master_state;
 
-		game::dvar_t* master_server_name;
-		game::dvar_t* master_server_port;
-
-		std::string get_dvar_string(const game::dvar_t* dvar)
-		{
-			if (!dvar || !dvar->current.string)
-			{
-				return {};
-			}
-
-			return dvar->current.string;
-		}
-
-		int get_dvar_int(const game::dvar_t* dvar, const int fallback)
-		{
-			if (!dvar)
-			{
-				return fallback;
-			}
-
-			return dvar->current.integer;
-		}
-
-		int parse_int(const std::string& value, const int fallback = 0)
+		bool parse_info_int(const std::string& value, const int minimum,
+			const int maximum, int& result)
 		{
 			if (value.empty())
 			{
-				return fallback;
+				return false;
 			}
 
-			return std::atoi(value.data());
+			int parsed{};
+			const auto [end, error] = std::from_chars(
+				value.data(), value.data() + value.size(), parsed);
+			if (error != std::errc{} || end != value.data() + value.size()
+				|| parsed < minimum || parsed > maximum)
+			{
+				return false;
+			}
+
+			result = parsed;
+			return true;
 		}
 
 		std::string get_info_value(const utils::info_string& info, const std::string& key, const std::string& fallback_key = {})
@@ -110,40 +94,6 @@ namespace server_list
 			}
 
 			return value;
-		}
-
-		bool get_master_server(game::netadr_s& address)
-		{
-			auto name = get_dvar_string(master_server_name);
-			utils::string::trim(name);
-
-			if (name.empty())
-			{
-				name = default_master_server_name;
-			}
-
-			auto port = get_dvar_int(master_server_port, default_master_server_port);
-			if (port <= 0 || port > 0xFFFF)
-			{
-				port = default_master_server_port;
-			}
-
-			const auto address_string = utils::string::va("%s:%i", name.data(), port);
-			if (!game::NET_StringToAdr(address_string, &address))
-			{
-				console::warn("[server_list] failed to resolve master server '%s'\n", address_string);
-				return false;
-			}
-
-			if (address.type <= game::NA_BAD)
-			{
-				console::warn("[server_list] ignoring bad master server address '%s'\n", address_string);
-				return false;
-			}
-
-			address.localNetID = game::NS_SERVER;
-			address.addrHandleIndex = 0;
-			return true;
 		}
 
 		void sort_servers()
@@ -237,57 +187,69 @@ namespace server_list
 			return true;
 		}
 
-		bool parse_getservers_response(const std::string_view& data, std::vector<game::netadr_s>& addresses)
+		bool parse_getservers_response(const std::string_view& data, std::vector<game::netadr_s>& addresses,
+			bool& saw_eot)
 		{
-			auto saw_eot = false;
+			saw_eot = false;
 
 			for (auto index = 0ull; index < data.size();)
 			{
-				const auto marker = data.find('\\', index);
-				if (marker == std::string_view::npos)
+				if (data[index] != '\\')
 				{
-					break;
+					return false;
 				}
 
-				if (marker + 7 > data.size())
-				{
-					break;
-				}
-
-				if (data.compare(marker + 1, 3, "EOT") == 0)
+				if (index + 4 <= data.size() && data.compare(index + 1, 3, "EOT") == 0)
 				{
 					saw_eot = true;
-					break;
+					return true;
+				}
+
+				if (index + 7 > data.size())
+				{
+					return false;
 				}
 
 				game::netadr_s address{};
 				address.type = game::NA_IP;
 				address.localNetID = game::NS_SERVER;
 				address.addrHandleIndex = 0;
-				std::memcpy(address.ip, data.data() + marker + 1, 4);
-				std::memcpy(&address.port, data.data() + marker + 5, 2);
+				std::memcpy(address.ip, data.data() + index + 1, 4);
+				std::memcpy(&address.port, data.data() + index + 5, 2);
 
-				if (address.port)
+				if (address.port && addresses.size() < server_limit)
 				{
 					addresses.emplace_back(address);
 				}
 
-				index = marker + 7;
+				index += 7;
 			}
 
-			return saw_eot;
+			return true;
 		}
 
 		void handle_getservers_response(const game::netadr_s& from, const std::string_view& data)
 		{
+			{
+				std::lock_guard<std::mutex> _{mutex};
+				if (!master_state.requesting || master_state.address != from)
+				{
+					return;
+				}
+			}
+
 			std::vector<game::netadr_s> addresses;
-			const auto saw_eot = parse_getservers_response(data, addresses);
+			bool saw_eot{};
+			if (!parse_getservers_response(data, addresses, saw_eot))
+			{
+				console::warn("[server_list] ignored malformed response from master\n");
+				return;
+			}
 
 			auto queued_count = 0ull;
 
 			{
 				std::lock_guard<std::mutex> _{mutex};
-
 				if (!master_state.requesting || master_state.address != from)
 				{
 					return;
@@ -344,13 +306,6 @@ namespace server_list
 						queued.query_start = now;
 						queued.queried = true;
 
-						if (auto* server = get_server_by_address(entry->first))
-						{
-							server->challenge = queued.challenge;
-							server->query_start = queued.query_start;
-							server->queried = true;
-						}
-
 						queries.emplace_back(entry->first, queued.challenge);
 					}
 
@@ -360,14 +315,14 @@ namespace server_list
 
 			for (const auto& [address, challenge] : queries)
 			{
-				network::send(address, "getInfo", challenge);
+				network::send(address, "s2x_getInfo", challenge);
 			}
 		}
 
 		void refresh_server_list()
 		{
 			game::netadr_s master{};
-			if (!get_master_server(master))
+			if (!master_server::get_address(master))
 			{
 				std::lock_guard<std::mutex> _{mutex};
 				servers.clear();
@@ -385,7 +340,7 @@ namespace server_list
 			}
 
 			console::info("[server_list] requesting S2 servers from %s\n", network::net_adr_to_string(master));
-			network::send(master, "getservers", utils::string::va("%s %i", master_game, PROTOCOL));
+			network::send(master, "getservers", utils::string::va("%s %i", master_server::game_name, PROTOCOL));
 		}
 
 		void update_server_display_list()
@@ -458,6 +413,14 @@ namespace server_list
 
 		void handle_info_response(const game::netadr_s& from, const std::string_view& data)
 		{
+			auto address = from;
+			if (address.type == game::NA_BROADCAST)
+			{
+				address.type = game::NA_IP;
+				address.localNetID = game::NS_SERVER;
+				address.addrHandleIndex = 0;
+			}
+
 			const utils::info_string info{data};
 			const auto challenge = info.get("challenge");
 
@@ -466,7 +429,7 @@ namespace server_list
 			{
 				std::lock_guard<std::mutex> _{mutex};
 
-				const auto queued = master_state.queued_servers.find(from);
+				const auto queued = master_state.queued_servers.find(address);
 				if (queued == master_state.queued_servers.end() || !queued->second.queried ||
 					queued->second.challenge != challenge)
 				{
@@ -476,29 +439,57 @@ namespace server_list
 				query_start = queued->second.query_start;
 			}
 
-			if (info.get("gamename") != master_game)
+			if (info.get("gamename") != master_server::game_name || info.get("s2x") != "1")
 			{
-				drop_server(from);
+				drop_server(address);
 				return;
 			}
 
-			if (parse_int(info.get("protocol")) != PROTOCOL)
+			int protocol{};
+			if (!parse_info_int(info.get("protocol"), 0, std::numeric_limits<int>::max(), protocol)
+				|| protocol != PROTOCOL)
 			{
-				drop_server(from);
+				drop_server(address);
 				return;
 			}
 
-			if (info.get("sv_running") != "1")
+			int server_running{};
+			if (!parse_info_int(info.get("sv_running"), 0, 1, server_running))
 			{
-				drop_server(from);
+				drop_server(address);
+				return;
+			}
+
+			auto party_session = 0;
+			const auto party_session_value = info.get("party_session");
+			if (!party_session_value.empty()
+				&& !parse_info_int(party_session_value, 0, 1, party_session))
+			{
+				drop_server(address);
+				return;
+			}
+
+			if (!server_running && !party_session)
+			{
+				drop_server(address);
 				return;
 			}
 
 			const auto hostname = get_info_value(info, "hostname", "sv_hostname");
 			const auto mapname = info.get("mapname");
 			const auto gametype = info.get("gametype");
-			const auto clients = std::max(parse_int(info.get("clients")), 0);
-			const auto max_clients = std::max(parse_int(info.get("sv_maxclients"), parse_int(info.get("maxclients"))), 0);
+			int clients{};
+			int bots{};
+			int max_clients{};
+			const auto max_clients_value = get_info_value(info, "sv_maxclients", "maxclients");
+			if (!parse_info_int(info.get("clients"), 0, max_server_clients, clients)
+				|| !parse_info_int(info.get("bots"), 0, max_server_clients, bots)
+				|| !parse_info_int(max_clients_value, 1, max_server_clients, max_clients)
+				|| clients > max_clients || bots > clients)
+			{
+				drop_server(address);
+				return;
+			}
 			const auto ping = std::min(
 				static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
 					std::chrono::steady_clock::now() - query_start).count()),
@@ -508,13 +499,13 @@ namespace server_list
 			{
 				std::lock_guard<std::mutex> _{mutex};
 
-				auto* server = get_server_by_address(from);
+				auto* server = get_server_by_address(address);
 				if (!server)
 				{
 					return;
 				}
 
-				master_state.queued_servers.erase(from);
+				master_state.queued_servers.erase(address);
 
 				server->hostname = hostname.empty() ? server->address_string : hostname;
 				server->mapname = mapname;
@@ -583,12 +574,6 @@ namespace server_list
 	public:
 		void post_unpack() override
 		{
-			scheduler::once([]()
-			{
-				master_server_name = game::Dvar_RegisterString("masterServerName", default_master_server_name, game::DVAR_FLAG_SAVED);
-				master_server_port = game::Dvar_RegisterInt("masterServerPort", default_master_server_port, 1, 0xFFFF, game::DVAR_FLAG_SAVED);
-			}, scheduler::pipeline::main);
-
 			if (game::environment::is_dedi())
 			{
 				return;
@@ -600,11 +585,6 @@ namespace server_list
 			{
 				handle_getservers_response(from, data);
 			});
-
-			/*network::on("infoResponse", [](const game::netadr_s& from, const std::string_view& data)
-			{
-				handle_info_response(from, data);
-			});*/
 
 			network::on("s2x_infoResponse", [](const game::netadr_s& from, const std::string_view& data)
 			{

@@ -7,6 +7,7 @@ namespace network
 	using callback = std::function<void(const game::netadr_s&, const std::string_view&)>;
 
 	void on(const std::string& command, const callback& callback);
+	bool dispatch(const game::netadr_s& address, const std::string_view& command, const std::string_view& data);
 
 	void send(
 		const game::netadr_s& address,
