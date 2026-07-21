@@ -137,7 +137,12 @@ namespace game
 	WEAK symbol<void*()> Party_GetPrivatePartyData{ 0x47E350 };
 	WEAK symbol<bool(void* partyData)> Party_IsRunning{ 0x47A6C0 };
 	WEAK symbol<bool(void* partyData)> Party_AreWeHost{ 0x47A6F0 };
+	WEAK symbol<bool(void* partyData, int memberIndex)> Party_IsHost{ 0x480F10 };
+	WEAK symbol<bool(void* partyData, int memberIndex)> Party_IsMemberLocalPlayer{ 0x481320 };
+	WEAK symbol<bool(void* partyData, int memberIndex)> Party_IsMemberUIVisible{ 0x481370 };
 	WEAK symbol<bool(void* partyData)> Party_IsWaitingForMembers{ 0x4819A0 };
+	WEAK symbol<void(void* partyData, int maxClients)> Party_SetMaxClients{ 0x1973D0 };
+	WEAK symbol<void(void* partyData, int minClients)> Party_SetMinClients{ 0x1973E0 };
 	WEAK symbol<void(void* settings, bool privateMatch)> PartySettings_SetPrivateMatch{ 0x1973F0 };
 	WEAK symbol<void(void* settings, bool publicMatch)> PartySettings_SetPublicMatch{ 0x197440 };
 	WEAK symbol<void(void* settings, bool rankedMatch)> PartySettings_SetRankedMatch{ 0x197430 };

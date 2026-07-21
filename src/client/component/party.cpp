@@ -703,7 +703,7 @@ namespace party
 				// A hosted dedicated lobby remains joinable between gameplay servers. Hand
 				// its stock session descriptor to CL_Connect before applying direct-game
 				// connection requirements such as sv_running.
-				if (dedicated_party_client::try_handle_join(from, info))
+				if (dedicated_party_client::try_handle_join(from, info, max_clients))
 				{
 					return;
 				}

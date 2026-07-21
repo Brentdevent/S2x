@@ -2,6 +2,7 @@
 #include "loader/component_loader.hpp"
 
 #include "dedicated_party.hpp"
+#include "dedicated_party_client.hpp"
 #include "party.hpp"
 #include "command.hpp"
 #include "scheduler.hpp"
@@ -26,7 +27,6 @@ namespace dedicated_party
 		constexpr std::ptrdiff_t session_host_address_offset = 60;
 		constexpr std::ptrdiff_t session_key_offset = 97;
 		constexpr std::ptrdiff_t party_settings_offset = 0x250;
-		constexpr std::ptrdiff_t party_max_members_offset = 0x254;
 		constexpr std::ptrdiff_t party_members_offset = 0x3F8;
 		constexpr std::ptrdiff_t party_member_stride = 0x81C0;
 		constexpr std::ptrdiff_t party_active_client_offset = 0x186400;
@@ -34,6 +34,7 @@ namespace dedicated_party
 		constexpr std::ptrdiff_t party_host_state_offset = 0x186490;
 		constexpr std::uint32_t party_host_state_mask = 0xFC;
 		constexpr auto party_member_limit = 48;
+		constexpr auto supported_player_limit = 18;
 
 		enum class dedicated_party_stage
 		{
@@ -63,6 +64,8 @@ namespace dedicated_party
 
 		dedicated_party_state_t dedicated_party_state{};
 		game::dvar_t* dedicated_lobby_time{};
+		game::dvar_t* party_maxplayers{};
+		game::dvar_t* party_minplayers{};
 		game::dvar_t* sv_maprotation{};
 		bool map_rotate_requested{};
 
@@ -123,6 +126,41 @@ namespace dedicated_party
 		{
 			set_party_is_private_match(dedicated_party_state.game_lobby, false);
 			set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
+		}
+
+		void apply_configured_party_limits()
+		{
+			if (!party_maxplayers || !party_minplayers)
+			{
+				return;
+			}
+
+			const auto max_players = party_maxplayers->current.integer;
+			const auto min_players = std::min(party_minplayers->current.integer, max_players);
+
+			// 5321 is the stock private-party player-limit dvar used by the MP menus.
+			game::Dvar_SetIntByName("5321", max_players);
+
+			if (dedicated_party_state.private_party)
+			{
+				game::Party_SetMaxClients(dedicated_party_state.private_party, max_players);
+			}
+
+			if (dedicated_party_state.game_lobby)
+			{
+				game::Party_SetMaxClients(dedicated_party_state.game_lobby, max_players);
+				game::Party_SetMinClients(dedicated_party_state.game_lobby, min_players);
+			}
+		}
+
+		int get_configured_party_max_players()
+		{
+			if (!party_maxplayers)
+			{
+				return supported_player_limit;
+			}
+
+			return std::clamp(party_maxplayers->current.integer, 1, supported_player_limit);
 		}
 
 		void set_game_is_private_match(const int local_client_num, const bool private_match)
@@ -231,18 +269,6 @@ namespace dedicated_party
 
 			// The dedicated frontend owner is a real party member but not a player.
 			return std::clamp(count - 1, 0, party_member_limit);
-		}
-
-		int get_party_max_members(const void* party_data)
-		{
-			if (!party_data)
-			{
-				return 0;
-			}
-
-			const auto value = *reinterpret_cast<const int*>(
-				reinterpret_cast<std::uintptr_t>(party_data) + party_max_members_offset);
-			return std::clamp(value, 0, party_member_limit);
 		}
 
 		bool has_local_gameplay_client()
@@ -457,6 +483,7 @@ namespace dedicated_party
 		{
 			apply_lobby_time();
 			configure_public_lobby();
+			apply_configured_party_limits();
 			reset_party_launch_state();
 		}
 
@@ -531,6 +558,7 @@ namespace dedicated_party
 				// PartyHost_StartMatch reads these fields for the final go message and
 				// server preload. Public auto-start may have selected a playlist entry.
 				apply_dedicated_match_settings(dedicated_party_state.current_match);
+				apply_configured_party_limits();
 			}
 
 			return game::PartyHost_StartMatch(party_data, active_client);
@@ -586,6 +614,7 @@ namespace dedicated_party
 					&& party_is_owned_by_local_client_zero(private_party))
 				{
 					dedicated_party_state.private_party = private_party;
+					apply_configured_party_limits();
 					console::info("Dedicated party: private party created.\n");
 
 					apply_lobby_time();
@@ -619,6 +648,8 @@ namespace dedicated_party
 					&& get_party_host_state(game_lobby) == 4)
 				{
 					dedicated_party_state.game_lobby = game_lobby;
+					apply_configured_party_limits();
+					dedicated_party_client::refresh_presentation();
 
 					// Stock StartPrivateMatch notifies the persistent private party only after
 					// the hosted game lobby has completed creation.
@@ -640,6 +671,7 @@ namespace dedicated_party
 				// pipeline. Apply and publish the requested mode afterward so public
 				// team assignment and remote lobby state use the same gametype.
 				apply_dedicated_match_settings(dedicated_party_state.current_match);
+				apply_configured_party_limits();
 				game::Cbuf_AddText(0, "xupdatepartystate\n");
 				console::info("Dedicated party: countdown started.\n");
 				set_stage(dedicated_party_stage::waiting_for_intermission);
@@ -657,6 +689,7 @@ namespace dedicated_party
 					if (get_party_host_state(dedicated_party_state.game_lobby) == 4)
 					{
 						game::PartyHost_PreMatch(dedicated_party_state.game_lobby, 0);
+						apply_configured_party_limits();
 					}
 
 					if (get_party_host_state(dedicated_party_state.game_lobby) != 32)
@@ -785,6 +818,7 @@ namespace dedicated_party
 		dedicated_party_state = {};
 		dedicated_party_state.rotation = std::move(rotation);
 
+		apply_configured_party_limits();
 		apply_lobby_time();
 		set_stage(dedicated_party_stage::waiting_for_private_party);
 		scheduler::schedule(run_lifecycle, scheduler::pipeline::main);
@@ -911,8 +945,11 @@ namespace dedicated_party
 		info.session_id = session_id.data();
 		info.map_name = dedicated_party_state.current_match.map_name;
 		info.gametype = dedicated_party_state.current_match.gametype;
-		info.member_count = get_remote_party_member_count(game_lobby);
-		info.max_members = get_party_max_members(game_lobby);
+		const auto* hosted_game_lobby = dedicated_party_state.game_lobby
+			? dedicated_party_state.game_lobby
+			: game_lobby;
+		info.member_count = get_remote_party_member_count(hosted_game_lobby);
+		info.max_members = get_configured_party_max_players();
 		info.match_running = party::server_running();
 
 		return is_session_hex_string(info.host_address, 80)
@@ -932,6 +969,12 @@ namespace dedicated_party
 				return;
 			}
 
+			party_maxplayers = game::Dvar_RegisterInt(
+				"party_maxplayers", supported_player_limit, 1,
+				supported_player_limit, game::DVAR_FLAG_NONE);
+			party_minplayers = game::Dvar_RegisterInt(
+				"party_minplayers", 1, 1,
+				supported_player_limit, game::DVAR_FLAG_NONE);
 			dedicated_lobby_time = game::Dvar_RegisterInt(
 				"dedicated_lobby_time", 60, 0, 120, game::DVAR_FLAG_NONE);
 			map_rotate_requested = utils::flags::has_flag("+map_rotate");

@@ -24,10 +24,13 @@ namespace dedicated_party_client
 {
 	namespace
 	{
+		constexpr auto max_party_members = 48;
+
 		utils::hook::detour cl_connect_and_preload_map_hook;
 		utils::hook::detour party_atomic_setup_potential_host_hook;
 		utils::hook::detour party_client_handle_go_hook;
 		utils::hook::detour party_client_process_party_state_hook;
+		utils::hook::detour party_is_member_ui_visible_hook;
 
 		struct hosted_party_join_state_t
 		{
@@ -36,6 +39,7 @@ namespace dedicated_party_client
 			std::string session_id{};
 			std::string map_name{};
 			std::string gametype{};
+			int max_players{};
 		};
 
 		struct hosted_dedicated_party_state_t
@@ -45,6 +49,8 @@ namespace dedicated_party_client
 			std::string map_name{};
 			std::string gametype{};
 			std::string sync_challenge{};
+			void* game_lobby{};
+			int max_players{};
 			bool sync_after_next_go{};
 		};
 
@@ -52,7 +58,103 @@ namespace dedicated_party_client
 		hosted_dedicated_party_state_t hosted_dedicated_party_state{};
 		bool hosted_dedicated_go_in_progress{};
 
-		bool parse_protocol(const std::string& value, int& protocol)
+		bool is_hosted_dedicated_game_lobby(void* party_data)
+		{
+			if (!party_data)
+			{
+				return false;
+			}
+
+			if (game::environment::is_dedi())
+			{
+				return dedicated_party::is_active()
+					&& (party_data == game::Lobby_GetPartyData(0)
+						|| game::Party_AreWeHost(party_data));
+			}
+
+			return !hosted_dedicated_party_state.session_id.empty()
+				&& (party_data == hosted_dedicated_party_state.game_lobby
+					|| party_data == game::Lobby_GetPartyData(0));
+		}
+
+		int get_hosted_dedicated_party_max_players()
+		{
+			if (game::environment::is_dedi())
+			{
+				if (!dedicated_party::is_active())
+				{
+					return -1;
+				}
+
+				const auto* dvar = game::Dvar_FindMalleableVar("party_maxplayers");
+				return dvar ? dvar->current.integer : -1;
+			}
+
+			return hosted_dedicated_party_state.session_id.empty()
+				? -1
+				: hosted_dedicated_party_state.max_players;
+		}
+
+		bool is_dedicated_host_member(void* party_data, const int member_index)
+		{
+			if (game::Party_IsHost(party_data, member_index))
+			{
+				return true;
+			}
+
+			if (game::environment::is_dedi())
+			{
+				return game::Party_IsMemberLocalPlayer(party_data, member_index);
+			}
+
+			return false;
+		}
+
+		bool party_is_member_ui_visible_stub(void* party_data, const int member_index)
+		{
+			if (is_hosted_dedicated_game_lobby(party_data)
+				&& is_dedicated_host_member(party_data, member_index))
+			{
+				return false;
+			}
+
+			return party_is_member_ui_visible_hook.invoke<bool>(party_data, member_index);
+		}
+
+		int get_hosted_dedicated_party_member_count()
+		{
+			if ((game::environment::is_dedi() && !dedicated_party::is_active())
+				|| (!game::environment::is_dedi()
+					&& hosted_dedicated_party_state.session_id.empty()))
+			{
+				return -1;
+			}
+
+			auto* party_data = game::Lobby_GetPartyData(0);
+			if (!party_data)
+			{
+				party_data = hosted_dedicated_party_state.game_lobby;
+			}
+
+			if (!is_hosted_dedicated_game_lobby(party_data))
+			{
+				return -1;
+			}
+
+			auto count = 0;
+			for (auto member_index = 0; member_index < max_party_members; ++member_index)
+			{
+				if (party_is_member_ui_visible_stub(party_data, member_index))
+				{
+					++count;
+				}
+			}
+
+			return count;
+		}
+
+		bool parse_integer(const std::string& value, const int minimum,
+			const int maximum, int& result)
 		{
 			if (value.empty())
 			{
@@ -60,9 +162,38 @@ namespace dedicated_party_client
 			}
 
 			const auto [end, error] = std::from_chars(
-				value.data(), value.data() + value.size(), protocol);
+				value.data(), value.data() + value.size(), result);
 			return error == std::errc{} && end == value.data() + value.size()
-				&& protocol >= 0;
+				&& result >= minimum && result <= maximum;
+		}
+
+		void apply_hosted_party_capacity(void* party_data = nullptr)
+		{
+			const auto max_players = hosted_dedicated_party_state.max_players;
+			if (max_players < 1 || max_players > max_party_members)
+			{
+				return;
+			}
+
+			auto apply = [max_players](void* target)
+			{
+				if (target)
+				{
+					game::Party_SetMaxClients(target, max_players);
+				}
+			};
+
+			apply(party_data);
+			if (game::Lobby_GetPartyData(0) != party_data)
+			{
+				apply(game::Lobby_GetPartyData(0));
+			}
+
+			auto* private_party = game::Party_GetPrivatePartyData();
+			if (private_party != party_data && private_party != game::Lobby_GetPartyData(0))
+			{
+				apply(private_party);
+			}
 		}
 
 		bool is_session_hex_string(const std::string& value, const std::size_t expected_size)
@@ -171,12 +302,14 @@ namespace dedicated_party_client
 			party_client_process_party_state_hook.invoke<void>(
 				party_data, active_client, from);
 
-			auto* game_lobby = game::Lobby_GetPartyData(0);
-			if (!is_hosted_dedicated_party_address(from)
-				|| party_data != game_lobby)
+			if (!is_hosted_dedicated_party_address(from))
 			{
 				return;
 			}
+
+			hosted_dedicated_party_state.game_lobby = party_data;
+			apply_hosted_party_capacity(party_data);
+			refresh_presentation();
 
 			// Public partystate applies its playlist rules after parsing and can replace
 			// the dedicated host's free-form map/gametype with a local default. Keep the
@@ -251,9 +384,12 @@ namespace dedicated_party_client
 			const int a5, const int a6, void* join_info)
 		{
 			const auto is_hosted_party_join = pending_hosted_party_join_matches(session_info);
+			const auto setup_max_players = is_hosted_party_join
+				? hosted_party_join_state.max_players
+				: max_players;
 
 			const auto result = party_atomic_setup_potential_host_hook.invoke<bool>(
-				controller_index, session_info, party_type, max_players, a5, a6, join_info);
+				controller_index, session_info, party_type, setup_max_players, a5, a6, join_info);
 
 			if (!is_hosted_party_join)
 			{
@@ -264,6 +400,7 @@ namespace dedicated_party_client
 			const auto session_id = hosted_party_join_state.session_id;
 			const auto map_name = hosted_party_join_state.map_name;
 			const auto gametype = hosted_party_join_state.gametype;
+			const auto hosted_max_players = setup_max_players;
 			hosted_party_join_state = {};
 
 			if (!join_info)
@@ -290,7 +427,7 @@ namespace dedicated_party_client
 				utils::hook::invoke<void>(0x6FC830_g, session);
 				if (!utils::hook::invoke<bool>(
 					0x6FFD70_g, session, controller_index, online_connection_type,
-					session_info, 0, max_players, a5))
+					session_info, 0, hosted_max_players, a5))
 				{
 					console::error("Hosted dedicated lobby: native party session setup failed.\n");
 					return false;
@@ -307,6 +444,9 @@ namespace dedicated_party_client
 			hosted_dedicated_party_state.session_id = session_id;
 			hosted_dedicated_party_state.map_name = map_name;
 			hosted_dedicated_party_state.gametype = gametype;
+			hosted_dedicated_party_state.game_lobby = game::Lobby_GetPartyData(0);
+			hosted_dedicated_party_state.max_players = hosted_max_players;
+			apply_hosted_party_capacity(hosted_dedicated_party_state.game_lobby);
 
 			console::info("Hosted dedicated lobby: joining through %s.\n",
 				network::net_adr_to_string(target));
@@ -332,10 +472,23 @@ namespace dedicated_party_client
 			{
 				return get_gametype();
 			};
+
+			lobby["GetDedicatedPartyMemberCount"] = []
+			{
+				return get_hosted_dedicated_party_member_count();
+			};
+
+			lobby["GetDedicatedPartyMaxPlayers"] = []
+			{
+				return get_hosted_dedicated_party_max_players();
+			};
+
+			refresh_presentation();
 		}
 	}
 
-	bool try_handle_join(const game::netadr_s& from, const utils::info_string& info)
+	bool try_handle_join(const game::netadr_s& from, const utils::info_string& info,
+		const int max_players)
 	{
 		if (info.get("party_session") != "1")
 		{
@@ -351,6 +504,7 @@ namespace dedicated_party_client
 		if (!is_session_hex_string(host_address, 80)
 			|| !is_session_hex_string(key, 32)
 			|| !is_session_hex_string(session_id, 16)
+			|| max_players < 1 || max_players > max_party_members
 			|| !validate_map_and_gametype(map_name, gametype)
 			|| !party::validate_gametype(gametype))
 		{
@@ -364,11 +518,13 @@ namespace dedicated_party_client
 		auto target = from;
 		target.localNetID = game::NS_SERVER;
 
-		scheduler::once([target, host_address, key, session_id, map_name, gametype]()
+		scheduler::once([target, host_address, key, session_id, map_name, gametype, max_players]()
 		{
 			// This is the seven-argument command emitted by S2's stock JoinServer menu.
 			// CL_Connect parses the session descriptor and calls PartyAtomic_RequestJoin.
-			hosted_party_join_state = {true, target, session_id, map_name, gametype};
+			hosted_party_join_state = {
+				true, target, session_id, map_name, gametype, max_players
+			};
 			game::Cbuf_AddText(0, utils::string::va("connect %s %s %s 0 0 %s %s\n",
 				host_address.data(), key.data(), session_id.data(), map_name.data(), gametype.data()));
 		}, scheduler::pipeline::main);
@@ -387,7 +543,8 @@ namespace dedicated_party_client
 		}
 
 		int protocol{};
-		if (!parse_protocol(info.get("protocol"), protocol) || protocol != PROTOCOL)
+		if (!parse_integer(info.get("protocol"), 0,
+			std::numeric_limits<int>::max(), protocol) || protocol != PROTOCOL)
 		{
 			console::error("Connection failed: invalid protocol.\n");
 			return true;
@@ -400,10 +557,21 @@ namespace dedicated_party_client
 			return true;
 		}
 
+		int max_players{};
+		if (!parse_integer(info.get("sv_maxclients"), 1,
+			max_party_members, max_players))
+		{
+			console::error("Hosted dedicated lobby: invalid party capacity.\n");
+			return true;
+		}
+
 		hosted_dedicated_party_state.sync_challenge.clear();
 		if (info.get("party_session") == "1"
 			&& info.get("session_id") == hosted_dedicated_party_state.session_id)
 		{
+			hosted_dedicated_party_state.max_players = max_players;
+			apply_hosted_party_capacity(hosted_dedicated_party_state.game_lobby);
+			refresh_presentation();
 			update_hosted_dedicated_party_match(
 				info.get("party_mapname"), info.get("party_gametype"), true);
 		}
@@ -421,6 +589,34 @@ namespace dedicated_party_client
 		return hosted_dedicated_party_state.gametype;
 	}
 
+	void refresh_presentation()
+	{
+		scheduler::once([]
+		{
+			if (!*game::hks::lui_lua_state)
+			{
+				return;
+			}
+
+			game::LUI_EnterCriticalSection();
+			try
+			{
+				const auto refresh = ui_scripting::get_globals().get(
+					"S2xRefreshDedicatedPartyPresentation");
+				if (refresh.is<ui_scripting::function>())
+				{
+					refresh.as<ui_scripting::function>()();
+				}
+			}
+			catch (const std::exception& e)
+			{
+				console::error("Hosted dedicated lobby: presentation refresh failed: %s\n",
+					e.what());
+			}
+			game::LUI_LeaveCriticalSection();
+		}, scheduler::pipeline::main);
+	}
+
 	void reset()
 	{
 		hosted_dedicated_party_state = {};
@@ -432,6 +628,11 @@ namespace dedicated_party_client
 		void post_unpack() override
 		{
 			ui_scripting::on_start(install_lobby_functions);
+
+			// The frontend lobby row model uses this predicate. PartyData still retains
+			// its native host member; the character scene is filtered separately in LUI.
+			party_is_member_ui_visible_hook.create(
+				game::Party_IsMemberUIVisible, party_is_member_ui_visible_stub);
 
 			if (game::environment::is_dedi())
 			{
