@@ -138,6 +138,8 @@ namespace dedicated_party
 			const auto max_players = party_maxplayers->current.integer;
 			const auto min_players = std::min(party_minplayers->current.integer, max_players);
 
+			game::Dvar_SetIntByName("sv_maxclients", max_players);
+
 			// 5321 is the stock private-party player-limit dvar used by the MP menus.
 			game::Dvar_SetIntByName("5321", max_players);
 

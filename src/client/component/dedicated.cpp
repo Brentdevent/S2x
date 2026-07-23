@@ -35,6 +35,18 @@ namespace dedicated
 			utils::hook::nop(0x486E91_g, 1);
 		}
 
+		std::uint8_t is_direct_connect_slot_reserved_stub(void* party_data, const char client_num)
+		{
+			// The persistent frontend owner remains party member 0, but it never creates
+			// a gameplay client. Do not let that party entry reserve svs_clients[0].
+			if (client_num == 0)
+			{
+				return 0;
+			}
+
+			return utils::hook::invoke<std::uint8_t>(0x6FE240_g, party_data, client_num);
+		}
+
 		void cl_check_for_resend_stub(const unsigned int local_client_num)
 		{
 			if (game::virtual_lobby_loaded())
@@ -87,6 +99,7 @@ namespace dedicated
 			console::info("==================================\n");
 			console::info("S2x Dedicated Server\n");
 			console::info("==================================\n");
+			
 			console::set_title("S2x Dedicated Server");
 
 			console::info("Waiting for the virtual lobby to initialize...\n");
@@ -118,7 +131,18 @@ namespace dedicated
 			game::Dvar_RegisterBool("sv_lanOnly", false, game::DVAR_FLAG_NONE);
 
 			cl_check_for_resend_hook.create(game::CL_CheckForResend, cl_check_for_resend_stub);
+			
 			disable_p2p_auth_ticket_validation();
+
+			// The persistent frontend leaves S2's virtual-lobby allocation flag set.
+			// Force SV_Startup to use sv_maxClients instead of its 48-client frontend
+			// allocation; gameplay client sidecars only contain 18 valid entries.
+			utils::hook::set<std::uint8_t>(0x6DCE04_g, 0xEB);
+
+			// SV_DirectConnect uses this party-member test while selecting a free
+			// gameplay client. Preserve every reservation except the frontend owner.
+			utils::hook::call(0xF3AA2_g, is_direct_connect_slot_reserved_stub);
+
 			gsc::override_function("isusingmatchrulesdata", gscr_is_using_match_rules_data_stub);
 
 			// Bypass the gamestate guard
