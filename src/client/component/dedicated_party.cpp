@@ -685,10 +685,11 @@ namespace dedicated_party
 				if (stage_timed_out(std::chrono::seconds{
 					dedicated_lobby_time->current.integer }))
 				{
+					const auto host_state = get_party_host_state(dedicated_party_state.game_lobby);
 					// Stock public matches prepare their teams before the final start request.
 					// The dedicated xpartygo shim otherwise takes the private-match shortcut
 					// and leaves Raid party members without an assigned team.
-					if (get_party_host_state(dedicated_party_state.game_lobby) == 4)
+					if (host_state == 4)
 					{
 						game::PartyHost_PreMatch(dedicated_party_state.game_lobby, 0);
 						apply_configured_party_limits();
