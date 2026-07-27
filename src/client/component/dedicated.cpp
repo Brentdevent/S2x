@@ -298,6 +298,16 @@ namespace dedicated
 			return 0;
 		}
 
+		void end_dedicated_frame()
+		{
+			// R_EndFrame normally submits the render command list before advancing
+			// this two-bank, three-slot CPU scene ring. Dedicated mode skips the
+			// submission, but must preserve the ring lifecycle for client frames.
+			auto& scene_bank = *reinterpret_cast<unsigned int*>(0x1006E708_g);
+			scene_bank = (scene_bank - 1) & 1;
+			*reinterpret_cast<std::uint64_t*>(0xFFC8D20_g) = 0;
+		}
+
 		bool is_dedicated_renderer_worker_command(const int command_type)
 		{
 			switch (command_type)
@@ -722,7 +732,7 @@ namespace dedicated
 			utils::hook::set<std::uint8_t>(0x8BC640_g, 0xC3);
 			utils::hook::set<std::uint8_t>(0x18C6C0_g, 0xC3);
 			utils::hook::set<std::uint8_t>(0xF1A00_g, 0xC3);
-			utils::hook::set<std::uint8_t>(0x8BBCD0_g, 0xC3);
+			utils::hook::jump(0x8BBCD0_g, end_dedicated_frame);
 			utils::hook::set<std::uint8_t>(0x8BC6F0_g, 0xC3);
 			utils::hook::set<std::uint8_t>(0x8BB920_g, 0xC3);
 			utils::hook::jump(0x8BB120_g, dedicated_noop);
@@ -773,6 +783,13 @@ namespace dedicated
 			utils::hook::jump(0x257060_g, dedicated_noop);
 			utils::hook::jump(0x8BC2A0_g, dedicated_noop);
 			utils::hook::jump(0x8BEDA0_g, dedicated_noop);
+
+			// Render-target creation is disabled above. Keep the surrounding
+			// PMem lifecycle, but skip its four COM/image teardown calls.
+			utils::hook::nop(0x8BEF70_g, 5);
+			utils::hook::nop(0x8BEF87_g, 5);
+			utils::hook::nop(0x8BF07E_g, 5);
+			utils::hook::nop(0x8BF097_g, 5);
 			utils::hook::jump(0x86AED0_g, dedicated_noop);
 			utils::hook::jump(0x86AFC0_g, dedicated_noop);
 			utils::hook::jump(0x25B9C0_g, dedicated_noop);
