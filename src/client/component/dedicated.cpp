@@ -790,6 +790,29 @@ namespace dedicated
 			utils::hook::nop(0x8BEF87_g, 5);
 			utils::hook::nop(0x8BF07E_g, 5);
 			utils::hook::nop(0x8BF097_g, 5);
+
+			// Preserve native renderer shutdown, but skip its two unguarded
+			// release blocks for device objects headless startup never creates.
+			utils::hook::jump(0x89C82C_g, 0x89C840_g);
+			utils::hook::jump(0x89C89B_g, 0x89C8CD_g);
+
+			// Keep the surrounding render-state cleanup while skipping its
+			// headless-only null manager destructors.
+			utils::hook::nop(0x8C403C_g, 5);
+			utils::hook::set<std::uint8_t>(0x8C404D_g, 0xC3);
+			utils::hook::nop(0x25C18B_g, 5);
+			utils::hook::nop(0x24AF6B_g, 5);
+			utils::hook::nop(0x24AF77_g, 5);
+			utils::hook::nop(0x257594_g, 5);
+
+			// Renderer worker types 12 and 13 are never created headlessly, so
+			// their stock shutdown acknowledgements can never arrive.
+			utils::hook::nop(0x89E026_g, 5);
+
+			// Dynamic-buffer teardown unconditionally calls the absent D3D
+			// immediate context. Retain its native state/resource cleanup.
+			utils::hook::jump(0x86C3A2_g, 0x86C3C4_g);
+
 			utils::hook::jump(0x86AED0_g, dedicated_noop);
 			utils::hook::jump(0x86AFC0_g, dedicated_noop);
 			utils::hook::jump(0x25B9C0_g, dedicated_noop);
