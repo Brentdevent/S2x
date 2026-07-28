@@ -567,8 +567,8 @@ namespace dedicated
 
 		std::int64_t init_dedicated_sound()
 		{
-			// The stock function combines dvar registration with audio-device setup.
-			// Register its dvars so later sound code can safely observe an inactive backend.
+			// Preserve the low-level driver dvars and inactive state without
+			// creating an audio device.
 			*reinterpret_cast<game::dvar_t**>(0xD8B0880_g) =
 				game::Dvar_RegisterBool("546", false, game::DVAR_FLAG_SAVED);
 			*reinterpret_cast<game::dvar_t**>(0xD8B0888_g) =
@@ -589,6 +589,11 @@ namespace dedicated
 			std::memset(reinterpret_cast<void*>(0xD8B0918_g), 0, 0x190);
 			std::memset(reinterpret_cast<void*>(0xD8B0AB0_g), 0, 0xC0);
 			return 1;
+		}
+
+		std::uint32_t play_dedicated_sound_alias()
+		{
+			return UINT32_MAX;
 		}
 
 		std::int64_t init_dedicated_renderer_dvars()
@@ -972,7 +977,21 @@ namespace dedicated
 			utils::hook::jump(0xAC6B0_g, finish_dedicated_db_upload_batch);
 			scheduler::loop(pump_dedicated_db_updates, scheduler::pipeline::main);
 
+			// Com_Init normally starts the complete sound system here. Keep only
+			// the inert driver state above; no sound tables, device, or workers
+			// are needed by a dedicated server.
+			utils::hook::call(0x987BB_g, init_dedicated_sound);
 			utils::hook::jump(0x7B23C0_g, init_dedicated_sound);
+
+			// Prevent presentation code owned by the persistent party frontend
+			// from updating or playing aliases after sound initialization was
+			// skipped. Alias playback uses UINT32_MAX as its failure sentinel.
+			utils::hook::jump(0x468C90_g, dedicated_noop);
+			utils::hook::jump(0x71AA40_g, play_dedicated_sound_alias);
+
+			// Com_Quit calls the high-level sound shutdown routine at this site.
+			// It must not tear down a subsystem that dedicated mode never starts.
+			utils::hook::call(0x9A2BE_g, dedicated_noop);
 
 			// Install this last: once exposed, the renderer thread can enter the
 			// replacement immediately and expects every GPU boundary above to be
