@@ -35,6 +35,7 @@ namespace dedicated_party
 		constexpr std::uint32_t party_host_state_mask = 0xFC;
 		constexpr auto party_member_limit = 48;
 		constexpr auto supported_player_limit = 18;
+		constexpr auto private_party_creation_timeout = 90s;
 
 		enum class dedicated_party_stage
 		{
@@ -631,7 +632,7 @@ namespace dedicated_party
 					// active-client gate above ensures the virtual-lobby handshake is complete.
 					game::Cbuf_AddText(0, "xstartprivatematch\n");
 				}
-				else if (stage_timed_out(30s))
+				else if (stage_timed_out(private_party_creation_timeout))
 				{
 					fail_lifecycle("online private-party creation timed out.");
 					return scheduler::cond_end;

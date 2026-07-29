@@ -22,6 +22,82 @@ namespace dedicated
 		utils::hook::detour scr_begin_load_scripts_hook;
 		utils::hook::detour worker_dispatch_hook;
 
+		constexpr auto max_image_stream_file_count = 0x27400u;
+		constexpr auto max_sound_stream_file_count = 0x3E80u;
+		constexpr std::uint16_t invalid_image_stream_file_index = 191;
+		constexpr std::uint16_t xpak_initialized_unavailable = 0x2000;
+
+		struct external_stream_file
+		{
+			std::uint64_t offset;
+			std::uint32_t size;
+			std::uint16_t flags;
+			std::uint16_t file_index;
+		};
+
+		static_assert(sizeof(external_stream_file) == 0x10);
+		static_assert(offsetof(external_stream_file, file_index) == 0xE);
+
+		struct fastfile_external_header
+		{
+			std::uint8_t data[0x20];
+			std::uint32_t image_file_count;
+			std::uint32_t sound_file_count;
+		};
+
+		static_assert(sizeof(fastfile_external_header) == 0x28);
+		static_assert(offsetof(fastfile_external_header, image_file_count) == 0x20);
+		static_assert(offsetof(fastfile_external_header, sound_file_count) == 0x24);
+
+		bool disable_dedicated_external_streams(fastfile_external_header* header,
+			external_stream_file* image_files, external_stream_file* sound_files)
+		{
+			// Preserve S2's native header compatibility/cache transformation.
+			const auto result = utils::hook::invoke<bool>(
+				0x4A7440_g, header, image_files, sound_files);
+			if (!result)
+			{
+				return false;
+			}
+
+			// Leave malformed counts untouched so the native bounds checks report
+			// the original fastfile error instead of allowing an oversized clear.
+			if (header->image_file_count > max_image_stream_file_count ||
+				header->sound_file_count > max_sound_stream_file_count)
+			{
+				return true;
+			}
+
+			std::memset(image_files, 0,
+				sizeof(*image_files) * header->image_file_count);
+			for (auto i = 0u; i < header->image_file_count; ++i)
+			{
+				// S2's image-stream consumer treats index 191 as an absent
+				// external payload and clears the corresponding stream state.
+				image_files[i].file_index = invalid_image_stream_file_index;
+			}
+
+			// A zero sound descriptor is copied into the sound asset as an
+			// undefined payload. Dedicated mode never initializes playback.
+			std::memset(sound_files, 0,
+				sizeof(*sound_files) * header->sound_file_count);
+			return true;
+		}
+
+		std::uint32_t disable_dedicated_xpak_loading(void*, std::int64_t,
+			std::uint8_t, int, std::uint16_t* flags)
+		{
+			// Mark the XPAK subsystem initialized but unavailable. The native
+			// lookup masks this sentinel out, while DB initialization no longer
+			// retries the missing TOCs for every zone.
+			if (flags)
+			{
+				*flags = xpak_initialized_unavailable;
+			}
+
+			return 1;
+		}
+
 		void add_graphics_zone(std::array<game::XZoneInfo, 8>& zones, unsigned int& zone_count,
 			const char* name, const int alloc_flags)
 		{
@@ -750,6 +826,23 @@ namespace dedicated
 			// fastfile loading retains server assets without building GPU data.
 			utils::hook::set<std::uint8_t>(0x88FF2A_g, 0);
 
+			// DB_LoadXFile validates every external image and sound descriptor
+			// before the renderer/audio load flags can discard their payloads.
+			// Convert them to native absent descriptors after S2 transforms the
+			// header, while retaining the counts used by sequential consumers.
+			utils::hook::call(0x4A5D7C_g, disable_dedicated_external_streams);
+
+			// XSurfaceShared and GfxWorld post-link callbacks resolve renderer-only
+			// geometry through XPAKs. With no TOCs, their fatal lookup re-enters DB
+			// while its writer lock is held and deadlocks DB_FindXAssetHeader.
+			// Dedicated gameplay uses collision/physics assets instead, so leave
+			// these renderer stream records inactive and keep teardown balanced.
+			utils::hook::call(0x4A5056_g, disable_dedicated_xpak_loading);
+			utils::hook::jump(0xA0150_g, dedicated_noop);
+			utils::hook::jump(0xA0410_g, dedicated_noop);
+			utils::hook::jump(0x198200_g, dedicated_noop);
+			utils::hook::jump(0x198290_g, dedicated_noop);
+
 			// S2's "86" dvar is r_preloadShaders. Shader preloading is completed
 			// by the render thread, which does not exist in dedicated mode.
 			utils::hook::set<std::uint8_t>(0x89014A_g, 0);
@@ -899,6 +992,13 @@ namespace dedicated
 			// memory-budget dvars are initialized. Keep the surrounding CPU
 			// setup, but skip the context lock and GPU state updates.
 			utils::hook::jump(0x8FE470_g, dedicated_noop);
+
+			// A frontend video-change notification can still be raised after
+			// headless fastfile setup. Its stock handler rebuilds the swap chain
+			// and dereferences the absent DXGI factory. The caller clears the
+			// notification after this call; screen placement was initialized
+			// above by init_dedicated_video_config().
+			utils::hook::call(0x6BDB8_g, dedicated_noop);
 
 			utils::hook::jump(0x8AB920_g, create_dedicated_resource_view);
 			utils::hook::jump(0x8ABA20_g, create_dedicated_resource_view);
