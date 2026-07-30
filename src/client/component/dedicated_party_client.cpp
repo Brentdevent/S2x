@@ -49,7 +49,7 @@ namespace dedicated_party_client
 			std::string map_name{};
 			std::string gametype{};
 			std::string sync_challenge{};
-			void* game_lobby{};
+			game::PartyData* game_lobby{};
 			int max_players{};
 			bool sync_after_next_go{};
 		};
@@ -58,7 +58,7 @@ namespace dedicated_party_client
 		hosted_dedicated_party_state_t hosted_dedicated_party_state{};
 		bool hosted_dedicated_go_in_progress{};
 
-		bool is_hosted_dedicated_game_lobby(void* party_data)
+		bool is_hosted_dedicated_game_lobby(game::PartyData* party_data)
 		{
 			if (!party_data)
 			{
@@ -95,7 +95,7 @@ namespace dedicated_party_client
 				: hosted_dedicated_party_state.max_players;
 		}
 
-		bool is_dedicated_host_member(void* party_data, const int member_index)
+		bool is_dedicated_host_member(game::PartyData* party_data, const int member_index)
 		{
 			if (game::Party_IsHost(party_data, member_index))
 			{
@@ -110,7 +110,7 @@ namespace dedicated_party_client
 			return false;
 		}
 
-		bool party_is_member_ui_visible_stub(void* party_data, const int member_index)
+		bool party_is_member_ui_visible_stub(game::PartyData* party_data, const int member_index)
 		{
 			if (is_hosted_dedicated_game_lobby(party_data)
 				&& is_dedicated_host_member(party_data, member_index))
@@ -167,7 +167,7 @@ namespace dedicated_party_client
 				&& result >= minimum && result <= maximum;
 		}
 
-		void apply_hosted_party_capacity(void* party_data = nullptr)
+		void apply_hosted_party_capacity(game::PartyData* party_data = nullptr)
 		{
 			const auto max_players = hosted_dedicated_party_state.max_players;
 			if (max_players < 1 || max_players > max_party_members)
@@ -175,7 +175,7 @@ namespace dedicated_party_client
 				return;
 			}
 
-			auto apply = [max_players](void* target)
+			auto apply = [max_players](game::PartyData* target)
 			{
 				if (target)
 				{
@@ -296,7 +296,7 @@ namespace dedicated_party_client
 				hosted_dedicated_party_state.sync_challenge);
 		}
 
-		void party_client_process_party_state_stub(void* party_data,
+		void party_client_process_party_state_stub(game::PartyData* party_data,
 			std::uint32_t* active_client, game::netadr_s* from)
 		{
 			party_client_process_party_state_hook.invoke<void>(
@@ -330,7 +330,7 @@ namespace dedicated_party_client
 			}
 		}
 
-		std::int64_t party_client_handle_go_stub(void* party_data, void* command_data,
+		std::int64_t party_client_handle_go_stub(game::PartyData* party_data, void* command_data,
 			game::netadr_s* from, game::msg_t* message)
 		{
 			std::string map_name_value{};
@@ -381,7 +381,7 @@ namespace dedicated_party_client
 
 		bool party_atomic_setup_potential_host_stub(const int controller_index,
 			const void* session_info, const int party_type, const int max_players,
-			const int a5, const int a6, void* join_info)
+			const int a5, const int a6, game::PartyAtomicJoinInfo* join_info)
 		{
 			const auto is_hosted_party_join = pending_hosted_party_join_matches(session_info);
 			const auto setup_max_players = is_hosted_party_join
@@ -434,11 +434,8 @@ namespace dedicated_party_client
 				}
 			}
 
-			constexpr std::ptrdiff_t address_valid_offset = 344;
-			constexpr std::ptrdiff_t address_offset = 348;
-			const auto join_info_address = reinterpret_cast<std::uintptr_t>(join_info);
-			*reinterpret_cast<game::netadr_s*>(join_info_address + address_offset) = target;
-			*reinterpret_cast<std::uint8_t*>(join_info_address + address_valid_offset) = 1;
+			join_info->address = target;
+			join_info->addressValid = 1;
 			hosted_dedicated_party_state = {};
 			hosted_dedicated_party_state.target = target;
 			hosted_dedicated_party_state.session_id = session_id;

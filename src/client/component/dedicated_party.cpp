@@ -23,15 +23,6 @@ namespace dedicated_party
 {
 	namespace
 	{
-		constexpr std::ptrdiff_t session_id_offset = 52;
-		constexpr std::ptrdiff_t session_host_address_offset = 60;
-		constexpr std::ptrdiff_t session_key_offset = 97;
-		constexpr std::ptrdiff_t party_settings_offset = 0x250;
-		constexpr std::ptrdiff_t party_members_offset = 0x3F8;
-		constexpr std::ptrdiff_t party_member_stride = 0x81C0;
-		constexpr std::ptrdiff_t party_active_client_offset = 0x186400;
-		constexpr std::ptrdiff_t party_launch_deadline_offset = 0x186430;
-		constexpr std::ptrdiff_t party_host_state_offset = 0x186490;
 		constexpr std::uint32_t party_host_state_mask = 0xFC;
 		constexpr auto party_member_limit = 48;
 		constexpr auto supported_player_limit = 18;
@@ -58,8 +49,8 @@ namespace dedicated_party
 			std::optional<dedicated_match_t> requested_rotation_match{};
 			dedicated_match_t current_match{};
 			std::size_t next_rotation_index{};
-			void* private_party{};
-			void* game_lobby{};
+			game::PartyData* private_party{};
+			game::PartyData* game_lobby{};
 			std::chrono::steady_clock::time_point stage_started{};
 		};
 
@@ -76,12 +67,12 @@ namespace dedicated_party
 			dedicated_party_state.stage_started = std::chrono::steady_clock::now();
 		}
 
-		void* get_private_party_data()
+		game::PartyData* get_private_party_data()
 		{
 			return game::Party_GetPrivatePartyData();
 		}
 
-		bool is_active_party_host(void* party_data)
+		bool is_active_party_host(game::PartyData* party_data)
 		{
 			if (!party_data)
 			{
@@ -93,34 +84,30 @@ namespace dedicated_party
 			return game::Party_IsRunning(party_data) && game::Party_AreWeHost(party_data);
 		}
 
-		bool is_party_host_ready(void* party_data)
+		bool is_party_host_ready(game::PartyData* party_data)
 		{
 			return is_active_party_host(party_data) && !game::Party_IsWaitingForMembers(party_data);
 		}
 
-		void set_party_is_private_match(void* party_data, const bool private_match)
+		void set_party_is_private_match(game::PartyData* party_data, const bool private_match)
 		{
 			if (!party_data)
 			{
 				return;
 			}
 
-			auto* settings = reinterpret_cast<void*>(
-				reinterpret_cast<std::uintptr_t>(party_data) + party_settings_offset);
-			game::PartySettings_SetPrivateMatch(settings, private_match);
-			game::PartySettings_SetPublicMatch(settings, !private_match);
+			game::PartySettings_SetPrivateMatch(&party_data->settings, private_match);
+			game::PartySettings_SetPublicMatch(&party_data->settings, !private_match);
 		}
 
-		void set_party_is_ranked_match(void* party_data, const bool ranked)
+		void set_party_is_ranked_match(game::PartyData* party_data, const bool ranked)
 		{
 			if (!party_data)
 			{
 				return;
 			}
 
-			auto* settings = reinterpret_cast<void*>(
-				reinterpret_cast<std::uintptr_t>(party_data) + party_settings_offset);
-			game::PartySettings_SetRankedMatch(settings, ranked);
+			game::PartySettings_SetRankedMatch(&party_data->settings, ranked);
 		}
 
 		void configure_public_lobby()
@@ -194,11 +181,10 @@ namespace dedicated_party
 
 			// PartyHost_Frame only rebuilds its native countdown deadline when this
 			// field is zero. The private postgame state reset leaves the old value intact.
-			*reinterpret_cast<std::uint32_t*>(reinterpret_cast<std::uintptr_t>(
-				dedicated_party_state.game_lobby) + party_launch_deadline_offset) = 0;
+			dedicated_party_state.game_lobby->launchDeadline = 0;
 		}
 
-		bool party_is_owned_by_local_client_zero(void* party_data)
+		bool party_is_owned_by_local_client_zero(game::PartyData* party_data)
 		{
 			if (!party_data)
 			{
@@ -206,16 +192,12 @@ namespace dedicated_party
 			}
 
 			// Party_Frame reads the stored PartyActiveClient from this field for hosts.
-			const auto* active_client = reinterpret_cast<const std::uint32_t*>(
-				reinterpret_cast<std::uintptr_t>(party_data) + party_active_client_offset);
-			return active_client[0] == 0;
+			return party_data->activeClient.localClientNum == 0;
 		}
 
-		std::uint32_t get_party_host_state(void* party_data)
+		std::uint32_t get_party_host_state(game::PartyData* party_data)
 		{
-			return *reinterpret_cast<const std::uint32_t*>(
-				reinterpret_cast<std::uintptr_t>(party_data) + party_host_state_offset)
-				& party_host_state_mask;
+			return party_data->hostState & party_host_state_mask;
 		}
 
 		void reset_party_launch_state()
@@ -251,7 +233,7 @@ namespace dedicated_party
 				});
 		}
 
-		int get_remote_party_member_count(const void* party_data)
+		int get_remote_party_member_count(const game::PartyData* party_data)
 		{
 			if (!party_data)
 			{
@@ -259,11 +241,9 @@ namespace dedicated_party
 			}
 
 			auto count = 0;
-			const auto base = reinterpret_cast<std::uintptr_t>(party_data);
 			for (auto index = 0; index < party_member_limit; ++index)
 			{
-				const auto state = *reinterpret_cast<const std::uint8_t*>(
-					base + party_members_offset + party_member_stride * index);
+				const auto state = party_data->members[index].state;
 				if ((state & 0xFC) != 0 || state == 1)
 				{
 					++count;
@@ -521,7 +501,7 @@ namespace dedicated_party
 			set_stage(dedicated_party_stage::waiting_for_match_settings);
 		}
 
-		std::int64_t party_host_auto_start_stub(void* party_data, void* active_client)
+		std::int64_t party_host_auto_start_stub(game::PartyData* party_data, void* active_client)
 		{
 			if (party_data == dedicated_party_state.game_lobby)
 			{
@@ -535,7 +515,7 @@ namespace dedicated_party
 			return game::PartyHost_AutoStart(party_data, active_client);
 		}
 
-		std::int64_t party_host_start_match_stub(void* party_data, void* active_client)
+		std::int64_t party_host_start_match_stub(game::PartyData* party_data, void* active_client)
 		{
 			if (party_data == dedicated_party_state.game_lobby
 				&& dedicated_party_state.stage == dedicated_party_stage::waiting_for_countdown)
@@ -920,7 +900,7 @@ namespace dedicated_party
 			return false;
 		}
 
-		auto* session = static_cast<std::uint8_t*>(game::Session_GetData(0));
+		auto* session = game::Session_GetData(0);
 		if (!session)
 		{
 			return false;
@@ -930,13 +910,11 @@ namespace dedicated_party
 		std::array<char, 33> key{};
 		std::array<char, 17> session_id{};
 
-		// SVC_Info reads the hosted session through Session_GetData(0), with the
-		// ID at +52, host address at +60, and key at +97. Serialize those fields in
-		// the stock CL_Connect command format used by the LAN server browser.
-		game::Session_HostAddressToString(session + session_host_address_offset, host_address.data());
-		game::Session_KeyToString(session + session_key_offset, key.data());
-		game::Session_IdToString(
-			*reinterpret_cast<const std::uint64_t*>(session + session_id_offset), session_id.data());
+		// Serialize the hosted session fields in the stock CL_Connect command
+		// format used by the LAN server browser.
+		game::Session_HostAddressToString(&session->hostAddress, host_address.data());
+		game::Session_KeyToString(&session->sessionKey, key.data());
+		game::Session_IdToString(session->sessionId, session_id.data());
 
 		if (dedicated_party_state.current_match.map_name.empty()
 			|| dedicated_party_state.current_match.gametype.empty())

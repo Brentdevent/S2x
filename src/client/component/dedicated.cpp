@@ -27,30 +27,8 @@ namespace dedicated
 		constexpr std::uint16_t invalid_image_stream_file_index = 191;
 		constexpr std::uint16_t xpak_initialized_unavailable = 0x2000;
 
-		struct external_stream_file
-		{
-			std::uint64_t offset;
-			std::uint32_t size;
-			std::uint16_t flags;
-			std::uint16_t file_index;
-		};
-
-		static_assert(sizeof(external_stream_file) == 0x10);
-		static_assert(offsetof(external_stream_file, file_index) == 0xE);
-
-		struct fastfile_external_header
-		{
-			std::uint8_t data[0x20];
-			std::uint32_t image_file_count;
-			std::uint32_t sound_file_count;
-		};
-
-		static_assert(sizeof(fastfile_external_header) == 0x28);
-		static_assert(offsetof(fastfile_external_header, image_file_count) == 0x20);
-		static_assert(offsetof(fastfile_external_header, sound_file_count) == 0x24);
-
-		bool disable_dedicated_external_streams(fastfile_external_header* header,
-			external_stream_file* image_files, external_stream_file* sound_files)
+		bool disable_dedicated_external_streams(game::FastfileExternalHeader* header,
+			game::ExternalStreamFile* image_files, game::ExternalStreamFile* sound_files)
 		{
 			// Preserve S2's native header compatibility/cache transformation.
 			const auto result = utils::hook::invoke<bool>(
@@ -62,25 +40,25 @@ namespace dedicated
 
 			// Leave malformed counts untouched so the native bounds checks report
 			// the original fastfile error instead of allowing an oversized clear.
-			if (header->image_file_count > max_image_stream_file_count ||
-				header->sound_file_count > max_sound_stream_file_count)
+			if (header->imageFileCount > max_image_stream_file_count ||
+				header->soundFileCount > max_sound_stream_file_count)
 			{
 				return true;
 			}
 
 			std::memset(image_files, 0,
-				sizeof(*image_files) * header->image_file_count);
-			for (auto i = 0u; i < header->image_file_count; ++i)
+				sizeof(*image_files) * header->imageFileCount);
+			for (auto i = 0u; i < header->imageFileCount; ++i)
 			{
 				// S2's image-stream consumer treats index 191 as an absent
 				// external payload and clears the corresponding stream state.
-				image_files[i].file_index = invalid_image_stream_file_index;
+				image_files[i].fileIndex = invalid_image_stream_file_index;
 			}
 
 			// A zero sound descriptor is copied into the sound asset as an
 			// undefined payload. Dedicated mode never initializes playback.
 			std::memset(sound_files, 0,
-				sizeof(*sound_files) * header->sound_file_count);
+				sizeof(*sound_files) * header->soundFileCount);
 			return true;
 		}
 
@@ -698,7 +676,7 @@ namespace dedicated
 			utils::hook::nop(0x486E91_g, 1);
 		}
 
-		std::uint8_t is_direct_connect_slot_reserved_stub(void* party_data, const char client_num)
+		std::uint8_t is_direct_connect_slot_reserved_stub(game::PartyData* party_data, const char client_num)
 		{
 			// The persistent frontend owner remains party member 0, but it never creates
 			// a gameplay client. Do not let that party entry reserve svs_clients[0].

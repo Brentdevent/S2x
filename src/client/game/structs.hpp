@@ -425,6 +425,86 @@ namespace game
 	};
 	static_assert(sizeof(netadr_s) == 0x14);
 
+	struct PartySettings
+	{
+		char __pad0[1];
+	};
+
+	struct PartyMember
+	{
+		std::uint8_t state;
+		char __pad0[0x81C0 - sizeof(std::uint8_t)];
+	};
+	static_assert(offsetof(PartyMember, state) == 0x0);
+	static_assert(sizeof(PartyMember) == 0x81C0);
+
+	struct PartyActiveClient
+	{
+		std::uint32_t localClientNum;
+	};
+	static_assert(offsetof(PartyActiveClient, localClientNum) == 0x0);
+
+	struct PartyData
+	{
+		char __pad0[0x250];
+		PartySettings settings;
+		char __pad1[0x3F8 - 0x250 - sizeof(PartySettings)];
+		PartyMember members[48];
+		char __pad2[0x186400 - 0x3F8 - sizeof(PartyMember) * 48];
+		PartyActiveClient activeClient;
+		char __pad3[0x186430 - 0x186400 - sizeof(PartyActiveClient)];
+		std::uint32_t launchDeadline;
+		char __pad4[0x186490 - 0x186430 - sizeof(std::uint32_t)];
+		std::uint32_t hostState;
+	};
+	static_assert(offsetof(PartyData, settings) == 0x250);
+	static_assert(offsetof(PartyData, members) == 0x3F8);
+	static_assert(offsetof(PartyData, activeClient) == 0x186400);
+	static_assert(offsetof(PartyData, launchDeadline) == 0x186430);
+	static_assert(offsetof(PartyData, hostState) == 0x186490);
+
+#pragma pack(push, 1)
+	struct SessionData
+	{
+		char __pad0[0x34];
+		std::uint64_t sessionId;
+		std::uint8_t hostAddress;
+		char __pad1[0x61 - 0x3C - sizeof(std::uint8_t)];
+		std::uint8_t sessionKey;
+	};
+#pragma pack(pop)
+	static_assert(offsetof(SessionData, sessionId) == 0x34);
+	static_assert(offsetof(SessionData, hostAddress) == 0x3C);
+	static_assert(offsetof(SessionData, sessionKey) == 0x61);
+
+	struct PartyAtomicJoinInfo
+	{
+		char __pad0[0x158];
+		std::uint8_t addressValid;
+		char __pad1[0x15C - 0x158 - sizeof(std::uint8_t)];
+		netadr_s address;
+	};
+	static_assert(offsetof(PartyAtomicJoinInfo, addressValid) == 0x158);
+	static_assert(offsetof(PartyAtomicJoinInfo, address) == 0x15C);
+
+	struct ExternalStreamFile
+	{
+		char __pad0[0xE];
+		std::uint16_t fileIndex;
+	};
+	static_assert(offsetof(ExternalStreamFile, fileIndex) == 0xE);
+	static_assert(sizeof(ExternalStreamFile) == 0x10);
+
+	struct FastfileExternalHeader
+	{
+		char __pad0[0x20];
+		std::uint32_t imageFileCount;
+		std::uint32_t soundFileCount;
+	};
+	static_assert(offsetof(FastfileExternalHeader, imageFileCount) == 0x20);
+	static_assert(offsetof(FastfileExternalHeader, soundFileCount) == 0x24);
+	static_assert(sizeof(FastfileExternalHeader) == 0x28);
+
 	struct msg_t
 	{
 		int overflowed;
