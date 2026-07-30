@@ -1,5 +1,6 @@
 #include <std_include.hpp>
 #include "loader/component_loader.hpp"
+#include "game/game.hpp"
 #include "resource.hpp"
 
 #include <utils/nt.hpp>
@@ -56,6 +57,14 @@ namespace splash
 		component()
 		{
 			load_image_a_hook.create(LoadImageA, load_image_a_stub);
+		}
+
+		void post_unpack() override
+		{
+			if (game::environment::is_dedi())
+			{
+				utils::hook::set<std::uint8_t>(0x7B12C0_g, 0xC3);
+			}
 		}
 	};
 }
