@@ -1,22 +1,18 @@
-print("[S2x] Executing patched s2x_server_browser")
-local f0_local0 = require( "s2x_server_browser_uc" )
-local f0_local1, f0_local2, f0_local3, f0_local4, f0_local5, f0_local6, f0_local7, f0_local8, f0_local9, f0_local10, f0_local11, f0_local12, f0_local13, f0_local14 = nil
-if f0_local0 ~= nil and type( f0_local0 ) == "table" then
-	f0_local1 = f0_local0.PreLoadFunc
-	f0_local2 = f0_local0.PostLoadFunc
-	f0_local3 = f0_local0.PushFunc
-	f0_local4 = f0_local0.PushOverFunc
-	f0_local5 = f0_local0.ResumeFunc
-	f0_local6 = f0_local0.PopFunc
-	f0_local7 = f0_local0.ACTION_CreateMatch
-	f0_local8 = f0_local0.ACTION_DecrementRefreshButtonCooldown
-	f0_local9 = f0_local0.ACTION_RecordCurrentFocus
-	f0_local10 = f0_local0.ACTION_RefreshGamesList
-	f0_local11 = f0_local0.ACTION_SetUpForE3
-	f0_local12 = f0_local0.ACTION_UpdateGamesList
-	f0_local13 = f0_local0.FUNCTOR_CanFocusListItem
-	f0_local14 = f0_local0.FUNCTOR_RefreshGamesListChild
-end
+local browser_controller = require( "s2x_server_browser_uc" )
+local preload_server_browser = browser_controller.PreLoadFunc
+local postload_server_browser = browser_controller.PostLoadFunc
+local push_server_browser = browser_controller.PushFunc
+local push_over_server_browser = browser_controller.PushOverFunc
+local resume_server_browser = browser_controller.ResumeFunc
+local pop_server_browser = browser_controller.PopFunc
+local decrement_refresh_button_cooldown = browser_controller.decrement_refresh_button_cooldown
+local record_focus = browser_controller.record_focus
+local refresh_server_list = browser_controller.refresh_server_list
+local update_server_list = browser_controller.update_server_list
+local can_focus_list_item = browser_controller.can_focus_list_item
+local populate_server_row = browser_controller.populate_server_row
+local setup_for_e3 = browser_controller.setup_for_e3
+local S2X_LABELS = browser_controller.S2X_LABELS
 local s2x_menu_builders = nil
 if LUI and LUI.MenuBuilder then
 	s2x_menu_builders = LUI.MenuBuilder.m_types_build
@@ -49,11 +45,11 @@ s2x_menu_builders["s2x_server_browser"] = function ( menu, controller )
 			f1_local2 = self:getRootController()
 		end
 	end
-	if f0_local1 then
-		f0_local1( self, f1_local2, f1_local1 )
+	if preload_server_browser then
+		preload_server_browser( self, f1_local2, f1_local1 )
 	end
 	if CONDITIONS.IsE3Build() then
-		f0_local11( f1_local2 )
+		setup_for_e3( f1_local2 )
 	end
 	self:playSound( "menu_open" )
 	local f1_local3 = self
@@ -103,8 +99,8 @@ s2x_menu_builders["s2x_server_browser"] = function ( menu, controller )
 	RefreshListButton = LUI.MenuBuilder.BuildRegisteredType( "GenericButton", {
 		controllerIndex = f1_local2,
 		fontIconSet = f1_local1.fontIconSet,
-		buttonText = "REFRESH",
-		desc_text = "Refresh the server list.",
+		buttonText = S2X_LABELS.REFRESH,
+		desc_text = S2X_LABELS.REFRESH_DESCRIPTION,
 		useSmallBorder = true
 	} )
 	RefreshListButton.id = "RefreshListButton"
@@ -148,10 +144,10 @@ s2x_menu_builders["s2x_server_browser"] = function ( menu, controller )
 		horizontalAlignment = LUI.Alignment.Left,
 		horizontalAnchor = LUI.UIGrid.AnchorType.Origin,
 		horizontalScrollType = LUI.ScrollType.AnchoredEdge,
-		isPositionFocusable = f0_local13,
+		isPositionFocusable = can_focus_list_item,
 		maxVisibleColumns = 1,
 		maxVisibleRows = 15,
-		refreshChild = f0_local14,
+		refreshChild = populate_server_row,
 		spacingX = _1080p * 0,
 		spacingY = _1080p * 0,
 		verticalAlignment = LUI.Alignment.Top,
@@ -170,6 +166,28 @@ s2x_menu_builders["s2x_server_browser"] = function ( menu, controller )
 	AvailableGames:SetPositionIndicator( GridPositionIndicator )
 	AvailableGames:setRight( _1080p * 1791, 0 )
 	AvailableGames:setTop( _1080p * 260, 0 )
+	local EmptyState = nil
+
+	EmptyState = LUI.UIText.new()
+	EmptyState.id = "EmptyState"
+	self:addElement( EmptyState )
+	self.EmptyState = EmptyState
+
+	if f1_local1.fontIconSet ~= nil then
+		EmptyState:setFontIconSet( f1_local1.fontIconSet )
+	end
+	EmptyState:setAlpha( 0, 0 )
+	EmptyState:setAnchors( 0, 1, 0, 1, 0 )
+	EmptyState:setBottom( _1080p * 320, 0 )
+	EmptyState:setFont( FONTS.BodyFont.Font )
+	EmptyState:setFontSize( 28, 0 )
+	EmptyState:setHorizontalAlignment( LUI.HorizontalAlignment.Left )
+	EmptyState:setLeft( _1080p * 100, 0 )
+	EmptyState:setRGBFromInt( SWATCHES.Menus.MenuOffWhite, 0 )
+	EmptyState:setRight( _1080p * 1790, 0 )
+	EmptyState:setText( Engine.Localize( S2X_LABELS.NO_SERVERS_FOUND ), 0 )
+	EmptyState:setTop( _1080p * 280, 0 )
+	EmptyState:setVerticalAlignment( LUI.VerticalAlignment.Middle )
 	local Header = nil
 	
 	Header = LUI.MenuBuilder.BuildRegisteredType( "s2x_server_browser_row", {
@@ -226,7 +244,7 @@ s2x_menu_builders["s2x_server_browser"] = function ( menu, controller )
 	MenuDescription:setLeft( _1080p * 100, 0 )
 	MenuDescription:setRGBFromInt( SWATCHES.Menus.MenuOffWhite, 0 )
 	MenuDescription:setRight( _1080p * 900, 0 )
-	MenuDescription:setText( Engine.Localize( "Browse dedicated S2x servers." ), 0 )
+	MenuDescription:setText( Engine.Localize( S2X_LABELS.SERVER_BROWSER_DESCRIPTION ), 0 )
 	MenuDescription:setTop( _1080p * 164, 0 )
 	MenuDescription:setVerticalAlignment( LUI.VerticalAlignment.Bottom )
 	local PollingTimer = nil
@@ -275,7 +293,7 @@ s2x_menu_builders["s2x_server_browser"] = function ( menu, controller )
 	if MenuTitle.Title then
 		MenuTitle.Title:setFont( FONTS.BodyBoldFont.Font )
 		MenuTitle.Title:setHorizontalAlignment( LUI.HorizontalAlignment.Left )
-		MenuTitle.Title:setText( Engine.Localize( "SERVER BROWSER" ), 0 )
+		MenuTitle.Title:setText( Engine.Localize( S2X_LABELS.SERVER_BROWSER ), 0 )
 	end
 	if MenuTitle.zm_title_divider0 then
 		MenuTitle.zm_title_divider0:setRight( _1080p * 1727, 0 )
@@ -311,35 +329,35 @@ s2x_menu_builders["s2x_server_browser"] = function ( menu, controller )
 		end
 	}
 	RefreshListButton:addEventHandler( "button_action", function ( f7_arg0, f7_arg1 )
-		f0_local10( self, f7_arg1.controller or f1_local2, true )
+		refresh_server_list( self, f7_arg1 and f7_arg1.controller or f1_local2, true )
 	end )
 	RefreshListButton:addEventHandler( "gain_focus", function ( f8_arg0, f8_arg1 )
-		f0_local9( self, f8_arg0 )
+		record_focus( self, f8_arg0 )
 	end )
 	AvailableGames:addEventHandler( "gain_focus", function ( f9_arg0, f9_arg1 )
-		f0_local9( self, f9_arg0 )
+		record_focus( self, f9_arg0 )
 	end )
 	PollingTimer:addEventHandler( "s2x_server_browser_tick", function ( f10_arg0, f10_arg1 )
-		f0_local12( self, f10_arg1.controller or f1_local2 )
-		f0_local8( self )
+		update_server_list( self, f10_arg1 and f10_arg1.controller or f1_local2 )
+		decrement_refresh_button_cooldown( self )
 	end )
-	if f0_local2 then
-		f0_local2( self, f1_local2, f1_local1 )
+	if postload_server_browser then
+		postload_server_browser( self, f1_local2, f1_local1 )
 	end
 	if CONDITIONS.IsE3Build() and CONDITIONS.IsE3ClientMachine() then
 		ACTIONS.AnimateSequence( self, "E3NoCreateMatch" )
 	end
 	return self
 end
-if f0_local3 then
-	LUI.FlowManager.RegisterStackPushBehaviour( "s2x_server_browser", f0_local3 )
+if push_server_browser then
+	LUI.FlowManager.RegisterStackPushBehaviour( "s2x_server_browser", push_server_browser )
 end
-if f0_local4 then
-	LUI.FlowManager.RegisterStackPushOverBehaviour( "s2x_server_browser", f0_local4 )
+if push_over_server_browser then
+	LUI.FlowManager.RegisterStackPushOverBehaviour( "s2x_server_browser", push_over_server_browser )
 end
-if f0_local5 then
-	LUI.FlowManager.RegisterStackResumeBehaviour( "s2x_server_browser", f0_local5 )
+if resume_server_browser then
+	LUI.FlowManager.RegisterStackResumeBehaviour( "s2x_server_browser", resume_server_browser )
 end
-if f0_local6 then
-	LUI.FlowManager.RegisterStackPopBehaviour( "s2x_server_browser", f0_local6 )
+if pop_server_browser then
+	LUI.FlowManager.RegisterStackPopBehaviour( "s2x_server_browser", pop_server_browser )
 end

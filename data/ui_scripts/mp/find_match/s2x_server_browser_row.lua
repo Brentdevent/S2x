@@ -1,4 +1,3 @@
-print("[S2x] Executing patched s2x_server_browser_row")
 local f0_local0 = require( "s2x_server_browser_row_uc" )
 local f0_local1, f0_local2, f0_local3, f0_local4, f0_local5, f0_local6 = nil
 if f0_local0 ~= nil and type( f0_local0 ) == "table" then
