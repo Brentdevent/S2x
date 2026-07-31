@@ -52,7 +52,7 @@ namespace steam
 
 	unsigned int utils::GetAppID()
 	{
-		return game::environment::is_mp() ? 476620 : 476600;
+		return game::environment::uses_multiplayer_binary() ? 476620 : 476600;
 	}
 
 	void utils::SetOverlayNotificationPosition(int eNotificationPosition)

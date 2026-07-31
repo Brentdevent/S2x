@@ -65,7 +65,7 @@ namespace dedicated_party_client
 				return false;
 			}
 
-			if (game::environment::is_dedi())
+			if (game::environment::is_dedicated())
 			{
 				return dedicated_party::is_active()
 					&& (party_data == game::Lobby_GetPartyData(0)
@@ -79,7 +79,7 @@ namespace dedicated_party_client
 
 		int get_hosted_dedicated_party_max_players()
 		{
-			if (game::environment::is_dedi())
+			if (game::environment::is_dedicated())
 			{
 				if (!dedicated_party::is_active())
 				{
@@ -102,7 +102,7 @@ namespace dedicated_party_client
 				return true;
 			}
 
-			if (game::environment::is_dedi())
+			if (game::environment::is_dedicated())
 			{
 				return game::Party_IsMemberLocalPlayer(party_data, member_index);
 			}
@@ -123,8 +123,8 @@ namespace dedicated_party_client
 
 		int get_hosted_dedicated_party_member_count()
 		{
-			if ((game::environment::is_dedi() && !dedicated_party::is_active())
-				|| (!game::environment::is_dedi()
+			if ((game::environment::is_dedicated() && !dedicated_party::is_active())
+				|| (!game::environment::is_dedicated()
 					&& hosted_dedicated_party_state.session_id.empty()))
 			{
 				return -1;
@@ -170,7 +170,8 @@ namespace dedicated_party_client
 		void apply_hosted_party_capacity(game::PartyData* party_data = nullptr)
 		{
 			const auto max_players = hosted_dedicated_party_state.max_players;
-			if (max_players < 1 || max_players > max_party_members)
+			if (max_players < 1
+				|| max_players > game::environment::get_online_mode_info().max_players)
 			{
 				return;
 			}
@@ -320,7 +321,7 @@ namespace dedicated_party_client
 				update_hosted_dedicated_party_match(
 					hosted_dedicated_party_state.map_name,
 					hosted_dedicated_party_state.gametype,
-					true);
+					game::environment::is_multiplayer());
 			}
 
 			if (game::virtual_lobby_loaded())
@@ -351,6 +352,17 @@ namespace dedicated_party_client
 			}
 
 			hosted_dedicated_go_in_progress = !map_name_value.empty();
+			if (hosted_dedicated_go_in_progress
+				&& game::environment::is_zombies())
+			{
+				// Stock Zombies ready-up otherwise consumes the go command without
+				// entering its native preload path. A dedicated go is the server's
+				// readiness decision, so confirm it through the stock setter.
+				const auto controller_index =
+					game::CL_ControllerIndexFromClientNum(0);
+				game::PartyClient_SetLocalReadyUpFlag(controller_index);
+			}
+
 			const auto result = party_client_handle_go_hook.invoke<std::int64_t>(
 				party_data, command_data, from, message);
 			hosted_dedicated_go_in_progress = false;
@@ -358,7 +370,8 @@ namespace dedicated_party_client
 			if (!map_name_value.empty())
 			{
 				update_hosted_dedicated_party_match(
-					map_name_value, gametype_value, true);
+					map_name_value, gametype_value,
+					game::environment::is_multiplayer());
 			}
 
 			return result;
@@ -367,7 +380,8 @@ namespace dedicated_party_client
 		void cl_connect_and_preload_map_stub(const int local_client_num, void* session_info,
 			game::netadr_s* target, const char* map_name, const char* gametype)
 		{
-			if (hosted_dedicated_go_in_progress && map_name && gametype)
+			if (game::environment::is_multiplayer()
+				&& hosted_dedicated_go_in_progress && map_name && gametype)
 			{
 				// Public PartyClient_HandleGo runs Playlist_RunRules before this call.
 				// Restore the map/gametype carried by the go command at the last native
@@ -501,7 +515,8 @@ namespace dedicated_party_client
 		if (!is_session_hex_string(host_address, 80)
 			|| !is_session_hex_string(key, 32)
 			|| !is_session_hex_string(session_id, 16)
-			|| max_players < 1 || max_players > max_party_members
+			|| max_players < 1
+			|| max_players > game::environment::get_online_mode_info().max_players
 			|| !validate_map_and_gametype(map_name, gametype)
 			|| !party::validate_gametype(gametype))
 		{
@@ -544,6 +559,7 @@ namespace dedicated_party_client
 			std::numeric_limits<int>::max(), protocol) || protocol != PROTOCOL)
 		{
 			console::error("Connection failed: invalid protocol.\n");
+			hosted_dedicated_party_state.sync_challenge.clear();
 			return true;
 		}
 
@@ -551,14 +567,28 @@ namespace dedicated_party_client
 		if (gamename != "S2")
 		{
 			console::error("Connection failed: invalid gamename '%s'.\n", gamename.data());
+			hosted_dedicated_party_state.sync_challenge.clear();
+			return true;
+		}
+
+		const auto& mode = game::environment::get_online_mode_info();
+		const auto server_mode = info.get("mode");
+		if (server_mode != mode.token)
+		{
+			console::error(
+				"Hosted dedicated lobby: server mode '%s' does not match client mode '%s'.\n",
+				server_mode.empty() ? "<missing>" : server_mode.data(),
+				mode.token.data());
+			hosted_dedicated_party_state.sync_challenge.clear();
 			return true;
 		}
 
 		int max_players{};
 		if (!parse_integer(info.get("sv_maxclients"), 1,
-			max_party_members, max_players))
+			mode.max_players, max_players))
 		{
 			console::error("Hosted dedicated lobby: invalid party capacity.\n");
+			hosted_dedicated_party_state.sync_challenge.clear();
 			return true;
 		}
 
@@ -570,7 +600,8 @@ namespace dedicated_party_client
 			apply_hosted_party_capacity(hosted_dedicated_party_state.game_lobby);
 			refresh_presentation();
 			update_hosted_dedicated_party_match(
-				info.get("party_mapname"), info.get("party_gametype"), true);
+				info.get("party_mapname"), info.get("party_gametype"),
+				game::environment::is_multiplayer());
 		}
 
 		return true;
@@ -578,7 +609,7 @@ namespace dedicated_party_client
 
 	std::string get_gametype()
 	{
-		if (game::environment::is_dedi())
+		if (game::environment::is_dedicated())
 		{
 			return dedicated_party::get_current_gametype();
 		}
@@ -631,7 +662,7 @@ namespace dedicated_party_client
 			party_is_member_ui_visible_hook.create(
 				game::Party_IsMemberUIVisible, party_is_member_ui_visible_stub);
 
-			if (game::environment::is_dedi())
+			if (game::environment::is_dedicated())
 			{
 				return;
 			}

@@ -1,9 +1,10 @@
 #pragma once
 
 #include "structs.hpp"
-#include "launcher/launcher.hpp"	
 
 #include <utils/nt.hpp>
+
+#include <string_view>
 
 namespace arxan::detail
 {
@@ -17,15 +18,34 @@ namespace game
 	
 	namespace environment
 	{
-		launcher::mode get_mode();
-		launcher::mode get_real_mode();
+		enum class mode
+		{
+			singleplayer,
+			multiplayer,
+			zombies,
+		};
 
-		bool is_sp();
-		bool is_mp();
+		struct online_mode_info
+		{
+			std::string_view token;
+			std::string_view default_gametype;
+			int max_players;
+			int minimum_direct_players;
+			int arena_mode;
+		};
+
+		mode get_mode();
+		void set_mode(mode mode);
+
+		bool is_dedicated();
+		void set_dedicated(bool dedicated);
+
+		bool is_singleplayer();
+		bool is_multiplayer();
 		bool is_zombies();
-		bool is_dedi();
+		bool uses_multiplayer_binary();
 
-		void set_mode(launcher::mode mode);
+		const online_mode_info& get_online_mode_info();
 
 		std::string get_string();
 	}
@@ -55,7 +75,7 @@ namespace game
 
 	inline size_t select(const size_t mp_val, const size_t sp_val)
 	{
-		return relocate(environment::is_mp() ? mp_val : sp_val);
+		return relocate(environment::uses_multiplayer_binary() ? mp_val : sp_val);
 	}
 
 	inline size_t select(const void* mp_val, const void* sp_val)

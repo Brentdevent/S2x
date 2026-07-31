@@ -25,7 +25,6 @@ namespace dedicated_party
 	{
 		constexpr std::uint32_t party_host_state_mask = 0xFC;
 		constexpr auto party_member_limit = 48;
-		constexpr auto supported_player_limit = 18;
 		constexpr auto private_party_creation_timeout = 90s;
 
 		enum class dedicated_party_stage
@@ -52,6 +51,7 @@ namespace dedicated_party
 			game::PartyData* private_party{};
 			game::PartyData* game_lobby{};
 			std::chrono::steady_clock::time_point stage_started{};
+			std::chrono::steady_clock::time_point last_launch_request{};
 		};
 
 		dedicated_party_state_t dedicated_party_state{};
@@ -65,6 +65,10 @@ namespace dedicated_party
 		{
 			dedicated_party_state.stage = stage;
 			dedicated_party_state.stage_started = std::chrono::steady_clock::now();
+			if (stage == dedicated_party_stage::waiting_for_countdown)
+			{
+				dedicated_party_state.last_launch_request = {};
+			}
 		}
 
 		game::PartyData* get_private_party_data()
@@ -112,6 +116,11 @@ namespace dedicated_party
 
 		void configure_public_lobby()
 		{
+			if (game::environment::is_zombies())
+			{
+				return;
+			}
+
 			set_party_is_private_match(dedicated_party_state.game_lobby, false);
 			set_party_is_ranked_match(dedicated_party_state.game_lobby, false);
 		}
@@ -128,7 +137,8 @@ namespace dedicated_party
 
 			game::Dvar_SetIntByName("sv_maxclients", max_players);
 
-			// 5321 is the stock private-party player-limit dvar used by the MP menus.
+			// The stock MP and Zombies private-party starters both read 5321 when
+			// creating their native hosted session.
 			game::Dvar_SetIntByName("5321", max_players);
 
 			if (dedicated_party_state.private_party)
@@ -147,10 +157,12 @@ namespace dedicated_party
 		{
 			if (!party_maxplayers)
 			{
-				return supported_player_limit;
+				return game::environment::get_online_mode_info().max_players;
 			}
 
-			return std::clamp(party_maxplayers->current.integer, 1, supported_player_limit);
+			return std::clamp(
+				party_maxplayers->current.integer, 1,
+				game::environment::get_online_mode_info().max_players);
 		}
 
 		void set_game_is_private_match(const int local_client_num, const bool private_match)
@@ -233,11 +245,30 @@ namespace dedicated_party
 				});
 		}
 
-		int get_remote_party_member_count(const game::PartyData* party_data)
+		int get_remote_party_member_count(game::PartyData* party_data)
 		{
 			if (!party_data)
 			{
 				return 0;
+			}
+
+			if (game::environment::is_zombies())
+			{
+				auto count = 0;
+				for (auto index = 0; index < party_member_limit; ++index)
+				{
+					// Stock Party_IsMemberPresent is state >= 5. Do not advertise a
+					// joining member until its partystate acknowledgement is committed.
+					if (party_data->members[index].state >= 5
+						&& !game::Party_IsHost(party_data, index)
+						&& !game::Party_IsMemberLocalPlayer(party_data, index))
+					{
+						++count;
+					}
+				}
+
+				return std::clamp(count, 0,
+					game::environment::get_online_mode_info().max_players);
 			}
 
 			auto count = 0;
@@ -251,7 +282,30 @@ namespace dedicated_party
 			}
 
 			// The dedicated frontend owner is a real party member but not a player.
-			return std::clamp(count - 1, 0, party_member_limit);
+			return std::clamp(count - 1, 0,
+				game::environment::get_online_mode_info().max_players);
+		}
+
+		bool has_pending_remote_party_member()
+		{
+			auto* party_data = dedicated_party_state.game_lobby;
+			if (!party_data)
+			{
+				return false;
+			}
+
+			for (auto index = 0; index < party_member_limit; ++index)
+			{
+				const auto state = party_data->members[index].state;
+				if (state >= 2 && state <= 4
+					&& !game::Party_IsHost(party_data, index)
+					&& !game::Party_IsMemberLocalPlayer(party_data, index))
+				{
+					return true;
+				}
+			}
+
+			return false;
 		}
 
 		bool has_local_gameplay_client()
@@ -292,7 +346,7 @@ namespace dedicated_party
 			return true;
 		}
 
-		bool parse_map_rotation(std::vector<dedicated_match_t>& rotation)
+		bool parse_multiplayer_map_rotation(std::vector<dedicated_match_t>& rotation)
 		{
 			rotation.clear();
 			if (!sv_maprotation || !sv_maprotation->current.string
@@ -377,6 +431,112 @@ namespace dedicated_party
 			return true;
 		}
 
+		bool parse_zombies_map_rotation(std::vector<dedicated_match_t>& rotation)
+		{
+			rotation.clear();
+			if (!sv_maprotation || !sv_maprotation->current.string
+				|| !sv_maprotation->current.string[0])
+			{
+				console::error("Dedicated map rotation: sv_maprotation is empty.\n");
+				return false;
+			}
+
+			std::istringstream stream{ sv_maprotation->current.string };
+			std::string token{};
+			const auto gametype = std::string{
+				game::environment::get_online_mode_info().default_gametype };
+			auto gametype_is_valid = true;
+
+			while (stream >> token)
+			{
+				const auto keyword = utils::string::to_lower(token);
+				if (keyword == "gametype")
+				{
+					std::string configured_gametype{};
+					if (!(stream >> configured_gametype))
+					{
+						console::error(
+							"Dedicated Zombies rotation: 'gametype' is missing its value.\n");
+						break;
+					}
+
+					configured_gametype = utils::string::to_lower(configured_gametype);
+					gametype_is_valid = configured_gametype == gametype;
+					if (!gametype_is_valid)
+					{
+						console::error(
+							"Dedicated Zombies rotation: gametype '%s' is invalid; "
+							"only 'zombies' is supported.\n",
+							configured_gametype.data());
+					}
+
+					continue;
+				}
+
+				if (keyword == "map")
+				{
+					std::string map_name{};
+					if (!(stream >> map_name))
+					{
+						console::error(
+							"Dedicated Zombies rotation: 'map' is missing its value.\n");
+						break;
+					}
+
+					map_name = utils::string::to_lower(map_name);
+					if (!gametype_is_valid)
+					{
+						console::error(
+							"Dedicated Zombies rotation: skipping map '%s' after an "
+							"invalid gametype.\n",
+							map_name.data());
+						gametype_is_valid = true;
+						continue;
+					}
+
+					dedicated_match_t match{};
+					if (!make_match(map_name, gametype, match))
+					{
+						console::error(
+							"Dedicated Zombies rotation: skipping invalid map '%s'.\n",
+							map_name.data());
+						continue;
+					}
+
+					rotation.emplace_back(std::move(match));
+					continue;
+				}
+
+				console::error(
+					"Dedicated Zombies rotation: unexpected token '%s'; "
+					"expected 'map' or optional 'gametype zombies'.\n",
+					token.data());
+			}
+
+			if (rotation.empty())
+			{
+				console::error(
+					"Dedicated Zombies rotation: no valid maps were found.\n");
+				return false;
+			}
+
+			return true;
+		}
+
+		bool parse_map_rotation(std::vector<dedicated_match_t>& rotation)
+		{
+			switch (game::environment::get_mode())
+			{
+			case game::environment::mode::multiplayer:
+				return parse_multiplayer_map_rotation(rotation);
+
+			case game::environment::mode::zombies:
+				return parse_zombies_map_rotation(rotation);
+			}
+
+			return false;
+		}
+
 		void handle_map_rotate()
 		{
 			if (!sv_maprotation)
@@ -406,7 +566,8 @@ namespace dedicated_party
 
 		void apply_lobby_time()
 		{
-			if (!dedicated_lobby_time)
+			if (!dedicated_lobby_time
+				|| game::environment::is_zombies())
 			{
 				return;
 			}
@@ -451,6 +612,11 @@ namespace dedicated_party
 
 		void prepare_match_settings(const dedicated_match_t& match)
 		{
+			if (game::environment::is_zombies())
+			{
+				return;
+			}
+
 			if (!set_match_rules_gametype(match.gametype))
 			{
 				console::error("Dedicated party: failed to select match-rules gametype '%s'.\n",
@@ -473,6 +639,11 @@ namespace dedicated_party
 		void apply_dedicated_match_settings(const dedicated_match_t& match)
 		{
 			party::apply_map_settings(match.map_name, match.gametype, match.map_index);
+
+			if (game::environment::is_zombies())
+			{
+				return;
+			}
 
 			// PartyHost_StartMatch sends the hosted party fields in its go message, but
 			// initializes g_gametype from the launch state selected by sub_470D30(1).
@@ -558,6 +729,25 @@ namespace dedicated_party
 			return std::chrono::steady_clock::now() - dedicated_party_state.stage_started >= timeout;
 		}
 
+		void request_native_match_start()
+		{
+			if (game::environment::is_zombies()
+				&& has_pending_remote_party_member())
+			{
+				return;
+			}
+
+			const auto now = std::chrono::steady_clock::now();
+			if (dedicated_party_state.last_launch_request.time_since_epoch().count() != 0
+				&& now - dedicated_party_state.last_launch_request < 1s)
+			{
+				return;
+			}
+
+			dedicated_party_state.last_launch_request = now;
+			game::Cbuf_AddText(0, "xpartygo\n");
+		}
+
 		dedicated_match_t take_rotation_match()
 		{
 			const auto index = dedicated_party_state.next_rotation_index;
@@ -601,8 +791,9 @@ namespace dedicated_party
 					console::info("Dedicated party: private party created.\n");
 
 					apply_lobby_time();
-					// The stock command creates the hosted game-lobby object as a private match.
-					// Once created, apply_match keeps that game lobby public for its lifetime.
+					// The stock command creates the hosted game-lobby object as a private
+					// match. MP exposes it through its existing public-lobby policy after
+					// creation; Zombies retains the native private-party flow.
 					set_game_is_private_match(0, true);
 					set_game_is_ranked_match(0, false);
 
@@ -650,9 +841,9 @@ namespace dedicated_party
 
 			case dedicated_party_stage::waiting_for_match_settings:
 			{
-				// default_xboxlive.cfg executes in the stock main frame before this
-				// pipeline. Apply and publish the requested mode afterward so public
-				// team assignment and remote lobby state use the same gametype.
+				// MP's default_xboxlive.cfg executes in the stock main frame before this
+				// pipeline. The common application below also publishes native Zombies
+				// map state without running MP match-rule or team setup.
 				apply_dedicated_match_settings(dedicated_party_state.current_match);
 				apply_configured_party_limits();
 				game::Cbuf_AddText(0, "xupdatepartystate\n");
@@ -666,6 +857,21 @@ namespace dedicated_party
 				if (stage_timed_out(std::chrono::seconds{
 					dedicated_lobby_time->current.integer }))
 				{
+					if (game::environment::is_zombies())
+					{
+						if (get_party_host_state(dedicated_party_state.game_lobby) != 4)
+						{
+							break;
+						}
+
+						// Zombies owns its prematch work in PartyHost_Frame. Enter the
+						// launch stage and use the stock lobby action without running the
+						// Multiplayer team/setup branch or waiting for MP state 32.
+						set_stage(dedicated_party_stage::waiting_for_countdown);
+						request_native_match_start();
+						break;
+					}
+
 					const auto host_state = get_party_host_state(dedicated_party_state.game_lobby);
 					// Stock public matches prepare their teams before the final start request.
 					// The dedicated xpartygo shim otherwise takes the private-match shortcut
@@ -692,6 +898,17 @@ namespace dedicated_party
 
 			case dedicated_party_stage::waiting_for_countdown:
 			{
+				if (game::environment::is_zombies()
+					&& game::virtual_lobby_loaded()
+					&& !party::server_running()
+					&& !game::SV_Loaded()
+					&& get_party_host_state(dedicated_party_state.game_lobby) == 4)
+				{
+					// Native Zombies go has additional transient readiness gates. Retry
+					// the stock action until its state/preload transition is observable.
+					request_native_match_start();
+				}
+
 				if (party::server_running() && game::SV_Loaded()
 					&& !game::virtual_lobby_loaded()
 					&& party::loaded_map_name() == dedicated_party_state.current_match.map_name
@@ -759,7 +976,7 @@ namespace dedicated_party
 
 		void end_match()
 		{
-			if (!game::environment::is_dedi()
+			if (!game::environment::is_dedicated()
 				|| dedicated_party_state.stage != dedicated_party_stage::match_running
 				|| !party::server_running())
 			{
@@ -776,7 +993,7 @@ namespace dedicated_party
 
 	void start()
 	{
-		if (!game::environment::is_dedi() || is_active()
+		if (!game::environment::is_dedicated() || is_active()
 			|| !game::virtual_lobby_loaded())
 		{
 			return;
@@ -787,10 +1004,25 @@ namespace dedicated_party
 			std::vector<dedicated_match_t> rotation{};
 			if (!parse_map_rotation(rotation) || !set_rotation(std::move(rotation)))
 			{
-				return;
+				if (!dedicated_party_state.requested_next_match.has_value())
+				{
+					return;
+				}
 			}
 
 			map_rotate_requested = false;
+		}
+
+		if (dedicated_party_state.rotation.empty()
+			&& dedicated_party_state.requested_next_match.has_value())
+		{
+			// A standalone map command seeds a repeatable one-entry lifecycle. When
+			// a configured rotation exists, requested_next_match remains a one-match
+			// override and rotation resumes afterward.
+			dedicated_party_state.rotation.emplace_back(
+				*dedicated_party_state.requested_next_match);
+			console::info(
+				"Dedicated party: using the map override as a one-entry rotation.\n");
 		}
 
 		if (dedicated_party_state.rotation.empty())
@@ -799,8 +1031,12 @@ namespace dedicated_party
 		}
 
 		auto rotation = std::move(dedicated_party_state.rotation);
+		auto requested_next_match = std::move(
+			dedicated_party_state.requested_next_match);
 		dedicated_party_state = {};
 		dedicated_party_state.rotation = std::move(rotation);
+		dedicated_party_state.requested_next_match =
+			std::move(requested_next_match);
 
 		apply_configured_party_limits();
 		apply_lobby_time();
@@ -839,7 +1075,6 @@ namespace dedicated_party
 
 		dedicated_party_state.rotation = std::move(rotation);
 		dedicated_party_state.next_rotation_index = 0;
-		dedicated_party_state.requested_next_match.reset();
 		dedicated_party_state.requested_rotation_match.reset();
 
 		console::info("Dedicated map rotation:\n");
@@ -877,19 +1112,21 @@ namespace dedicated_party
 
 	bool set_next_match(const std::string& map_name, const std::string& gametype, const int map_index)
 	{
-		if (!is_active())
+		if (!game::environment::is_dedicated())
 		{
 			return false;
 		}
 
 		dedicated_party_state.requested_next_match = dedicated_match_t{ map_name, gametype, map_index };
-		console::info("Next dedicated match set to %s %s.\n", map_name.data(), gametype.data());
+		console::info("%s dedicated match set to %s %s.\n",
+			is_active() ? "Next" : "Initial",
+			map_name.data(), gametype.data());
 		return true;
 	}
 
 	bool get_connect_info(connect_info& info)
 	{
-		if (!game::environment::is_dedi() || !is_active())
+		if (!game::environment::is_dedicated() || !is_active())
 		{
 			return false;
 		}
@@ -927,7 +1164,7 @@ namespace dedicated_party
 		info.session_id = session_id.data();
 		info.map_name = dedicated_party_state.current_match.map_name;
 		info.gametype = dedicated_party_state.current_match.gametype;
-		const auto* hosted_game_lobby = dedicated_party_state.game_lobby
+		auto* hosted_game_lobby = dedicated_party_state.game_lobby
 			? dedicated_party_state.game_lobby
 			: game_lobby;
 		info.member_count = get_remote_party_member_count(hosted_game_lobby);
@@ -946,17 +1183,18 @@ namespace dedicated_party
 	public:
 		void post_unpack() override
 		{
-			if (!game::environment::is_dedi())
+			if (!game::environment::is_dedicated())
 			{
 				return;
 			}
 
+			const auto& mode = game::environment::get_online_mode_info();
 			party_maxplayers = game::Dvar_RegisterInt(
-				"party_maxplayers", supported_player_limit, 1,
-				supported_player_limit, game::DVAR_FLAG_NONE);
+				"party_maxplayers", mode.max_players, 1,
+				mode.max_players, game::DVAR_FLAG_NONE);
 			party_minplayers = game::Dvar_RegisterInt(
 				"party_minplayers", 1, 1,
-				supported_player_limit, game::DVAR_FLAG_NONE);
+				mode.max_players, game::DVAR_FLAG_NONE);
 			dedicated_lobby_time = game::Dvar_RegisterInt(
 				"dedicated_lobby_time", 60, 0, 120, game::DVAR_FLAG_NONE);
 			map_rotate_requested = utils::flags::has_flag("+map_rotate");
@@ -967,22 +1205,28 @@ namespace dedicated_party
 					"sv_maprotation", "", game::DVAR_FLAG_NONE);
 			}, scheduler::pipeline::main);
 
-			// CL_Live_PartyGo checks the private-match flag three times: before leaving
-			// the virtual lobby, as the fallback when the normal local host check fails,
-			// and before requesting the match. Only this command sees the dedicated
-			// public game lobby as private; the stored party state remains public.
-			utils::hook::call(0x7F18C_g, xpartygo_private_match_stub);
-			utils::hook::call(0x7F1B7_g, xpartygo_private_match_stub);
-			utils::hook::call(0x7F1C3_g, xpartygo_private_match_stub);
+			if (game::environment::is_multiplayer())
+			{
+				// CL_Live_PartyGo checks the private-match flag three times: before
+				// leaving the virtual lobby, as the fallback when the normal local host
+				// check fails, and before requesting the match. Only MP stores its
+				// dedicated game lobby as public.
+				utils::hook::call(0x7F18C_g, xpartygo_private_match_stub);
+				utils::hook::call(0x7F1B7_g, xpartygo_private_match_stub);
+				utils::hook::call(0x7F1C3_g, xpartygo_private_match_stub);
+			}
 
 			// PartyHost_Frame has separate public/private auto-start sites. Both stay
 			// gated until our dedicated intermission has elapsed.
 			utils::hook::call(0x48B605_g, party_host_auto_start_stub);
 			utils::hook::call(0x48B768_g, party_host_auto_start_stub);
 
-			// This is the final PartyHost_StartMatch call after public playlist setup.
-			// Reapply the rotation settings before it broadcasts the go message.
-			utils::hook::call(0x48B214_g, party_host_start_match_stub);
+			if (game::environment::is_multiplayer())
+			{
+				// This is the final PartyHost_StartMatch call after public playlist
+				// setup. Reapply the MP rotation settings before it broadcasts go.
+				utils::hook::call(0x48B214_g, party_host_start_match_stub);
+			}
 
 			command::add("dedicated_end_match", [](const command::params&)
 			{

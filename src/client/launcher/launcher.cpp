@@ -35,8 +35,23 @@ void launcher::create_main_menu()
 			const auto& param = params[0];
 			if (!param.is_number()) return {};
 
-			const auto number = static_cast<mode>(param.get_number());
-			this->select_mode(number);
+			switch (param.get_number())
+			{
+			case 1:
+				this->select_mode(game::environment::mode::singleplayer);
+				break;
+
+			case 2:
+				this->select_mode(game::environment::mode::multiplayer);
+				break;
+
+			case 3:
+				this->select_mode(game::environment::mode::zombies);
+				break;
+
+			default:
+				return {};
+			}
 
 			return {};
 		});
@@ -44,13 +59,13 @@ void launcher::create_main_menu()
 	this->main_window_.get_html_frame()->load_html(utils::nt::load_resource(LAUNCHER_MENU));
 }
 
-launcher::mode launcher::run() const
+std::optional<game::environment::mode> launcher::run() const
 {
 	window::run();
 	return this->mode_;
 }
 
-void launcher::select_mode(const mode mode)
+void launcher::select_mode(const game::environment::mode mode)
 {
 	this->mode_ = mode;
 	this->main_window_.get_window()->close();

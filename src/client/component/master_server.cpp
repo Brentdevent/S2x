@@ -156,7 +156,7 @@ namespace master_server
 
 		void run_heartbeat()
 		{
-			if (!game::environment::is_dedi() || !heartbeat_is_enabled())
+			if (!game::environment::is_dedicated() || !heartbeat_is_enabled())
 			{
 				party_was_joinable = false;
 				return;
@@ -283,7 +283,7 @@ namespace master_server
 				refresh_address_cache(address);
 			}, scheduler::pipeline::main);
 
-			if (game::environment::is_dedi())
+			if (game::environment::is_dedicated())
 			{
 				scheduler::loop(run_heartbeat, scheduler::pipeline::main, 1s);
 			}

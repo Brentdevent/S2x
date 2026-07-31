@@ -13,6 +13,8 @@
 #include "console/console.hpp"
 
 #include <utils/hook.hpp>
+#include <utils/io.hpp>
+#include <utils/nt.hpp>
 #include <utils/string.hpp>
 #include <utils/cryptography.hpp>
 #include <utils/info_string.hpp>
@@ -26,10 +28,6 @@ namespace party
 	namespace
 	{
 		utils::hook::detour cl_connect_hook;
-
-		// Technically max clients is 48, but needs more patches to work properly
-		constexpr int total_max_clients = 18;
-		constexpr int total_max_party_members = 48;
 
 		struct connect_state_t
 		{
@@ -69,10 +67,83 @@ namespace party
 			return lhs_is_ip && rhs_is_ip && lhs.addr == rhs.addr && lhs.port == rhs.port;
 		}
 
+		bool zombies_fastfile_is_installed(const std::string& map_name)
+		{
+			const auto fastfile_name = map_name + ".ff";
+			const auto game_directory = utils::nt::library{}.get_folder();
+			const std::array<std::filesystem::path, 2> candidates{
+				fastfile_name,
+				std::filesystem::path{"zone"} / fastfile_name,
+			};
+
+			for (const auto& candidate : candidates)
+			{
+				// Stock installs keep map fastfiles in the game root. Standalone
+				// dedicated packages commonly keep the same files in zone/.
+				if (utils::io::file_exists(candidate.generic_string())
+					|| utils::io::file_exists((game_directory / candidate).generic_string()))
+				{
+					return true;
+				}
+			}
+
+			return false;
+		}
+
 		bool get_map_index(const std::string& map_name, int& map_index)
 		{
-			map_index = game::UI_GetListIndexFromMapName(map_name.data());
+			const auto& mode = game::environment::get_online_mode_info();
+			const std::string_view map_name_view{ map_name };
+			// The stock mode records classify Multiplayer as "mp_" and Zombies as
+			// the more specific "mp_zombie_". Test the specific prefix first so
+			// Zombies maps cannot be accepted by Multiplayer's generic prefix.
+			const auto is_zombies_map = map_name_view.starts_with("mp_zombie_");
+			const auto is_multiplayer_map = !is_zombies_map && map_name_view.starts_with("mp_");
+			const auto map_mode = is_zombies_map
+				? game::environment::mode::zombies
+				: game::environment::mode::multiplayer;
+			if ((!is_zombies_map && !is_multiplayer_map)
+				|| map_mode != game::environment::get_mode())
+			{
+				console::error(
+					"Map '%s' is not a %s map.\n",
+					map_name.data(), mode.token.data());
+				return false;
+			}
 
+			if (game::environment::is_zombies())
+			{
+				const auto safe_name = std::all_of(
+					map_name.begin(), map_name.end(), [](const unsigned char character)
+					{
+						return std::isalnum(character) != 0 || character == '_';
+					});
+				if (!safe_name || !zombies_fastfile_is_installed(map_name))
+				{
+					console::error(
+						"Zombies map '%s' is not installed locally "
+						"(checked the game root and zone folder).\n",
+						map_name.data());
+					return false;
+				}
+
+				// The sorted UI lookup is deliberately disabled by stock Zombies.
+				// Refresh the mode-selected arena catalog and use its authoritative
+				// unsorted map-name lookup instead.
+				game::GameInfo_UpdateArenas();
+				map_index = game::GameInfo_GetIndexForMapName(map_name.data());
+				if (map_index < 0)
+				{
+					console::error(
+						"Zombies map '%s' is not present in the stock arena catalog.\n",
+						map_name.data());
+					return false;
+				}
+
+				return true;
+			}
+
+			map_index = game::UI_GetListIndexFromMapName(map_name.data());
 			if (map_index <= 0)
 			{
 				console::error("Map '%s' not found in UI list.\n", map_name.data());
@@ -108,7 +179,10 @@ namespace party
 
 		void set_party_map_settings(const std::string& map_name, const std::string& gametype)
 		{
-			game::UI_SetMap(map_name.data(), gametype.data());
+			if (game::environment::is_multiplayer())
+			{
+				game::UI_SetMap(map_name.data(), gametype.data());
+			}
 
 			// This fixes UI elements, scoreboard for example.
 			const auto party = game::Lobby_GetPartyData(0);
@@ -127,7 +201,10 @@ namespace party
 			}
 
 			game::Dvar_SetStringByName("mapname", map_name.data());
-			game::Dvar_SetIntByName("ui_mapname", map_index);
+			if (game::environment::is_multiplayer())
+			{
+				game::Dvar_SetIntByName("ui_mapname", map_index);
+			}
 		}
 
 		std::string get_current_mapname()
@@ -143,13 +220,19 @@ namespace party
 
 		std::string get_current_gametype()
 		{
+			const auto& mode = game::environment::get_online_mode_info();
+			if (game::environment::is_zombies())
+			{
+				return std::string{ mode.default_gametype };
+			}
+
 			const auto* dvar = game::Dvar_FindMalleableVar("g_gametype");
 			if (dvar && dvar->current.string)
 			{
 				return dvar->current.string;
 			}
 
-			return "dm";
+			return std::string{ mode.default_gametype };
 		}
 
 		std::string get_current_hostname()
@@ -170,12 +253,26 @@ namespace party
 				return params[2];
 			}
 
+			const auto& mode = game::environment::get_online_mode_info();
+			if (game::environment::is_zombies())
+			{
+				return std::string{ mode.default_gametype };
+			}
+
 			const auto* g_gametype = game::Dvar_FindMalleableVar("g_gametype");
-			return g_gametype ? g_gametype->current.string : "dm";
+			return g_gametype
+				? std::string{ g_gametype->current.string }
+				: std::string{ mode.default_gametype };
 		}
 
 		bool is_valid_gametype(const std::string& gametype)
 		{
+			const auto& mode = game::environment::get_online_mode_info();
+			if (game::environment::is_zombies())
+			{
+				return utils::string::to_lower(gametype) == mode.default_gametype;
+			}
+
 			// The stock helper returns its input pointer when the gametype is absent
 			// from maps/mp/gametypes/_gametypes.txt.
 			return utils::hook::invoke<const char*>(0x6500E0_g, gametype.data()) != gametype.data();
@@ -216,16 +313,24 @@ namespace party
 				return false;
 			}
 
+			if (game::environment::is_zombies()
+				&& !is_valid_gametype(gametype))
+			{
+				console::error(
+					"Connection failed: Zombies servers require gametype 'zombies'.\n");
+				return false;
+			}
+
 			return true;
 		}
 
 		void perform_game_init()
 		{
-			if (!game::environment::is_zombies())
+			if (game::environment::is_multiplayer())
 			{
 				game::Cbuf_AddText(0, "exec default_xboxlive.cfg\n");
 
-				if (!game::environment::is_dedi())
+				if (!game::environment::is_dedicated())
 				{
 					set_max_agents(6);
 				}
@@ -303,7 +408,9 @@ namespace party
 				return;
 			}
 
-			const auto clamped_max_clients = std::clamp(max_clients, 2, total_max_clients);
+			const auto& mode = game::environment::get_online_mode_info();
+			const auto clamped_max_clients = std::clamp(
+				max_clients, mode.minimum_direct_players, mode.max_players);
 			game::Dvar_SetIntByName("sv_maxclients", clamped_max_clients);
 
 			console::info(
@@ -408,7 +515,7 @@ namespace party
 			}
 
 			const auto map_name = utils::string::to_lower(params[1]);
-			const std::string gametype = get_gametype_or_default(params);
+			auto gametype = get_gametype_or_default(params);
 			const bool has_gametype = params.size() >= 3;
 			if (!validate_map_and_gametype(map_name, gametype))
 			{
@@ -421,6 +528,12 @@ namespace party
 				return;
 			}
 
+			if (game::environment::is_zombies())
+			{
+				gametype = std::string{
+					game::environment::get_online_mode_info().default_gametype };
+			}
+
 			int map_index = 0;
 			if (!get_map_index(map_name, map_index))
 			{
@@ -428,7 +541,7 @@ namespace party
 			}
 
 			const auto server_running = game::is_server_running();
-			const auto is_dedicated = game::environment::is_dedi();
+			const auto is_dedicated = game::environment::is_dedicated();
 			if (is_dedicated && (server_running || dedicated_party::is_active()))
 			{
 				if (!dedicated_party::set_next_match(map_name, gametype, map_index))
@@ -453,9 +566,16 @@ namespace party
 
 			if (is_dedicated)
 			{
+				if (!dedicated_party::set_next_match(map_name, gametype, map_index))
+				{
+					console::error("Unable to queue the dedicated match override.\n");
+					return;
+				}
+
 				if (!game::virtual_lobby_loaded())
 				{
-					console::info("Ignoring early dedicated map command until the virtual lobby is loaded.\n");
+					console::info(
+						"Queued dedicated map override until the virtual lobby is loaded.\n");
 					return;
 				}
 
@@ -507,7 +627,10 @@ namespace party
 			const auto hostname = get_current_hostname();
 			auto clients = get_connected_client_count();
 			auto bots = get_bot_count();
-			auto max_clients = *game::sv_maxclients > 0 ? *game::sv_maxclients : total_max_clients;
+			const auto& mode = game::environment::get_online_mode_info();
+			auto max_clients = *game::sv_maxclients > 0
+				? std::min(*game::sv_maxclients, mode.max_players)
+				: mode.max_players;
 			auto match_running = game::is_server_running();
 
 			dedicated_party::connect_info party_connect_info{};
@@ -524,6 +647,7 @@ namespace party
 
 			info.set("challenge", std::string{ data });
 			info.set("gamename", "S2");
+			info.set("mode", std::string{ mode.token });
 			info.set("hostname", hostname);
 			info.set("sv_hostname", hostname);
 			info.set("mapname", mapname);
@@ -610,7 +734,8 @@ namespace party
 
 	int get_available_match_slots()
 	{
-		return std::max(0, total_max_clients - get_connected_client_count());
+		return std::max(0,
+			game::environment::get_online_mode_info().max_players - get_connected_client_count());
 	}
 
 	class component final : public multiplayer_component
@@ -618,8 +743,11 @@ namespace party
 	public:
 		void post_unpack() override
 		{
-			// Enables the stock Change Team pause-menu action in supported modes.
-			game::Dvar_RegisterBool("3193", true, game::DVAR_FLAG_READ);
+			if (game::environment::is_multiplayer())
+			{
+				// Enables the stock Change Team pause-menu action in Multiplayer.
+				game::Dvar_RegisterBool("3193", true, game::DVAR_FLAG_READ);
+			}
 
 			cl_connect_hook.create(game::CL_Connect, cl_connect_stub);
 
@@ -685,12 +813,23 @@ namespace party
 					return;
 				}
 
+				const auto& mode = game::environment::get_online_mode_info();
+				const auto server_mode = info.get("mode");
+				if (server_mode != mode.token)
+				{
+					console::error(
+						"Connection failed: server mode '%s' does not match client mode '%s'.\n",
+						server_mode.empty() ? "<missing>" : server_mode.data(),
+						mode.token.data());
+					return;
+				}
+
 				int client_count{};
 				int bot_count{};
 				int max_clients{};
-				if (!parse_info_int(info.get("clients"), 0, total_max_party_members, client_count)
-					|| !parse_info_int(info.get("bots"), 0, total_max_party_members, bot_count)
-					|| !parse_info_int(info.get("sv_maxclients"), 1, total_max_party_members, max_clients)
+				if (!parse_info_int(info.get("clients"), 0, mode.max_players, client_count)
+					|| !parse_info_int(info.get("bots"), 0, mode.max_players, bot_count)
+					|| !parse_info_int(info.get("sv_maxclients"), 1, mode.max_players, max_clients)
 					|| client_count > max_clients || bot_count > client_count)
 				{
 					console::error("Connection failed: invalid server player counts.\n");
@@ -705,13 +844,6 @@ namespace party
 				// connection requirements such as sv_running.
 				if (dedicated_party_client::try_handle_join(from, info, max_clients))
 				{
-					return;
-				}
-
-				if (max_clients > total_max_clients)
-				{
-					console::error("Connection failed: direct-game capacity %i exceeds the supported limit of %i.\n",
-						max_clients, total_max_clients);
 					return;
 				}
 

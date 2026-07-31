@@ -114,11 +114,14 @@ namespace game
 	WEAK symbol<bool(int localClientNum, netadr_s* from, msg_t* msg, int time)> CL_DispatchConnectionlessPacket{ 0x6F7E0 };
 	WEAK symbol<void(int localClientNum, void* sessionInfo, netadr_s* to, const char* mapname, const char* gametype)> CL_ConnectAndPreloadMap{ 0x6CCA0 };
 	WEAK symbol<void()> CL_Connect{ 0x6D0A0 };
+	WEAK symbol<int(int localClientNum)> CL_ControllerIndexFromClientNum{ 0x4A0B80 };
 
 	WEAK symbol<void(uint16_t ent, const char* menu)> CG_RegisterHubVendorTarget{ 0x2ED20 };
 
 	WEAK symbol<void(int localClientNum, const char** args)> UI_RunMenuScript{ 0x746A50 };
 	WEAK symbol<void(int localClientNum)> UI_StartServer{ 0x74A440 };
+	WEAK symbol<void()> GameInfo_UpdateArenas{ 0x650A70 };
+	WEAK symbol<int(const char* mapName)> GameInfo_GetIndexForMapName{ 0x650490 };
 	WEAK symbol<int(const char* mapName)> UI_GetListIndexFromMapName{ 0x650510 };
 	WEAK symbol<void(const char* mapname, const char* gametype)> UI_SetMap{ 0x74A050 };
 	WEAK symbol<void(int localClientNum)> UI_Map{ 0x744C30 };
@@ -153,6 +156,7 @@ namespace game
 	WEAK symbol<std::int64_t(PartyData* partyData, void* activeClient)> PartyHost_AutoStart{ 0x491A80 };
 	WEAK symbol<std::int64_t(PartyData* partyData, void* commandData, netadr_s* from, msg_t* msg)> PartyClient_HandleGo{ 0x4728F0 };
 	WEAK symbol<void(PartyData* partyData, std::uint32_t* activeClient, netadr_s* from)> PartyClient_ProcessPartyState{ 0x4777E0 };
+	WEAK symbol<std::int64_t(int controllerIndex)> PartyClient_SetLocalReadyUpFlag{ 0x483CE0 };
 	WEAK symbol<const char*()> PartyHost_EndMatch{ 0x6DFEB0 };
 	WEAK symbol<const char*(PartyData* partyData)> Party_GetMapName{ 0x1970E0 };
 	WEAK symbol<const char*(PartyData* partyData)> Party_GetGameType{ 0x1970A0 };

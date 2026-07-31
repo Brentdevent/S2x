@@ -13,6 +13,8 @@
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
 
+#include <charconv>
+
 namespace dedicated
 {
 	namespace
@@ -26,6 +28,33 @@ namespace dedicated
 		constexpr auto max_sound_stream_file_count = 0x3E80u;
 		constexpr std::uint16_t invalid_image_stream_file_index = 191;
 		constexpr std::uint16_t xpak_initialized_unavailable = 0x2000;
+		constexpr auto default_net_port = 27016;
+
+		void register_dedicated_net_port()
+		{
+			const auto value = utils::flags::get_set_value("net_port");
+			if (!value)
+			{
+				return;
+			}
+
+			auto port = 0;
+			const auto [end, error] = std::from_chars(
+				value->data(), value->data() + value->size(), port);
+			if (error != std::errc{} || end != value->data() + value->size()
+				|| port < 1 || port > 65535)
+			{
+				console::warn(
+					"Invalid +set net_port value '%s'; expected 1-65535, using %d.\n",
+					value->data(), default_net_port);
+				return;
+			}
+
+			// Native command-line commands execute after NET_OpenIP. Register
+			// the latched dvar now so the native socket bind sees this value.
+			game::Dvar_RegisterInt(
+				"net_port", port, 0, 65535, game::DVAR_FLAG_LATCHED);
+		}
 
 		bool disable_dedicated_external_streams(game::FastfileExternalHeader* header,
 			game::ExternalStreamFile* image_files, game::ExternalStreamFile* sound_files)
@@ -728,7 +757,11 @@ namespace dedicated
 			game::Cbuf_AddText(local_client, "splitscreen 0\n");
 			game::Cbuf_AddText(local_client, "setgameprivatematch 0\n");
 
-			game::Cbuf_AddText(local_client, "exec default_xboxlive.cfg\n");
+			if (game::environment::is_multiplayer())
+			{
+				game::Cbuf_AddText(local_client, "exec default_xboxlive.cfg\n");
+			}
+
 			queue_startup_config(local_client);
 			game::Cbuf_AddText(local_client, "virtuallobby\n");
 		}
@@ -772,11 +805,12 @@ namespace dedicated
 	public:
 		void post_unpack() override
 		{
-			if (!game::environment::is_dedi())
+			if (!game::environment::is_dedicated())
 			{
 				return;
 			}
 
+			register_dedicated_net_port();
 			game::Dvar_RegisterBool("dedicated", true, game::DVAR_FLAG_READ);
 			game::Dvar_RegisterBool("sv_lanOnly", false, game::DVAR_FLAG_NONE);
 
@@ -1089,7 +1123,10 @@ namespace dedicated
 			// gameplay client. Preserve every reservation except the frontend owner.
 			utils::hook::call(0xF3AA2_g, is_direct_connect_slot_reserved_stub);
 
-			gsc::override_function("isusingmatchrulesdata", gscr_is_using_match_rules_data_stub);
+			if (game::environment::is_multiplayer())
+			{
+				gsc::override_function("isusingmatchrulesdata", gscr_is_using_match_rules_data_stub);
+			}
 
 			scr_begin_load_scripts_hook.create(0x6856D0_g, scr_begin_load_scripts_stub);
 

@@ -174,7 +174,7 @@ namespace steam_proxy
 	public:
 		void post_load() override
 		{
-			if (is_disabled() || game::environment::is_dedi()) return;
+			if (is_disabled() || game::environment::is_dedicated()) return;
 
 			load_client();
 			perform_cleanup_if_needed();
@@ -182,7 +182,7 @@ namespace steam_proxy
 
 		void post_unpack() override
 		{
-			if (is_disabled() || game::environment::is_dedi()) return;
+			if (is_disabled() || game::environment::is_dedicated()) return;
 
 			try
 			{
@@ -247,7 +247,7 @@ namespace steam_proxy
 
 	void initialize()
 	{
-		if (game::environment::is_dedi()) return;
+		if (game::environment::is_dedicated()) return;
 
 		if (client_engine || !steam_client_module) return;
 

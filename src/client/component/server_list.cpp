@@ -28,7 +28,6 @@ namespace server_list
 		constexpr auto master_timeout = 5s;
 		constexpr auto server_limit = 128ull;
 		constexpr auto query_limit = 3ull;
-		constexpr auto max_server_clients = 48;
 
 		struct server_info
 		{
@@ -445,6 +444,13 @@ namespace server_list
 				return;
 			}
 
+			const auto& mode = game::environment::get_online_mode_info();
+			if (info.get("mode") != std::string{mode.token})
+			{
+				drop_server(address);
+				return;
+			}
+
 			int protocol{};
 			if (!parse_info_int(info.get("protocol"), 0, std::numeric_limits<int>::max(), protocol)
 				|| protocol != PROTOCOL)
@@ -482,9 +488,9 @@ namespace server_list
 			int bots{};
 			int max_clients{};
 			const auto max_clients_value = get_info_value(info, "sv_maxclients", "maxclients");
-			if (!parse_info_int(info.get("clients"), 0, max_server_clients, clients)
-				|| !parse_info_int(info.get("bots"), 0, max_server_clients, bots)
-				|| !parse_info_int(max_clients_value, 1, max_server_clients, max_clients)
+			if (!parse_info_int(info.get("clients"), 0, mode.max_players, clients)
+				|| !parse_info_int(info.get("bots"), 0, mode.max_players, bots)
+				|| !parse_info_int(max_clients_value, 1, mode.max_players, max_clients)
 				|| clients > max_clients || bots > clients)
 			{
 				drop_server(address);
@@ -574,7 +580,7 @@ namespace server_list
 	public:
 		void post_unpack() override
 		{
-			if (game::environment::is_dedi())
+			if (game::environment::is_dedicated())
 			{
 				return;
 			}

@@ -46,87 +46,118 @@ namespace game
 
 	namespace environment
 	{
-		launcher::mode mode = launcher::mode::none;
-
-		launcher::mode translate_surrogate(const launcher::mode _mode)
+		namespace
 		{
-			switch (_mode)
+			constexpr online_mode_info multiplayer_mode_info{
+				"mp",
+				"dm",
+				18,
+				2,
+				1,
+			};
+
+			constexpr online_mode_info zombies_mode_info{
+				"zm",
+				"zombies",
+				4,
+				1,
+				2,
+			};
+
+			mode current_mode = mode::singleplayer;
+			bool dedicated = false;
+		}
+
+		mode get_mode()
+		{
+			return current_mode;
+		}
+
+		void set_mode(const mode new_mode)
+		{
+			if (new_mode == mode::singleplayer && dedicated)
 			{
-			case launcher::mode::zombies:
-			case launcher::mode::server:
-				return launcher::mode::multiplayer;
-			default:
-				return _mode;
+				throw std::runtime_error("Dedicated Singleplayer is unsupported");
 			}
+
+			current_mode = new_mode;
 		}
 
-		launcher::mode get_real_mode()
+		bool is_dedicated()
 		{
-			return mode;
+			return dedicated;
 		}
 
-		launcher::mode get_mode()
+		void set_dedicated(const bool is_dedicated)
 		{
-			return translate_surrogate(get_real_mode());
+			if (is_dedicated && is_singleplayer())
+			{
+				throw std::runtime_error("Dedicated Singleplayer is unsupported");
+			}
+
+			dedicated = is_dedicated;
 		}
 
-		bool is_sp()
+		bool is_singleplayer()
 		{
-			return get_mode() == launcher::mode::singleplayer;
+			return get_mode() == mode::singleplayer;
 		}
 
-		bool is_mp()
+		bool is_multiplayer()
 		{
-			return get_mode() == launcher::mode::multiplayer;
+			return get_mode() == mode::multiplayer;
 		}
 
 		bool is_zombies()
 		{
-			return get_real_mode() == launcher::mode::zombies;
+			return get_mode() == mode::zombies;
 		}
 
-		bool is_dedi()
+		bool uses_multiplayer_binary()
 		{
-			return get_real_mode() == launcher::mode::server;
+			return is_multiplayer() || is_zombies();
 		}
 
-		void set_mode(const launcher::mode _mode)
+		const online_mode_info& get_online_mode_info()
 		{
-			mode = _mode;
+			switch (get_mode())
+			{
+			case mode::multiplayer:
+				return multiplayer_mode_info;
+
+			case mode::zombies:
+				return zombies_mode_info;
+
+			case mode::singleplayer:
+				throw std::logic_error("Singleplayer has no online mode information");
+			}
+
+			throw std::logic_error("Unknown gameplay mode");
 		}
 
 		std::string get_string()
 		{
-			const auto current_mode = get_real_mode();
-			switch (current_mode)
+			switch (get_mode())
 			{
-			case launcher::mode::server:
-				return "Dedicated Server";
-
-			case launcher::mode::multiplayer:
-				return "Multiplayer";
-
-			case launcher::mode::singleplayer:
+			case mode::singleplayer:
 				return "Singleplayer";
 
-			case launcher::mode::none:
-				return "None";
+			case mode::multiplayer:
+				return is_dedicated() ? "Dedicated Server" : "Multiplayer";
 
-			default:
-				return "Unknown (" + std::to_string(static_cast<int>(mode)) + ")";
+			case mode::zombies:
+				return is_dedicated() ? "Zombies Dedicated Server" : "Zombies";
 			}
+
+			return "Unknown (" + std::to_string(static_cast<int>(get_mode())) + ")";
 		}
 	}
 
 	bool is_valid_binary()
 	{
-		auto mode = environment::get_mode();
-		if (mode == launcher::mode::singleplayer)
-		{
-			return is_valid_singleplayer_binary();
-		}
-
-		return is_valid_multiplayer_binary();
+		return environment::uses_multiplayer_binary()
+			? is_valid_multiplayer_binary()
+			: is_valid_singleplayer_binary();
 	}
 
 	std::filesystem::path get_appdata_path()
@@ -153,7 +184,7 @@ namespace game
 
 	bool Cbuf_AddText(int localClientNum, const char* text)
 	{
-		if (game::environment::is_sp())
+		if (!game::environment::uses_multiplayer_binary())
 		{
 			// function is not inlined in SP
 			return utils::hook::invoke<bool>(0x1BDA30_g, localClientNum, text);
@@ -236,7 +267,7 @@ namespace game
 
 	bool virtual_lobby_loaded()
 	{
-		if (game::environment::is_sp())
+		if (!game::environment::uses_multiplayer_binary())
 		{
 			// function checks wether we're in the main menu or mission_select
 			return utils::hook::invoke<bool>(0x4B89B0_g);

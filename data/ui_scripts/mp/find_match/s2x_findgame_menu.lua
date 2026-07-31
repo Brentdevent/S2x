@@ -4,7 +4,9 @@ local FIND_MATCH_LAYOUT_NONE = 0
 local STOCK_BUTTON_TEXT = {
 	PublicMatch = "LUA_MENU_PUBLIC_MATCH_CAPS",
 	CustomMatch = "LUA_MENU_CUSTOM_MATCH_CAPS",
+	ReplayPrologue = "LUA_MENU_REPLAY_TRAINING_CAPS",
 	Campaign = "LUA_MENU_CAMPAIGN_CAPS",
+	Multiplayer = "MENU_MULTIPLAYER_CAPS",
 	Zombies = "LUA_MENU_ZOMBIES_CAPS"
 }
 
@@ -58,6 +60,19 @@ local function open_server_browser( controller, fallback_controller )
 	ACTIONS.OpenMenu( "s2x_server_browser", false, controller_index )
 end
 
+local function create_server_browser_button( template, controller, labels )
+	return {
+		image = template.image,
+		blurImage = template.blurImage,
+		text = labels.SERVER_BROWSER,
+		desc = labels.SERVER_BROWSER_FIND_MATCH_DESCRIPTION,
+		actionFunc = function ( _, event )
+			open_server_browser( event, controller )
+		end,
+		disabledFunc = template.disabledFunc
+	}
+end
+
 local function set_find_match_data_sources( controller )
 	local find_match_data = DataSources and DataSources.inFrontend and
 		DataSources.inFrontend.MP and DataSources.inFrontend.MP.FindMatch or nil
@@ -90,16 +105,11 @@ local function configure_multiplayer_buttons( menu, controller, labels )
 		return
 	end
 
-	local server_browser = {
-		image = public_match.image,
-		blurImage = public_match.blurImage,
-		text = labels.SERVER_BROWSER,
-		desc = labels.SERVER_BROWSER_FIND_MATCH_DESCRIPTION,
-		actionFunc = function ( _, event )
-			open_server_browser( event, controller )
-		end,
-		disabledFunc = public_match.disabledFunc
-	}
+	local server_browser = create_server_browser_button(
+		public_match,
+		controller,
+		labels
+	)
 
 	find_match_state.layoutStyle = FIND_MATCH_LAYOUT_NONE
 	find_match_state.topButtons = {
@@ -109,6 +119,41 @@ local function configure_multiplayer_buttons( menu, controller, labels )
 		zombies
 	}
 	find_match_state.bottomButtons = {}
+	find_match_state.numTotalColumns = FIND_MATCH_COLUMN_COUNT
+	find_match_state.numColWindows = FIND_MATCH_COLUMN_COUNT
+	find_match_state.controllerIndex = controller
+
+	set_find_match_data_sources( controller )
+end
+
+local function configure_zombies_buttons( menu, controller, labels )
+	local find_match_state = get_find_match_state( menu )
+	if not find_match_state then
+		return
+	end
+
+	-- Public Match is present in every stock Zombies layout and supplies the
+	-- native Zombies tile art and availability rules.
+	local public_match = find_stock_button( find_match_state, STOCK_BUTTON_TEXT.PublicMatch )
+	local custom_match = find_stock_button( find_match_state, STOCK_BUTTON_TEXT.CustomMatch )
+	local replay_prologue = find_stock_button( find_match_state, STOCK_BUTTON_TEXT.ReplayPrologue )
+	local campaign = find_stock_button( find_match_state, STOCK_BUTTON_TEXT.Campaign )
+	local multiplayer = find_stock_button( find_match_state, STOCK_BUTTON_TEXT.Multiplayer )
+	if not public_match or not custom_match or not replay_prologue or
+		not campaign or not multiplayer then
+		return
+	end
+
+	find_match_state.layoutStyle = FIND_MATCH_LAYOUT_NONE
+	find_match_state.topButtons = {
+		create_server_browser_button( public_match, controller, labels ),
+		custom_match,
+		replay_prologue
+	}
+	find_match_state.bottomButtons = {
+		campaign,
+		multiplayer
+	}
 	find_match_state.numTotalColumns = FIND_MATCH_COLUMN_COUNT
 	find_match_state.numColWindows = FIND_MATCH_COLUMN_COUNT
 	find_match_state.controllerIndex = controller
@@ -164,7 +209,9 @@ local function wrap_stock_controller( stock_controller, labels )
 
 	stock_controller.PreLoadFunc = function ( menu, controller, properties )
 		local preload_result = stock_preload( menu, controller, properties )
-		if not Engine.IsZombiesMode() then
+		if Engine.IsZombiesMode() then
+			configure_zombies_buttons( menu, controller, labels )
+		else
 			configure_multiplayer_buttons( menu, controller, labels )
 		end
 		return preload_result
@@ -173,6 +220,7 @@ local function wrap_stock_controller( stock_controller, labels )
 	stock_controller.PostLoadFunc = function ( menu, controller, properties )
 		local postload_result = stock_postload( menu, controller, properties )
 		if Engine.IsZombiesMode() then
+			configure_server_browser_shortcut( menu, controller, labels )
 			return postload_result
 		end
 

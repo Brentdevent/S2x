@@ -329,12 +329,12 @@ namespace ui_scripting
 
 			game_type["issingleplayer"] = [](const game&)
 			{
-				return ::game::environment::is_sp();
+				return ::game::environment::is_singleplayer();
 			};
 
 			game_type["ismultiplayer"] = [](const game&)
 			{
-				return ::game::environment::is_mp();
+				return ::game::environment::is_multiplayer();
 			};
 		}
 
@@ -383,7 +383,7 @@ namespace ui_scripting
 			{
 				load_scripts((std::filesystem::path(path) / "ui_scripts").generic_string());
 
-				if (game::environment::is_sp())
+				if (!game::environment::uses_multiplayer_binary())
 				{
 					load_scripts((std::filesystem::path(path) / "ui_scripts/sp").generic_string());
 				}

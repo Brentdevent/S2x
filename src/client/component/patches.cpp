@@ -59,8 +59,13 @@ namespace patches
 		void post_thread_setup() override
 		{
 #ifdef DEBUG
-			// Allow multiple instances for testing purposes.
-			utils::hook::set(0x78A5F0_g, 0xC301B0);
+			if (game::environment::is_multiplayer())
+			{
+				// Preserve the existing MP test behavior. Zombies must retain the
+				// stock PID-marker initialization; use its first-token "allowdupe"
+				// launch mode when a second local Zombies process is needed.
+				utils::hook::set(0x78A5F0_g, 0xC301B0);
+			}
 #endif
 		}
 

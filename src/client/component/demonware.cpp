@@ -498,7 +498,7 @@ namespace demonware
 			register_hook("getpeername", io::getpeername_stub);
 			register_hook("getsockname", io::getsockname_stub);
 
-			if (game::environment::is_mp())
+			if (game::environment::uses_multiplayer_binary())
 			{
 				register_hook("gethostbyname", io::gethostbyname_stub);
 

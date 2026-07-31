@@ -19,7 +19,7 @@ require( "s2x_server_browser_row" )
 require( "s2x_server_browser" )
 
 -- Wrap the packaged UC table instead of maintaining a decompiled copy. The
--- wrappers return stock behavior unchanged when Find Match is in Zombies mode.
+-- wrapper applies the S2x Find Match layouts to the stock controller state.
 local findgame_patch = require( "s2x_findgame_menu" )
 local menu_builders = LUI and LUI.MenuBuilder and LUI.MenuBuilder.m_types_build or nil
 assert( type( menu_builders ) == "table", "Missing LUI menu builder registry" )

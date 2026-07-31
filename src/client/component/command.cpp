@@ -291,7 +291,7 @@ namespace command
 	{
 		void post_unpack() override
 		{
-			if (game::environment::is_mp())
+			if (game::environment::uses_multiplayer_binary())
 			{
 				client_command_mp_hook.create(0x54EE80_g, client_command_mp_stub);
 			}

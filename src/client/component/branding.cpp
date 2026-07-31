@@ -36,7 +36,7 @@ namespace branding
 			scheduler::loop(draw_branding, scheduler::renderer);
 
 			// Change window title prefix
-			if (game::environment::is_mp())
+			if (game::environment::uses_multiplayer_binary())
 			{
 				if (game::environment::is_zombies())
 				{

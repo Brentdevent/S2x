@@ -61,7 +61,7 @@ namespace splash
 
 		void post_unpack() override
 		{
-			if (game::environment::is_dedi())
+			if (game::environment::is_dedicated())
 			{
 				utils::hook::set<std::uint8_t>(0x7B12C0_g, 0xC3);
 			}

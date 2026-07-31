@@ -443,7 +443,7 @@ namespace network
 			// Disable built in "print" OOB command
 			utils::hook::set<std::uint8_t>(0x7023F_g, 0xEB);
 
-			if (!game::environment::is_dedi())
+			if (!game::environment::is_dedicated())
 			{
 				reinstate_custom_print_oob();
 			}

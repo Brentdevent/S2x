@@ -474,7 +474,7 @@ namespace syscon
 			{
 				syscon::Sys_ShowConsole();
 
-				if (!game::environment::is_dedi())
+				if (!game::environment::is_dedicated())
 				{
 					// Hide that shit
 					ShowWindow(syscon::s_wcd.hWnd, SW_MINIMIZE);
