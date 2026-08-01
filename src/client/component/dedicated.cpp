@@ -674,6 +674,15 @@ namespace dedicated
 			return 1;
 		}
 
+		int ignore_dedicated_music_state(game::hks::lua_State*)
+		{
+			return 0;
+		}
+
+		void ignore_dedicated_client_sound_update(unsigned int)
+		{
+		}
+
 		std::uint32_t play_dedicated_sound_alias()
 		{
 			return UINT32_MAX;
@@ -1091,9 +1100,19 @@ namespace dedicated
 
 			// Com_Init normally starts the complete sound system here. Keep only
 			// the inert driver state above; no sound tables, device, or workers
-			// are needed by a dedicated server.
-			utils::hook::call(0x987BB_g, init_dedicated_sound);
+			// are needed by a dedicated server. It sets the initialized flag after
+			// this call, so keep that flag false to prevent SND_Update from running.
+			utils::hook::call(0x987AC_g, init_dedicated_sound);
+			utils::hook::set<std::uint32_t>(0x987B7_g, 0);
 			utils::hook::jump(0x7B23C0_g, init_dedicated_sound);
+
+			// LUI SetMusicState calls directly into the uninitialized high-level
+			// sound owner, bypassing the SND_Update initialized-state guard.
+			utils::hook::jump(0x109970_g, ignore_dedicated_music_state);
+
+			// The client-frame sound update has no initialized-state check before
+			// its looping/channel pass dereferences the absent high-level owner.
+			utils::hook::jump(0x447720_g, ignore_dedicated_client_sound_update);
 
 			// Prevent presentation code owned by the persistent party frontend
 			// from updating or playing aliases after sound initialization was
