@@ -14,7 +14,7 @@ namespace master_server
 {
 	namespace
 	{
-		constexpr auto default_master_server = "127.0.0.1:20810";
+		constexpr auto default_master_server = "master.s2x.dev:20810";
 		constexpr auto heartbeat_interval = 60s;
 		constexpr auto retry_interval = 10s;
 
