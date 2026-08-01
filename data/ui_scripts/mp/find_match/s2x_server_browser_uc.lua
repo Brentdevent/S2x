@@ -158,7 +158,7 @@ local function join_focused_server( menu, controller )
 	end
 	CharacterScene.RunCharacterScene( false )
 	state.lastFocusedElement = nil
-	Lobby.JoinServer( controller_index, server_index )
+	Lobby.S2xJoinServer( controller_index, server_index )
 end
 
 local function record_focus( menu, focused_element )
@@ -180,8 +180,8 @@ local function update_server_list( menu, controller )
 	end
 
 	local previous_count = state.serverCount or 0
-	Lobby.UpdateServerDisplayList( controller_index )
-	local server_count = Lobby.GetServerCount( controller_index ) or 0
+	Lobby.S2xUpdateServerDisplayList( controller_index )
+	local server_count = Lobby.S2xGetServerCount( controller_index ) or 0
 	local count_changed = apply_server_count( menu, state, server_count, false )
 
 	if count_changed and previous_count > 0 and server_count == 0 then
@@ -225,8 +225,8 @@ local function refresh_server_list( menu, controller, focus_after_refresh )
 		return
 	end
 
-	Lobby.RefreshServerList( controller_index, REFRESH_COOLDOWN_MS )
-	local server_count = Lobby.GetServerCount( controller_index ) or 0
+	Lobby.S2xRefreshServerList( controller_index, REFRESH_COOLDOWN_MS )
+	local server_count = Lobby.S2xGetServerCount( controller_index ) or 0
 	apply_server_count( menu, state, server_count, true )
 	state.refreshCooldownMs = REFRESH_COOLDOWN_MS
 
@@ -267,12 +267,12 @@ local function populate_server_row( row, _, server_index )
 
 	local host_name, status, map_name, clients, game_mode, ping = nil
 	if valid_index and type( controller_index ) == "number" then
-		host_name = Lobby.GetServerData( controller_index, server_index, SERVER_COLUMNS.Host )
-		status = Lobby.GetServerData( controller_index, server_index, SERVER_COLUMNS.Status )
-		map_name = Lobby.GetServerData( controller_index, server_index, SERVER_COLUMNS.Map )
-		clients = Lobby.GetServerData( controller_index, server_index, SERVER_COLUMNS.Clients )
-		game_mode = Lobby.GetServerData( controller_index, server_index, SERVER_COLUMNS.Game )
-		ping = Lobby.GetServerData( controller_index, server_index, SERVER_COLUMNS.Ping )
+		host_name = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Host )
+		status = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Status )
+		map_name = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Map )
+		clients = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Clients )
+		game_mode = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Game )
+		ping = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Ping )
 
 		row.populated = true
 		row.m_inputDisabled = false
@@ -322,7 +322,7 @@ local function preload_server_browser( menu, controller )
 		}
 	end
 
-	Lobby.BuildServerList( controller )
+	Lobby.S2xBuildServerList( controller )
 	menu.isSignInMenu = true
 end
 

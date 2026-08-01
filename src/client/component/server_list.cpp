@@ -539,32 +539,32 @@ namespace server_list
 				lua["Lobby"] = lobby;
 			}
 
-			lobby["BuildServerList"] = [](int)
+			lobby["S2xBuildServerList"] = [](int)
 			{
 				update_server_display_list();
 			};
 
-			lobby["RefreshServerList"] = [](int, int)
+			lobby["S2xRefreshServerList"] = [](int, int)
 			{
 				refresh_server_list();
 			};
 
-			lobby["UpdateServerDisplayList"] = [](int)
+			lobby["S2xUpdateServerDisplayList"] = [](int)
 			{
 				update_server_display_list();
 			};
 
-			lobby["GetServerCount"] = [](int)
+			lobby["S2xGetServerCount"] = [](int)
 			{
 				return get_server_count();
 			};
 
-			lobby["GetServerData"] = [](int, int index, int column)
+			lobby["S2xGetServerData"] = [](int, int index, int column)
 			{
 				return get_server_data(index, column);
 			};
 
-			lobby["JoinServer"] = [](int, int index)
+			lobby["S2xJoinServer"] = [](int, int index)
 			{
 				join_server(index);
 			};
