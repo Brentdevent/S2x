@@ -1,9 +1,15 @@
 local dedicatedParty = require( "dedicated_party" )
 local GetDedicatedPartyMaxPlayers = dedicatedParty.GetMaxPlayers
+local GetDedicatedPartyMapName = dedicatedParty.GetMapName
+local GetDedicatedPartyGameTypeName = dedicatedParty.GetGameTypeName
 local dedicatedMapVoteTag = "public_lobbyscreen_mapvote"
 
 local function AddDedicatedNextMap( page, controller, properties )
 	if page.S2xDedicatedNextMap then
+		if page.S2xRefreshDedicatedNextMap then
+			page.S2xRefreshDedicatedNextMap()
+		end
+
 		return
 	end
 
@@ -58,12 +64,13 @@ local function AddDedicatedNextMap( page, controller, properties )
 	local mapRef = DataSources and DataSources.inFrontend and
 		DataSources.inFrontend.MP and DataSources.inFrontend.MP.lobby and
 		DataSources.inFrontend.MP.lobby.mapRef or nil
-	if not mapRef then
-		return
-	end
 
 	local function RefreshNextMap()
-		local value = mapRef:GetValue( controller )
+		local value = GetDedicatedPartyMapName()
+		if (not value or value == "") and mapRef then
+			value = mapRef:GetValue( controller )
+		end
+
 		if not value or value == "" then
 			return
 		end
@@ -81,11 +88,20 @@ local function AddDedicatedNextMap( page, controller, properties )
 		end
 	end
 
-	mapImage:SubscribeToModel( mapRef:GetModel( controller ), RefreshNextMap )
+	page.S2xRefreshDedicatedNextMap = RefreshNextMap
+	if mapRef then
+		mapImage:SubscribeToModel( mapRef:GetModel( controller ), RefreshNextMap )
+	end
 	RefreshNextMap()
 end
 
 local function ConfigureDedicatedLobbyPage( page, controller, properties )
+	if page.S2xDedicatedLobbyConfigured then
+		AddDedicatedNextMap( page, controller, properties )
+		return
+	end
+	page.S2xDedicatedLobbyConfigured = true
+
 	if page.MapVoteCompact then
 		page.MapVoteCompact:setAlpha( 0, 0 )
 		ACTIONS.SetInputEnabled( page.MapVoteCompact, false )
@@ -120,6 +136,30 @@ local function ConfigureDedicatedLobbyPage( page, controller, properties )
 	AddDedicatedNextMap( page, controller, properties )
 end
 
+local function RefreshDedicatedLobbyPage( page, controller, properties )
+	ConfigureDedicatedLobbyPage( page, controller, properties )
+
+	local gametypeName = GetDedicatedPartyGameTypeName()
+	if page.gameType and gametypeName and gametypeName ~= "" then
+		page.gameType:setText( Engine.Localize( gametypeName ), 0 )
+	end
+end
+
+function S2xRefreshDedicatedLobbyPresentation()
+	if not GetDedicatedPartyMaxPlayers() then
+		return
+	end
+
+	local root = Engine.GetLuiRoot()
+	local menuInfo = root and root.flowManager and
+		LUI.FlowManager.GetTopMenuInfo( root.flowManager.menuInfoStack ) or nil
+	local page = menuInfo and menuInfo.menu and menuInfo.menu.CurrentMenuPage or nil
+	if page and page.S2xPublicLobbyScreen then
+		local controller = page.S2xPublicLobbyController or Engine.GetFirstActiveController()
+		RefreshDedicatedLobbyPage( page, controller, page.S2xPublicLobbyProperties )
+	end
+end
+
 local menuBuilder = LUI and LUI.MenuBuilder or nil
 local menuBuilders = menuBuilder and menuBuilder.m_types_build or m_types_build
 if menuBuilder and menuBuilders and
@@ -129,10 +169,13 @@ if menuBuilder and menuBuilders and
 		Lobby.S2xDedicatedLobbyBuilderInstalled = true
 		menuBuilders["public_lobby_lobbyscreen"] = function ( menu, properties )
 			local page = stockPublicLobbyBuilder( menu, properties )
+			local controller = properties and properties.controllerIndex or
+				Engine.GetFirstActiveController()
+			page.S2xPublicLobbyScreen = true
+			page.S2xPublicLobbyController = controller
+			page.S2xPublicLobbyProperties = properties
 			if GetDedicatedPartyMaxPlayers() then
-				local controller = properties and properties.controllerIndex or
-					Engine.GetFirstActiveController()
-				ConfigureDedicatedLobbyPage( page, controller, properties )
+				RefreshDedicatedLobbyPage( page, controller, properties )
 			end
 
 			return page

@@ -99,6 +99,10 @@ if Character_Scene and Character_Scene.S2xStockHandleUpdateVLLoadout then
 end
 
 function S2xRefreshDedicatedPartyPresentation()
+	if S2xRefreshDedicatedLobbyPresentation then
+		S2xRefreshDedicatedLobbyPresentation()
+	end
+
 	local memberCount = Lobby.GetDedicatedPartyMemberCount and
 		Lobby.GetDedicatedPartyMemberCount() or nil
 	local maxPlayers = GetDedicatedPartyMaxPlayers()

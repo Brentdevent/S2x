@@ -470,6 +470,7 @@ namespace dedicated_party_client
 			hosted_dedicated_party_state.game_lobby = game::Lobby_GetPartyData(0);
 			hosted_dedicated_party_state.max_players = hosted_max_players;
 			apply_hosted_party_capacity(hosted_dedicated_party_state.game_lobby);
+			refresh_presentation();
 
 			console::info("Hosted dedicated lobby: joining through %s.\n",
 				network::net_adr_to_string(target));
@@ -490,6 +491,11 @@ namespace dedicated_party_client
 			{
 				lua["Lobby"] = lobby;
 			}
+
+			lobby["GetDedicatedPartyMapName"] = []
+			{
+				return get_map_name();
+			};
 
 			lobby["GetDedicatedPartyGameType"] = []
 			{
@@ -640,6 +646,16 @@ namespace dedicated_party_client
 		}
 
 		return true;
+	}
+
+	std::string get_map_name()
+	{
+		if (game::environment::is_dedicated())
+		{
+			return party::loaded_map_name();
+		}
+
+		return hosted_dedicated_party_state.map_name;
 	}
 
 	std::string get_gametype()

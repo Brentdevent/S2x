@@ -564,8 +564,14 @@ namespace party
 
 		void disconnect_command_stub()
 		{
+			const auto preserve_hosted_party = listen_map_transition_in_progress;
 			party::cancel_pending_connection();
 			disconnect_command_hook.invoke<void>();
+
+			if (!preserve_hosted_party)
+			{
+				dedicated_party_client::reset();
+			}
 		}
 
 		void start_map(const command::params& params)

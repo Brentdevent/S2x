@@ -1,5 +1,13 @@
 local dedicatedParty = {}
 
+function dedicatedParty.GetMapName()
+	if Lobby.GetDedicatedPartyMapName then
+		return Lobby.GetDedicatedPartyMapName()
+	end
+
+	return nil
+end
+
 function dedicatedParty.GetGameType()
 	if Lobby.GetDedicatedPartyGameType then
 		return Lobby.GetDedicatedPartyGameType()
