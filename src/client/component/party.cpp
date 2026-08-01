@@ -28,15 +28,19 @@ namespace party
 	namespace
 	{
 		utils::hook::detour cl_connect_hook;
+		utils::hook::detour disconnect_command_hook;
 
 		struct connect_state_t
 		{
 			game::netadr_s host{};
 			std::string challenge{};
 			bool host_defined{ false };
+			bool query_pending{};
+			std::uint64_t attempt_id{};
 		};
 
 		connect_state_t connect_state{};
+
 		bool listen_map_transition_in_progress{};
 
 		bool parse_info_int(const std::string& value, const int minimum,
@@ -65,6 +69,20 @@ namespace party
 			const auto lhs_is_ip = lhs.type == game::NA_IP || lhs.type == game::NA_BROADCAST;
 			const auto rhs_is_ip = rhs.type == game::NA_IP || rhs.type == game::NA_BROADCAST;
 			return lhs_is_ip && rhs_is_ip && lhs.addr == rhs.addr && lhs.port == rhs.port;
+		}
+
+		void clear_pending_connect_query()
+		{
+			connect_state.query_pending = false;
+			connect_state.challenge.clear();
+		}
+
+		std::uint64_t invalidate_connection_attempt()
+		{
+			++connect_state.attempt_id;
+			clear_pending_connect_query();
+			dedicated_party_client::cancel_pending_connection();
+			return connect_state.attempt_id;
 		}
 
 		bool zombies_fastfile_is_installed(const std::string& map_name)
@@ -243,7 +261,7 @@ namespace party
 				return dvar->current.string;
 			}
 
-			return "S2x Server";
+			return "S2x Dedicated Server";
 		}
 
 		std::string get_gametype_or_default(const command::params& params)
@@ -283,6 +301,7 @@ namespace party
 			*game::sv_migrate = 0;
 
 			const auto* args = "StartServer";
+			dedicated_party_client::reset();
 			game::UI_RunMenuScript(0, &args);
 		}
 
@@ -395,8 +414,13 @@ namespace party
 		}
 
 		void connect_to_server(const game::netadr_s& target, const std::string& mapname,
-			const std::string& gametype, const int max_clients)
+			const std::string& gametype, const int max_clients, const std::uint64_t attempt_id)
 		{
+			if (!is_connection_attempt_current(attempt_id))
+			{
+				return;
+			}
+
 			if (!validate_map_and_gametype(mapname, gametype))
 			{
 				return;
@@ -407,6 +431,13 @@ namespace party
 			{
 				return;
 			}
+
+			if (!is_connection_attempt_current(attempt_id))
+			{
+				return;
+			}
+
+			dedicated_party_client::commit_direct_connection();
 
 			const auto& mode = game::environment::get_online_mode_info();
 			const auto clamped_max_clients = std::clamp(
@@ -437,8 +468,13 @@ namespace party
 			);
 		}
 
-		void connect(const game::netadr_s& target)
+		void connect(const game::netadr_s& target, const std::uint64_t attempt_id)
 		{
+			if (!is_connection_attempt_current(attempt_id))
+			{
+				return;
+			}
+
 			if (target.type <= game::NA_BAD)
 			{
 				console::error("Cannot connect to bad address.\n");
@@ -451,10 +487,10 @@ namespace party
 				return;
 			}
 
-			dedicated_party_client::reset();
 			connect_state.host = target;
 			connect_state.challenge = utils::cryptography::random::get_challenge();
 			connect_state.host_defined = true;
+			connect_state.query_pending = true;
 
 			console::info(
 				"Querying server %s...\n",
@@ -462,6 +498,25 @@ namespace party
 			);
 
 			network::send(connect_state.host, "s2x_getInfo", connect_state.challenge);
+
+			const auto challenge = connect_state.challenge;
+			scheduler::once([target, challenge, attempt_id]()
+			{
+				if (!is_connection_attempt_current(attempt_id)
+					|| !connect_state.query_pending || connect_state.challenge != challenge
+					|| !is_matching_ip_endpoint(connect_state.host, target))
+				{
+					return;
+				}
+
+				console::error("Connection query timed out.\n");
+				clear_pending_connect_query();
+			}, scheduler::pipeline::main, 10s);
+		}
+
+		void connect(const game::netadr_s& target)
+		{
+			connect(target, invalidate_connection_attempt());
 		}
 
 		void reconnect()
@@ -497,7 +552,20 @@ namespace party
 				return;
 			}
 
+			cancel_pending_connection();
+
+			if (argc >= 8)
+			{
+				dedicated_party_client::reset();
+			}
+
 			cl_connect_hook.invoke<void>();
+		}
+
+		void disconnect_command_stub()
+		{
+			party::cancel_pending_connection();
+			disconnect_command_hook.invoke<void>();
 		}
 
 		void start_map(const command::params& params)
@@ -550,6 +618,11 @@ namespace party
 				}
 
 				return;
+			}
+
+			if (!is_dedicated)
+			{
+				cancel_pending_connection();
 			}
 
 			if (server_running && get_current_mapname() == map_name)
@@ -678,6 +751,61 @@ namespace party
 		return connect_state.host;
 	}
 
+	bool is_connection_attempt_current(const std::uint64_t attempt_id)
+	{
+		return connect_state.attempt_id == attempt_id;
+	}
+
+	void cancel_pending_connection()
+	{
+		invalidate_connection_attempt();
+	}
+
+	void queue_connect(std::string address)
+	{
+		const auto attempt_id = invalidate_connection_attempt();
+
+		scheduler::once([address = std::move(address), attempt_id]()
+		{
+			if (!is_connection_attempt_current(attempt_id))
+			{
+				return;
+			}
+
+			game::netadr_s target{};
+			if (!game::NET_StringToAdr(address.data(), &target))
+			{
+				console::error("Invalid address: %s\n", address.data());
+				return;
+			}
+
+			target.localNetID = game::NS_SERVER;
+			target.addrHandleIndex = 0;
+			connect(target, attempt_id);
+		}, scheduler::pipeline::main);
+	}
+
+	void execute_internal_connect(const internal_connect_request& request)
+	{
+		if (!is_connection_attempt_current(request.attempt_id)
+			|| !dedicated_party_client::is_pending_internal_connect(request.session_id, request.attempt_id))
+		{
+			return;
+		}
+
+		const std::string connect_command = utils::string::va(
+			"connect %s %s %s 0 0 %s %s",
+			request.host_address.data(),
+			request.key.data(),
+			request.session_id.data(),
+			request.map_name.data(),
+			request.gametype.data()
+		);
+
+		const command::params connect_params{ connect_command };
+		cl_connect_hook.invoke<void>();
+	}
+
 	bool resolve_map_index(const std::string& map_name, int& map_index)
 	{
 		return get_map_index(map_name, map_index);
@@ -750,6 +878,7 @@ namespace party
 			}
 
 			cl_connect_hook.create(game::CL_Connect, cl_connect_stub);
+			disconnect_command_hook.create(game::CL_Disconnect_f, disconnect_command_stub);
 
 			command::add("map_restart", []()
 			{
@@ -785,9 +914,16 @@ namespace party
 			{
 				const utils::info_string info{ std::string{data} };
 				const auto challenge = info.get("challenge");
-				const auto connect_response = connect_state.host_defined
+				const auto connect_response = connect_state.query_pending
+					&& connect_state.host_defined
 					&& challenge == connect_state.challenge
 					&& is_matching_ip_endpoint(from, connect_state.host);
+				if (connect_response)
+				{
+					clear_pending_connect_query();
+				}
+				const auto attempt_id = connect_state.attempt_id;
+
 				if (dedicated_party_client::try_handle_sync_response(from, info, challenge))
 				{
 					return;
@@ -842,7 +978,7 @@ namespace party
 				// A hosted dedicated lobby remains joinable between gameplay servers. Hand
 				// its stock session descriptor to CL_Connect before applying direct-game
 				// connection requirements such as sv_running.
-				if (dedicated_party_client::try_handle_join(from, info, max_clients))
+				if (dedicated_party_client::try_handle_join(from, info, max_clients, attempt_id))
 				{
 					return;
 				}
@@ -873,17 +1009,27 @@ namespace party
 
 				auto target = from;
 
-				scheduler::once([target, mapname, gametype, max_clients]()
+				scheduler::once([target, mapname, gametype, max_clients, attempt_id]()
 				{
+					if (!is_connection_attempt_current(attempt_id))
+					{
+						return;
+					}
+
 					if (game::virtual_lobby_loaded())
 					{
 						console::info("Leaving virtual lobby before direct connection.\n");
 						game::CL_VirtualLobbyShutdown(0, 0);
 					}
 
-					scheduler::once([target, mapname, gametype, max_clients]()
+					scheduler::once([target, mapname, gametype, max_clients, attempt_id]()
 					{
-						connect_to_server(target, mapname, gametype, max_clients);
+						if (!is_connection_attempt_current(attempt_id))
+						{
+							return;
+						}
+
+						connect_to_server(target, mapname, gametype, max_clients, attempt_id);
 					}, scheduler::pipeline::main);
 				}, scheduler::pipeline::main);
 			});

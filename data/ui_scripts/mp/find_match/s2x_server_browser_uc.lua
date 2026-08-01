@@ -352,6 +352,11 @@ local function setup_for_e3( controller )
 end
 
 local function postload_server_browser( menu, controller )
+	local function cancel_connection_and_leave()
+		Lobby.CancelS2xConnection()
+		LUI.FlowManager.RequestLeaveMenu( menu )
+	end
+
 	if menu.AvailableGames then
 		menu.AvailableGames.canFocus = can_focus_server_list
 	end
@@ -360,17 +365,13 @@ local function postload_server_browser( menu, controller )
 		local helper_buttons = menu.ButtonHelperBar:BeginSet()
 		helper_buttons:AddLeft( LuaButton.primary, "LUA_MENU_SELECT", join_focused_server )
 		if not CONDITIONS.IsE3Build() then
-			helper_buttons:AddRight( LuaButton.secondary, "LUA_MENU_BACK", function ()
-				LUI.FlowManager.RequestLeaveMenu( menu )
-			end )
+			helper_buttons:AddRight( LuaButton.secondary, "LUA_MENU_BACK", cancel_connection_and_leave )
 		end
 		helper_buttons:Finish()
 		menu.ButtonHelperBar.dontCloseMenusOnStartPress = true
 	end
 
-	menu:registerEventHandler( "button_secondary", function ()
-		LUI.FlowManager.RequestLeaveMenu( menu )
-	end )
+	menu:registerEventHandler( "button_secondary", cancel_connection_and_leave )
 
 	if menu.RefreshListButton then
 		menu.RefreshListButton.disabledFunc = function ()

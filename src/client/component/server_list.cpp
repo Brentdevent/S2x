@@ -4,6 +4,7 @@
 #include "command.hpp"
 #include "master_server.hpp"
 #include "network.hpp"
+#include "party.hpp"
 #include "scheduler.hpp"
 
 #include "console/console.hpp"
@@ -404,10 +405,7 @@ namespace server_list
 
 			console::info("[server_list] joining %s\n", address.data());
 
-			scheduler::once([address]()
-			{
-				game::Cbuf_AddText(0, utils::string::va("connect %s\n", address.data()));
-			}, scheduler::pipeline::main);
+			party::queue_connect(std::move(address));
 		}
 
 		void handle_info_response(const game::netadr_s& from, const std::string_view& data)
@@ -569,6 +567,11 @@ namespace server_list
 			lobby["JoinServer"] = [](int, int index)
 			{
 				join_server(index);
+			};
+
+			lobby["CancelS2xConnection"] = []
+			{
+				party::cancel_pending_connection();
 			};
 
 			console::info("[server_list] installed Lobby server browser functions\n");

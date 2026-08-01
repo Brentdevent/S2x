@@ -35,6 +35,7 @@ namespace dedicated_party_client
 		struct hosted_party_join_state_t
 		{
 			bool active{};
+			std::uint64_t attempt_id{};
 			game::netadr_s target{};
 			std::string session_id{};
 			std::string map_name{};
@@ -233,7 +234,8 @@ namespace dedicated_party_client
 
 		bool pending_hosted_party_join_matches(const void* session_info)
 		{
-			if (!hosted_party_join_state.active || !session_info)
+			if (!hosted_party_join_state.active || !session_info
+				|| !party::is_connection_attempt_current(hosted_party_join_state.attempt_id))
 			{
 				return false;
 			}
@@ -398,8 +400,9 @@ namespace dedicated_party_client
 			const int a5, const int a6, game::PartyAtomicJoinInfo* join_info)
 		{
 			const auto is_hosted_party_join = pending_hosted_party_join_matches(session_info);
+			const auto pending_join = hosted_party_join_state;
 			const auto setup_max_players = is_hosted_party_join
-				? hosted_party_join_state.max_players
+				? pending_join.max_players
 				: max_players;
 
 			const auto result = party_atomic_setup_potential_host_hook.invoke<bool>(
@@ -410,12 +413,21 @@ namespace dedicated_party_client
 				return result;
 			}
 
-			const auto target = hosted_party_join_state.target;
-			const auto session_id = hosted_party_join_state.session_id;
-			const auto map_name = hosted_party_join_state.map_name;
-			const auto gametype = hosted_party_join_state.gametype;
+			if (!party::is_connection_attempt_current(pending_join.attempt_id))
+			{
+				return result;
+			}
+
+			const auto target = pending_join.target;
+			const auto session_id = pending_join.session_id;
+			const auto map_name = pending_join.map_name;
+			const auto gametype = pending_join.gametype;
 			const auto hosted_max_players = setup_max_players;
-			hosted_party_join_state = {};
+			if (hosted_party_join_state.attempt_id == pending_join.attempt_id
+				&& hosted_party_join_state.session_id == pending_join.session_id)
+			{
+				hosted_party_join_state = {};
+			}
 
 			if (!join_info)
 			{
@@ -499,7 +511,7 @@ namespace dedicated_party_client
 	}
 
 	bool try_handle_join(const game::netadr_s& from, const utils::info_string& info,
-		const int max_players)
+		const int max_players, const std::uint64_t attempt_id)
 	{
 		if (info.get("party_session") != "1")
 		{
@@ -527,21 +539,44 @@ namespace dedicated_party_client
 		console::info("Joining hosted dedicated lobby on map '%s' gametype '%s'.\n",
 			map_name.data(), gametype.data());
 
+		if (!party::is_connection_attempt_current(attempt_id))
+		{
+			return true;
+		}
+
+		cancel_pending_connection();
+
 		auto target = from;
 		target.localNetID = game::NS_SERVER;
 
-		scheduler::once([target, host_address, key, session_id, map_name, gametype, max_players]()
+		scheduler::once([target, host_address, key, session_id, map_name, gametype, max_players,
+			attempt_id]()
 		{
+			if (!party::is_connection_attempt_current(attempt_id))
+			{
+				return;
+			}
+
 			// This is the seven-argument command emitted by S2's stock JoinServer menu.
 			// CL_Connect parses the session descriptor and calls PartyAtomic_RequestJoin.
 			hosted_party_join_state = {
-				true, target, session_id, map_name, gametype, max_players
+				true, attempt_id, target, session_id, map_name, gametype, max_players
 			};
-			game::Cbuf_AddText(0, utils::string::va("connect %s %s %s 0 0 %s %s\n",
-				host_address.data(), key.data(), session_id.data(), map_name.data(), gametype.data()));
+			party::execute_internal_connect({
+				attempt_id, host_address, key, session_id, map_name, gametype
+			});
 		}, scheduler::pipeline::main);
 
 		return true;
+	}
+
+	bool is_pending_internal_connect(const std::string_view session_id,
+		const std::uint64_t attempt_id)
+	{
+		return hosted_party_join_state.active
+			&& hosted_party_join_state.attempt_id == attempt_id
+			&& hosted_party_join_state.session_id == session_id
+			&& party::is_connection_attempt_current(attempt_id);
 	}
 
 	bool try_handle_sync_response(const game::netadr_s& from, const utils::info_string& info,
@@ -645,8 +680,20 @@ namespace dedicated_party_client
 		}, scheduler::pipeline::main);
 	}
 
+	void cancel_pending_connection()
+	{
+		hosted_party_join_state = {};
+		hosted_dedicated_go_in_progress = false;
+	}
+
+	void commit_direct_connection()
+	{
+		reset();
+	}
+
 	void reset()
 	{
+		cancel_pending_connection();
 		hosted_dedicated_party_state = {};
 	}
 
