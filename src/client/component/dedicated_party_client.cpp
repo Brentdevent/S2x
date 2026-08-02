@@ -36,6 +36,7 @@ namespace dedicated_party_client
 		{
 			bool active{};
 			std::uint64_t attempt_id{};
+			std::uint64_t match_sequence{};
 			game::netadr_s target{};
 			std::string session_id{};
 			std::string map_name{};
@@ -47,6 +48,7 @@ namespace dedicated_party_client
 		{
 			game::netadr_s target{};
 			std::string session_id{};
+			std::uint64_t match_sequence{};
 			std::string map_name{};
 			std::string gametype{};
 			std::string sync_challenge{};
@@ -168,6 +170,19 @@ namespace dedicated_party_client
 				&& result >= minimum && result <= maximum;
 		}
 
+		bool parse_match_sequence(const std::string& value, std::uint64_t& result)
+		{
+			if (value.empty())
+			{
+				return false;
+			}
+
+			const auto [end, error] = std::from_chars(
+				value.data(), value.data() + value.size(), result);
+			return error == std::errc{} && end == value.data() + value.size()
+				&& result != 0;
+		}
+
 		void apply_hosted_party_capacity(game::PartyData* party_data = nullptr)
 		{
 			const auto max_players = hosted_dedicated_party_state.max_players;
@@ -286,13 +301,14 @@ namespace dedicated_party_client
 
 		void request_hosted_dedicated_party_sync()
 		{
-			if (!hosted_dedicated_party_state.sync_after_next_go
-				|| !hosted_dedicated_party_state.sync_challenge.empty())
+			if (!hosted_dedicated_party_state.sync_after_next_go)
 			{
 				return;
 			}
 
-			hosted_dedicated_party_state.sync_after_next_go = false;
+			// Party state can arrive during post-match results before the host has
+			// selected the next rotation entry. Keep this armed until that selection,
+			// and let each newer party state supersede an older in-flight query.
 			hosted_dedicated_party_state.sync_challenge =
 				utils::cryptography::random::get_challenge();
 			network::send(hosted_dedicated_party_state.target, "s2x_getInfo",
@@ -420,6 +436,7 @@ namespace dedicated_party_client
 
 			const auto target = pending_join.target;
 			const auto session_id = pending_join.session_id;
+			const auto match_sequence = pending_join.match_sequence;
 			const auto map_name = pending_join.map_name;
 			const auto gametype = pending_join.gametype;
 			const auto hosted_max_players = setup_max_players;
@@ -465,10 +482,12 @@ namespace dedicated_party_client
 			hosted_dedicated_party_state = {};
 			hosted_dedicated_party_state.target = target;
 			hosted_dedicated_party_state.session_id = session_id;
+			hosted_dedicated_party_state.match_sequence = match_sequence;
 			hosted_dedicated_party_state.map_name = map_name;
 			hosted_dedicated_party_state.gametype = gametype;
 			hosted_dedicated_party_state.game_lobby = game::Lobby_GetPartyData(0);
 			hosted_dedicated_party_state.max_players = hosted_max_players;
+			hosted_dedicated_party_state.sync_after_next_go = true;
 			apply_hosted_party_capacity(hosted_dedicated_party_state.game_lobby);
 			refresh_presentation();
 
@@ -529,12 +548,14 @@ namespace dedicated_party_client
 		const auto session_id = info.get("session_id");
 		const auto map_name = info.get("party_mapname");
 		const auto gametype = info.get("party_gametype");
+		std::uint64_t match_sequence{};
 
 		if (!is_session_hex_string(host_address, 80)
 			|| !is_session_hex_string(key, 32)
 			|| !is_session_hex_string(session_id, 16)
 			|| max_players < 1
 			|| max_players > game::environment::get_online_mode_info().max_players
+			|| !parse_match_sequence(info.get("party_match_sequence"), match_sequence)
 			|| !validate_map_and_gametype(map_name, gametype)
 			|| !party::validate_gametype(gametype))
 		{
@@ -556,7 +577,7 @@ namespace dedicated_party_client
 		target.localNetID = game::NS_SERVER;
 
 		scheduler::once([target, host_address, key, session_id, map_name, gametype, max_players,
-			attempt_id]()
+			attempt_id, match_sequence]()
 		{
 			if (!party::is_connection_attempt_current(attempt_id))
 			{
@@ -566,7 +587,7 @@ namespace dedicated_party_client
 			// This is the seven-argument command emitted by S2's stock JoinServer menu.
 			// CL_Connect parses the session descriptor and calls PartyAtomic_RequestJoin.
 			hosted_party_join_state = {
-				true, attempt_id, target, session_id, map_name, gametype, max_players
+				true, attempt_id, match_sequence, target, session_id, map_name, gametype, max_players
 			};
 			party::execute_internal_connect({
 				attempt_id, host_address, key, session_id, map_name, gametype
@@ -633,16 +654,29 @@ namespace dedicated_party_client
 			return true;
 		}
 
+		std::uint64_t match_sequence{};
+		if (!parse_match_sequence(info.get("party_match_sequence"), match_sequence))
+		{
+			console::error("Hosted dedicated lobby: invalid match sequence.\n");
+			hosted_dedicated_party_state.sync_challenge.clear();
+			return true;
+		}
+
 		hosted_dedicated_party_state.sync_challenge.clear();
 		if (info.get("party_session") == "1"
 			&& info.get("session_id") == hosted_dedicated_party_state.session_id)
 		{
 			hosted_dedicated_party_state.max_players = max_players;
 			apply_hosted_party_capacity(hosted_dedicated_party_state.game_lobby);
+			if (match_sequence > hosted_dedicated_party_state.match_sequence
+				&& update_hosted_dedicated_party_match(
+					info.get("party_mapname"), info.get("party_gametype"),
+					game::environment::is_multiplayer()))
+			{
+				hosted_dedicated_party_state.match_sequence = match_sequence;
+				hosted_dedicated_party_state.sync_after_next_go = false;
+			}
 			refresh_presentation();
-			update_hosted_dedicated_party_match(
-				info.get("party_mapname"), info.get("party_gametype"),
-				game::environment::is_multiplayer());
 		}
 
 		return true;

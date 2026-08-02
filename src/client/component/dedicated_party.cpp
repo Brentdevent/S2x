@@ -47,6 +47,7 @@ namespace dedicated_party
 			std::optional<dedicated_match_t> requested_next_match{};
 			std::optional<dedicated_match_t> requested_rotation_match{};
 			dedicated_match_t current_match{};
+			std::uint64_t match_sequence{};
 			std::size_t next_rotation_index{};
 			game::PartyData* private_party{};
 			game::PartyData* game_lobby{};
@@ -666,6 +667,7 @@ namespace dedicated_party
 			prepare_match_settings(match);
 
 			dedicated_party_state.current_match = match;
+			++dedicated_party_state.match_sequence;
 
 			console::info("Dedicated party: selected next map %s %s.\n",
 				match.map_name.data(), match.gametype.data());
@@ -1164,6 +1166,7 @@ namespace dedicated_party
 		info.session_id = session_id.data();
 		info.map_name = dedicated_party_state.current_match.map_name;
 		info.gametype = dedicated_party_state.current_match.gametype;
+		info.match_sequence = dedicated_party_state.match_sequence;
 		auto* hosted_game_lobby = dedicated_party_state.game_lobby
 			? dedicated_party_state.game_lobby
 			: game_lobby;

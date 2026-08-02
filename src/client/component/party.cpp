@@ -746,6 +746,8 @@ namespace party
 				info.set("session_id", party_connect_info.session_id);
 				info.set("party_mapname", party_connect_info.map_name);
 				info.set("party_gametype", party_connect_info.gametype);
+				info.set("party_match_sequence",
+					std::to_string(party_connect_info.match_sequence));
 			}
 
 			network::send(from, response_command, info.build(), '\n');

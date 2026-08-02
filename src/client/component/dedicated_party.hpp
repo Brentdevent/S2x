@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,7 @@ namespace dedicated_party
 		std::string session_id{};
 		std::string map_name{};
 		std::string gametype{};
+		std::uint64_t match_sequence{};
 		int member_count{};
 		int max_members{};
 		bool match_running{};
