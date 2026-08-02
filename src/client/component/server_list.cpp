@@ -104,7 +104,7 @@ namespace server_list
 
 		std::string get_gametype_display_name(const std::string& gametype)
 		{
-			const auto* display_name = game::UI_GetGameTypeDisplayName(gametype.data());
+			const auto* display_name = game::UI_GetCustomizedGameTypeDefaultDisplayName(gametype.data());
 			return display_name && *display_name ? display_name : gametype;
 		}
 
