@@ -123,6 +123,8 @@ namespace game
 	WEAK symbol<void(int localClientNum)> UI_StartServer{ 0x74A440 };
 	WEAK symbol<void()> GameInfo_UpdateArenas{ 0x650A70 };
 	WEAK symbol<int(const char* mapName)> GameInfo_GetIndexForMapName{ 0x650490 };
+	WEAK symbol<const char*(const char* mapName)> UI_GetMapDisplayName{ 0x6505A0 };
+	WEAK symbol<const char*(const char* gameType)> UI_GetGameTypeDisplayName{ 0x6500E0 };
 	WEAK symbol<int(const char* mapName)> UI_GetListIndexFromMapName{ 0x650510 };
 	WEAK symbol<void(const char* mapname, const char* gametype)> UI_SetMap{ 0x74A050 };
 	WEAK symbol<void(int localClientNum)> UI_Map{ 0x744C30 };

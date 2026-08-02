@@ -96,6 +96,18 @@ namespace server_list
 			return value;
 		}
 
+		std::string get_map_display_name(const std::string& mapname)
+		{
+			const auto* display_name = game::UI_GetMapDisplayName(mapname.data());
+			return display_name && *display_name ? display_name : mapname;
+		}
+
+		std::string get_gametype_display_name(const std::string& gametype)
+		{
+			const auto* display_name = game::UI_GetGameTypeDisplayName(gametype.data());
+			return display_name && *display_name ? display_name : gametype;
+		}
+
 		void sort_servers()
 		{
 			std::ranges::stable_sort(servers, [](const server_info& a, const server_info& b)
@@ -494,6 +506,9 @@ namespace server_list
 				drop_server(address);
 				return;
 			}
+
+			const auto map_display_name = get_map_display_name(mapname);
+			const auto gametype_display_name = get_gametype_display_name(gametype);
 			const auto ping = std::min(
 				static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
 					std::chrono::steady_clock::now() - query_start).count()),
@@ -512,8 +527,8 @@ namespace server_list
 				master_state.queued_servers.erase(address);
 
 				server->hostname = hostname.empty() ? server->address_string : hostname;
-				server->mapname = mapname;
-				server->gametype = gametype;
+				server->mapname = map_display_name;
+				server->gametype = gametype_display_name;
 				server->clients = clients;
 				server->max_clients = max_clients;
 				server->ping = ping;
