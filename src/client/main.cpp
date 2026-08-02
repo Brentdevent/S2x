@@ -15,6 +15,7 @@
 #include "game/game.hpp"
 #include "launcher/launcher.hpp"
 #include "component/console/console.hpp"
+#include "component/updater.hpp"
 
 namespace
 {
@@ -279,7 +280,7 @@ int main()
 		try
 		{
 			remove_crash_file();
-			//updater::update();
+			updater::update();
 
 			auto options = detect_startup_options();
 			if (!options.gameplay_mode.has_value())

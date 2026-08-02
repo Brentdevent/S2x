@@ -378,7 +378,7 @@ namespace utils::nt
 		return std::string(LPSTR(LockResource(handle)), SizeofResource(lib, res));
 	}
 
-	void relaunch_self(const std::string& extra_args)
+	bool relaunch_self(const std::string& extra_args)
 	{
 		const auto self = utils::nt::library::get_by_address(relaunch_self);
 
@@ -400,12 +400,13 @@ namespace utils::nt
 			command_line += extra_args;
 		}
 
-		CreateProcessA(self.get_path().generic_string().data(), command_line.data(), nullptr, nullptr, false, NULL, nullptr,
-		               current_dir,
-		               &startup_info, &process_info);
+		const auto result = CreateProcessA(self.get_path().generic_string().data(), command_line.data(), nullptr, nullptr,
+		                                   false, NULL, nullptr, current_dir, &startup_info, &process_info);
 
 		if (process_info.hThread && process_info.hThread != INVALID_HANDLE_VALUE) CloseHandle(process_info.hThread);
 		if (process_info.hProcess && process_info.hProcess != INVALID_HANDLE_VALUE) CloseHandle(process_info.hProcess);
+
+		return result == TRUE;
 	}
 
 	void terminate(const uint32_t code)

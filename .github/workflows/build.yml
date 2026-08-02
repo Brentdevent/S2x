@@ -8,24 +8,25 @@ on:
     branches:
       - "*"
     types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build binaries
     runs-on: windows-2022
     strategy:
+      fail-fast: false
       matrix:
         configuration:
           - Debug
           - Release
     steps:
-#      - name: Wait for previous workflows
-#        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-#        uses: softprops/turnstyle@v1
-#        with:
-#          poll-interval-seconds: 10
-#        env:
-#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Check out files
         uses: actions/checkout@v6
         with:
@@ -46,10 +47,165 @@ jobs:
       - name: Build ${{matrix.configuration}} binaries
         run: msbuild /m /v:minimal /p:Configuration=${{matrix.configuration}} /p:Platform=x64 build/s2x.sln
 
-      - name: Upload ${{matrix.configuration}} binaries
+      - name: Upload ${{matrix.configuration}} binary
         uses: actions/upload-artifact@v7
         with:
-          name: ${{matrix.configuration}} binaries
-          path: |
-            build/bin/x64/${{matrix.configuration}}/s2x.exe
-            build/bin/x64/${{matrix.configuration}}/s2x.pdb
+          name: ${{matrix.configuration}} binary
+          path: build/bin/x64/${{matrix.configuration}}/s2x.exe
+          if-no-files-found: error
+
+      - name: Upload ${{matrix.configuration}} symbols
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{matrix.configuration}} symbols
+          path: build/bin/x64/${{matrix.configuration}}/s2x.pdb
+          if-no-files-found: error
+
+      - name: Prepare updater payload
+        if: matrix.configuration == 'Release' && github.event_name == 'push' && github.ref == 'refs/heads/master'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $publishRoot = Join-Path $env:GITHUB_WORKSPACE "build/updater-publish"
+          $payloadRoot = Join-Path $publishRoot "s2x"
+          if (Test-Path -LiteralPath $publishRoot) {
+              Remove-Item -LiteralPath $publishRoot -Recurse -Force
+          }
+
+          New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
+
+          $executable = "build/bin/x64/Release/s2x.exe"
+          if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+              throw "Release executable was not found: $executable"
+          }
+
+          Copy-Item -LiteralPath $executable -Destination (Join-Path $payloadRoot "s2x.exe")
+
+          $manifestPaths = [Collections.Generic.List[string]]::new()
+          $manifestPaths.Add("s2x.exe")
+
+          $trackedData = @(git -c core.quotepath=false ls-files -- data)
+          if ($LASTEXITCODE -ne 0) {
+              throw "Failed to enumerate tracked data files"
+          }
+
+          foreach ($trackedPath in $trackedData) {
+              $relativePath = $trackedPath.Replace("\", "/")
+              if (-not $relativePath.StartsWith("data/", [StringComparison]::Ordinal)) {
+                  throw "Unexpected tracked data path: $relativePath"
+              }
+
+              $sourcePath = Join-Path $env:GITHUB_WORKSPACE $relativePath
+              if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+                  throw "Tracked data file was not found: $relativePath"
+              }
+
+              $destinationPath = Join-Path $payloadRoot $relativePath
+              New-Item -ItemType Directory -Path (Split-Path -Parent $destinationPath) -Force | Out-Null
+              Copy-Item -LiteralPath $sourcePath -Destination $destinationPath
+              $manifestPaths.Add($relativePath)
+          }
+
+          if (@($manifestPaths | Sort-Object -Unique).Count -ne $manifestPaths.Count) {
+              throw "Updater payload contains duplicate paths"
+          }
+
+          $manifest = [Collections.Generic.List[object]]::new()
+          foreach ($relativePath in $manifestPaths) {
+              $filePath = Join-Path $payloadRoot $relativePath
+              $file = Get-Item -LiteralPath $filePath
+              $hash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA1).Hash.ToLowerInvariant()
+              $manifest.Add([object[]]@($relativePath, [int64]$file.Length, $hash))
+          }
+
+          $payloadPrefix = $payloadRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+          $stagedPaths = @(
+              Get-ChildItem -LiteralPath $payloadRoot -File -Recurse |
+                  ForEach-Object {
+                      $_.FullName.Substring($payloadPrefix.Length).Replace("\", "/")
+                  } |
+                  Sort-Object
+          )
+          $listedPaths = @($manifestPaths | Sort-Object)
+          $differences = @(Compare-Object -ReferenceObject $listedPaths -DifferenceObject $stagedPaths)
+          if ($differences.Count -ne 0) {
+              throw "Updater manifest does not match the staged payload"
+          }
+
+          $manifestJson = ConvertTo-Json -InputObject $manifest -Depth 3
+          $manifestFile = Join-Path $publishRoot "s2x.json"
+          [IO.File]::WriteAllText($manifestFile, $manifestJson, [Text.UTF8Encoding]::new($false))
+
+      - name: Upload Release updater payload
+        if: matrix.configuration == 'Release' && github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v7
+        with:
+          name: Release updater payload
+          path: build/updater-publish
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 1
+
+  deploy:
+    name: Deploy updater
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - name: Download Release updater payload
+        uses: actions/download-artifact@v8
+        with:
+          name: Release updater payload
+          path: publish
+
+      - name: Publish updater files
+        shell: bash
+        env:
+          S2X_UPDATER_SSH_HOST: ${{ secrets.S2X_UPDATER_SSH_HOST }}
+          S2X_UPDATER_SSH_USER: ${{ secrets.S2X_UPDATER_SSH_USER }}
+          S2X_UPDATER_SSH_PRIVATE_KEY: ${{ secrets.S2X_UPDATER_SSH_PRIVATE_KEY }}
+          S2X_UPDATER_REMOTE_PATH: ${{ secrets.S2X_UPDATER_REMOTE_PATH }}
+        run: |
+          set -euo pipefail
+
+          for variable in \
+            S2X_UPDATER_SSH_HOST \
+            S2X_UPDATER_SSH_USER \
+            S2X_UPDATER_SSH_PRIVATE_KEY \
+            S2X_UPDATER_REMOTE_PATH
+          do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::${variable} is not configured"
+              exit 1
+            fi
+          done
+
+          test -f publish/s2x/s2x.exe
+          test -f publish/s2x.json
+
+          key_file="${RUNNER_TEMP}/s2x_updater_key"
+          known_hosts_file="${RUNNER_TEMP}/s2x_updater_known_hosts"
+          printf '%s\n' "${S2X_UPDATER_SSH_PRIVATE_KEY}" | tr -d '\r' > "${key_file}"
+          chmod 600 "${key_file}"
+          ssh-keyscan -H "${S2X_UPDATER_SSH_HOST}" > "${known_hosts_file}"
+          test -s "${known_hosts_file}"
+
+          remote_root="${S2X_UPDATER_REMOTE_PATH//\\//}"
+          remote_root="${remote_root%/}"
+          if [[ -z "${remote_root}" ]]; then
+            echo "::error::S2X_UPDATER_REMOTE_PATH is invalid"
+            exit 1
+          fi
+
+          remote_host="${S2X_UPDATER_SSH_USER}@${S2X_UPDATER_SSH_HOST}"
+          ssh_options=(
+            -i "${key_file}"
+            -o BatchMode=yes
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o "UserKnownHostsFile=${known_hosts_file}"
+          )
+
+          scp "${ssh_options[@]}" -r publish/s2x "${remote_host}:${remote_root}/"
+          scp "${ssh_options[@]}" publish/s2x.json "${remote_host}:${remote_root}/s2x.json"

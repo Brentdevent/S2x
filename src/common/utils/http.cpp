@@ -3,6 +3,7 @@
 #include "finally.hpp"
 
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "Secur32.lib")
 
 namespace utils::http
 {
@@ -79,20 +80,25 @@ namespace utils::http
 		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &helper);
 		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-		curl_easy_setopt(curl, CURLOPT_USERAGENT, "xlabs-updater/1.0");
+		curl_easy_setopt(curl, CURLOPT_USERAGENT, "s2x-updater/1.0");
 		curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
-		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
-		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+		curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+		curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
 
 		for (auto i = 0u; i < retries + 1; ++i)
 		{
+			buffer.clear();
+
 			// Due to CURLOPT_FAILONERROR, CURLE_OK will not be met when the server returns 400 or 500
 			if (curl_easy_perform(curl) == CURLE_OK)
 			{
 				long http_code = 0;
 				curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
-				if (http_code >= 200)
+				if (http_code >= 200 && http_code < 300)
 				{
 					return {std::move(buffer)};
 				}
