@@ -4,6 +4,7 @@
 
 #include "component/console/console.hpp"
 #include "game/game.hpp"
+#include "loader/component_loader.hpp"
 
 #include <updater/updater.hpp>
 
@@ -29,13 +30,45 @@ namespace updater
 		{
 			utils::nt::terminate(0);
 		}
-		catch (const std::exception& e)
-		{
-			console::error("[Updater] %s\n", e.what());
-		}
 		catch (...)
 		{
-			console::error("[Updater] Update failed with an unknown error.\n");
 		}
 	}
+
+	class component final : public generic_component
+	{
+	public:
+		void post_load() override
+		{
+			update_thread_ = std::thread(update);
+		}
+
+		void post_unpack() override
+		{
+			join_update_thread();
+		}
+
+		void pre_destroy() override
+		{
+			join_update_thread();
+		}
+
+		component_priority priority() const override
+		{
+			return component_priority::updater;
+		}
+
+	private:
+		void join_update_thread()
+		{
+			if (update_thread_.joinable())
+			{
+				update_thread_.join();
+			}
+		}
+
+		std::thread update_thread_{};
+	};
 }
+
+REGISTER_COMPONENT(updater::component)
