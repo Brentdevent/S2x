@@ -154,7 +154,6 @@ namespace dedicated
 			if (!initialized)
 			{
 				initialized = true;
-				console::info("Dedicated renderer: initializing headless graphics.\n");
 
 				// Stock S2 creates this lock immediately after D3D device
 				// creation. The headless path has no device, but DB/render-sync
@@ -820,6 +819,7 @@ namespace dedicated
 			}
 
 			register_dedicated_net_port();
+			
 			game::Dvar_RegisterBool("dedicated", true, game::DVAR_FLAG_READ);
 			game::Dvar_RegisterBool("sv_lanOnly", false, game::DVAR_FLAG_NONE);
 
