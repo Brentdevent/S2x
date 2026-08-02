@@ -14,6 +14,7 @@
 
 #include "game/game.hpp"
 #include "component/console/console.hpp"
+#include "component/updater.hpp"
 
 namespace
 {
@@ -252,7 +253,7 @@ int main()
 		try
 		{
 			remove_crash_file();
-			//updater::update();
+			updater::update();
 
 			auto mode = detect_mode_from_arguments();
 			if (mode == launcher::mode::none)

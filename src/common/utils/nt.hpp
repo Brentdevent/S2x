@@ -251,7 +251,7 @@ namespace utils::nt
 	__declspec(noreturn) void raise_hard_exception();
 	std::string load_resource(int id);
 
-	void relaunch_self(const std::string& extra_args = {});
+	bool relaunch_self(const std::string& extra_args = {});
 	__declspec(noreturn) void terminate(uint32_t code = 0);
 
 	std::string get_user_name();
