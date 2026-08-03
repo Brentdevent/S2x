@@ -15,7 +15,6 @@
 #include "game/game.hpp"
 #include "launcher/launcher.hpp"
 #include "component/console/console.hpp"
-#include "component/updater.hpp"
 
 namespace
 {
@@ -263,10 +262,6 @@ int main()
 	FARPROC entry_point{};
 	srand(uint32_t(time(nullptr)) ^ ~(GetTickCount() * GetCurrentProcessId()));
 
-	console::init();
-
-	enable_dpi_awareness();
-
 	{
 		auto premature_shutdown = true;
 		const auto _ = utils::finally([&premature_shutdown]
@@ -279,26 +274,34 @@ int main()
 
 		try
 		{
-			remove_crash_file();
-			updater::update();
-
 			auto options = detect_startup_options();
+			if (options.dedicated
+				&& options.gameplay_mode == game::environment::mode::singleplayer)
+			{
+				throw std::runtime_error("Singleplayer dedicated servers are not supported.");
+			}
+
+			if (options.gameplay_mode.has_value())
+			{
+				game::environment::set_mode(*options.gameplay_mode);
+			}
+
+			game::environment::set_dedicated(options.dedicated);
+
+			console::init();
+
+			enable_dpi_awareness();
+			remove_crash_file();
+
 			if (!options.gameplay_mode.has_value())
 			{
 				const launcher launcher;
 				options.gameplay_mode = launcher.run();
 
 				if (!options.gameplay_mode.has_value()) return 0;
-			}
 
-			if (options.dedicated
-				&& *options.gameplay_mode == game::environment::mode::singleplayer)
-			{
-				throw std::runtime_error("Singleplayer dedicated servers are not supported.");
+				game::environment::set_mode(*options.gameplay_mode);
 			}
-
-			game::environment::set_mode(*options.gameplay_mode);
-			game::environment::set_dedicated(options.dedicated);
 
 			if (game::environment::is_zombies() && !has_zombies_argument())
 			{
@@ -310,7 +313,7 @@ int main()
 			const auto sp_binary = "s2_sp64_ship.exe"s;
 
 			const auto& binary_to_load = game::environment::uses_multiplayer_binary() ? mp_binary : sp_binary;
-			
+
 			if (!utils::io::file_exists(binary_to_load))
 			{
 				throw std::runtime_error(utils::string::va(
