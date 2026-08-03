@@ -17,6 +17,7 @@
 
 #include <utils/flags.hpp>
 #include <utils/hook.hpp>
+#include <utils/nt.hpp>
 #include <utils/string.hpp>
 
 namespace dedicated_party
@@ -723,7 +724,7 @@ namespace dedicated_party
 		void fail_lifecycle(const char* message)
 		{
 			console::error("Dedicated party: %s\n", message);
-			dedicated_party_state = {};
+			utils::nt::terminate(1);
 		}
 
 		bool stage_timed_out(const std::chrono::seconds timeout)
