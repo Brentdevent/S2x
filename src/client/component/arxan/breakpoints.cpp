@@ -67,7 +67,7 @@ namespace arxan::breakpoints
 
 		void patch_breakpoints_precomputed()
 		{
-			if (game::environment::is_mp())
+			if (game::environment::uses_multiplayer_binary())
 			{
 				for (const auto offset : mp::int2d_breakpoint_offsets)
 				{

@@ -25,7 +25,7 @@ namespace logger
 
 		zone_info get_zone_info(const uint16_t zone_index)
 		{
-			if (game::environment::is_sp())
+			if (!game::environment::uses_multiplayer_binary())
 			{
 				const auto zone = reinterpret_cast<game::sp::XZone*>(
 					&game::g_zones[sizeof(game::sp::XZone) * zone_index]

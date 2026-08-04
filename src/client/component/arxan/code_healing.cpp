@@ -60,7 +60,7 @@ namespace arxan::code_healing
 
 		const arxan_patch_lists& current_patches()
 		{
-			return game::environment::is_mp()
+			return game::environment::uses_multiplayer_binary()
 				? mp_patches
 				: sp_patches;
 		}
@@ -97,7 +97,7 @@ namespace arxan::code_healing
 				patch_region{sp::int2d_breakpoint_offsets, 0x7},
 			};
 
-			return game::environment::is_mp() ? mp_regions : sp_regions;
+			return game::environment::uses_multiplayer_binary() ? mp_regions : sp_regions;
 		}
 
 		void* find_lea_target(void* start)

@@ -106,7 +106,7 @@ namespace auth
 	{
 		static const auto guid = []() -> uint64_t
 		{
-			if (game::environment::is_dedi() || is_second_instance())
+			if (game::environment::is_dedicated() || is_second_instance())
 			{
 				return 0x110000100000000 | (::utils::cryptography::random::get_integer() & ~0x80000000);
 			}
@@ -128,7 +128,7 @@ namespace auth
 				patches.emplace_back(a, b);
 			};
 
-			if (game::environment::is_sp())
+			if (!game::environment::uses_multiplayer_binary())
 			{
 				p(0x4E70DD_g, 0x4E70F6_g);
 				p(0x4E7BFB_g, 0x4E7C2E_g);

@@ -38,7 +38,7 @@ namespace updater
 		const auto self = utils::nt::library::get_by_address(run);
 		const auto self_file = self.get_path();
 
-		updater_ui updater_ui{game::environment::is_dedi()};
+		updater_ui updater_ui{game::environment::is_dedicated()};
 		const file_updater file_updater{updater_ui, base, self_file};
 		file_updater.run();
 	}

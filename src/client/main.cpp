@@ -13,8 +13,8 @@
 #include <steam/steam.hpp>
 
 #include "game/game.hpp"
+#include "launcher/launcher.hpp"
 #include "component/console/console.hpp"
-#include "component/updater.hpp"
 
 namespace
 {
@@ -200,29 +200,55 @@ namespace
 		return value.has_value() && value.value() == "1";
 	}
 
-	launcher::mode detect_mode_from_arguments()
+	bool has_dedicated_argument()
 	{
-		if (utils::flags::has_flag("-dedicated"))
+		const auto value = utils::flags::get_set_value("dedicated");
+		return utils::flags::has_flag("-dedicated") || (value.has_value() && value.value() == "1");
+	}
+
+	struct startup_options
+	{
+		std::optional<game::environment::mode> gameplay_mode{};
+		bool dedicated{};
+	};
+
+	startup_options detect_startup_options()
+	{
+		startup_options options{};
+		options.dedicated = has_dedicated_argument();
+
+		if (options.dedicated)
 		{
-			return launcher::mode::server;
+			if (utils::flags::has_flag("-singleplayer"))
+			{
+				options.gameplay_mode = game::environment::mode::singleplayer;
+			}
+			else if (has_zombies_argument() || utils::flags::has_flag("-zombies"))
+			{
+				options.gameplay_mode = game::environment::mode::zombies;
+			}
+			else
+			{
+				options.gameplay_mode = game::environment::mode::multiplayer;
+			}
+
+			return options;
 		}
 
 		if (utils::flags::has_flag("-multiplayer"))
 		{
-			return launcher::mode::multiplayer;
+			options.gameplay_mode = game::environment::mode::multiplayer;
 		}
-
-		if (utils::flags::has_flag("-singleplayer"))
+		else if (utils::flags::has_flag("-singleplayer"))
 		{
-			return launcher::mode::singleplayer;
+			options.gameplay_mode = game::environment::mode::singleplayer;
 		}
-
-		if (utils::flags::has_flag("-zombies"))
+		else if (utils::flags::has_flag("-zombies") || has_zombies_argument())
 		{
-			return launcher::mode::zombies;
+			options.gameplay_mode = game::environment::mode::zombies;
 		}
 
-		return launcher::mode::none;
+		return options;
 	}
 }
 
@@ -236,10 +262,6 @@ int main()
 	FARPROC entry_point{};
 	srand(uint32_t(time(nullptr)) ^ ~(GetTickCount() * GetCurrentProcessId()));
 
-	console::init();
-
-	enable_dpi_awareness();
-
 	{
 		auto premature_shutdown = true;
 		const auto _ = utils::finally([&premature_shutdown]
@@ -252,31 +274,46 @@ int main()
 
 		try
 		{
-			remove_crash_file();
-			updater::update();
-
-			auto mode = detect_mode_from_arguments();
-			if (mode == launcher::mode::none)
+			auto options = detect_startup_options();
+			if (options.dedicated
+				&& options.gameplay_mode == game::environment::mode::singleplayer)
 			{
-				const launcher launcher;
-				mode = launcher.run();
-
-				if (mode == launcher::mode::none) return 0;
+				throw std::runtime_error("Singleplayer dedicated servers are not supported.");
 			}
 
-			game::environment::set_mode(mode);
+			if (options.gameplay_mode.has_value())
+			{
+				game::environment::set_mode(*options.gameplay_mode);
+			}
+
+			game::environment::set_dedicated(options.dedicated);
+
+			console::init();
+
+			enable_dpi_awareness();
+			remove_crash_file();
+
+			if (!options.gameplay_mode.has_value())
+			{
+				const launcher launcher;
+				options.gameplay_mode = launcher.run();
+
+				if (!options.gameplay_mode.has_value()) return 0;
+
+				game::environment::set_mode(*options.gameplay_mode);
+			}
 
 			if (game::environment::is_zombies() && !has_zombies_argument())
 			{
-				utils::nt::relaunch_self("-zombies +zombiesMode 1");
+				utils::nt::relaunch_self("+zombiesMode 1");
 				return 0;
 			}
 
 			const auto mp_binary = "s2_mp64_ship.exe"s;
 			const auto sp_binary = "s2_sp64_ship.exe"s;
 
-			const auto& binary_to_load = game::environment::is_mp() ? mp_binary : sp_binary;
-			
+			const auto& binary_to_load = game::environment::uses_multiplayer_binary() ? mp_binary : sp_binary;
+
 			if (!utils::io::file_exists(binary_to_load))
 			{
 				throw std::runtime_error(utils::string::va(
@@ -286,7 +323,7 @@ int main()
 				));
 			}
 
-			if (!component_loader::activate(game::environment::is_sp()))
+			if (!component_loader::activate(!game::environment::uses_multiplayer_binary()))
 			{
 				return 1;
 			}

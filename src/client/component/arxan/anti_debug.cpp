@@ -509,7 +509,7 @@ namespace arxan::anti_debug
 #endif
 
 				// Skip copy of ntdll data
-				if (game::environment::is_mp())
+				if (game::environment::uses_multiplayer_binary())
 				{
 					utils::hook::jump(0x113B7253_g, 0x1B9607_g); // First NTDLL copy mem section
 					utils::hook::jump(0x794E70_g, 0x794EA7_g); // Second NTDLL copy mem section

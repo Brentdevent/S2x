@@ -433,8 +433,8 @@ namespace utils::hook
 				throw std::runtime_error("Too far away to create 32bit relative branch");
 			}
 
-			call(pointer, trampoline);
 			jump(trampoline, data, true, true);
+			call(pointer, trampoline);
 			return;
 		}
 
@@ -474,8 +474,8 @@ namespace utils::hook
 			{
 				throw std::runtime_error("Too far away to create 32bit relative branch");
 			}
-			jump(pointer, trampoline, false, false);
 			jump(trampoline, data, true, true);
+			jump(pointer, trampoline, false, false);
 			return;
 		}
 

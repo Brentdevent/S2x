@@ -1,27 +1,21 @@
 #pragma once
 #include "html/html_window.hpp"
+#include "game/game.hpp"
+
+#include <optional>
 
 class launcher final
 {
 public:
-	enum class mode
-	{
-		none,
-		singleplayer,
-		multiplayer,
-		zombies,
-		server
-	};
-
 	launcher();
 
-	mode run() const;
+	std::optional<game::environment::mode> run() const;
 
 private:
-	mode mode_ = mode::none;
+	std::optional<game::environment::mode> mode_{};
 	html_window main_window_;
 
-	void select_mode(mode mode);
+	void select_mode(game::environment::mode mode);
 	void create_main_menu();
 
 	static std::string load_content(int res);

@@ -90,4 +90,45 @@ namespace utils::flags
 
 		return std::nullopt;
 	}
+
+	std::optional<std::string> get_plus_value(const std::string& command)
+	{
+		auto flag = string::to_lower(command);
+		if (flag.empty())
+		{
+			return std::nullopt;
+		}
+
+		if (flag.front() != '+')
+		{
+			flag.insert(flag.begin(), '+');
+		}
+
+		return get_value(flag);
+	}
+
+	std::optional<std::string> get_set_value(const std::string& dvar)
+	{
+		static const auto arguments = parse_arguments();
+
+		const auto wanted_dvar = string::to_lower(dvar);
+
+		for (auto i = 0ull; i + 2 < arguments.size(); ++i)
+		{
+			if (arguments[i] != "+set" || arguments[i + 1] != wanted_dvar)
+			{
+				continue;
+			}
+
+			const auto& value = arguments[i + 2];
+			if (!value.empty() && (value[0] == '-' || value[0] == '+'))
+			{
+				return std::nullopt;
+			}
+
+			return value;
+		}
+
+		return std::nullopt;
+	}
 }

@@ -264,7 +264,7 @@ namespace gsc
 
 			const auto* map_name = game::Dvar_FindMalleableVar("mapname");
 
-			if (game::environment::is_sp())
+			if (!game::environment::uses_multiplayer_binary())
 			{
 				const std::filesystem::path game_folder = "sp";
 
@@ -491,7 +491,7 @@ namespace gsc
 			// gsc-tool will only have one mode which supports both 1 and 2 dev blocks in the code simultaneously.
 			dvars::com_developer_script = game::Dvar_RegisterInt("developer_script", 0, 0, 2, game::DVAR_FLAG_NONE);
 
-			if (game::environment::is_sp())
+			if (!game::environment::uses_multiplayer_binary())
 			{
 				utils::hook::call(0x3BDD2F_g, g_scr_set_level_script_stub);
 				utils::hook::call(0x373C57_g, scr_load_level_singleplayer_stub);

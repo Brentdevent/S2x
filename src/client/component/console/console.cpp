@@ -37,7 +37,7 @@ namespace console
 		con_type = con_type_default;
 
 		const auto noconsole_flag = utils::flags::has_flag("-noconsole");
-		if (!game::environment::is_dedi() && noconsole_flag)
+		if (!game::environment::is_dedicated() && noconsole_flag)
 		{
 			con_type = con_type_none;
 			return;

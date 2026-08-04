@@ -552,7 +552,7 @@ namespace game_console
 	{
 		try
 		{
-			if (game::environment::is_dedi())
+			if (game::environment::is_dedicated())
 			{
 				return;
 			}

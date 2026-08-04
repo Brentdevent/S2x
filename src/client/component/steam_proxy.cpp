@@ -12,6 +12,8 @@
 
 #include "resource.hpp"
 
+#include "game/game.hpp"
+
 #include "steam/interface.hpp"
 #include "steam/steam.hpp"
 
@@ -172,7 +174,7 @@ namespace steam_proxy
 	public:
 		void post_load() override
 		{
-			if (is_disabled()) return;
+			if (is_disabled() || game::environment::is_dedicated()) return;
 
 			load_client();
 			perform_cleanup_if_needed();
@@ -180,7 +182,7 @@ namespace steam_proxy
 
 		void post_unpack() override
 		{
-			if (is_disabled()) return;
+			if (is_disabled() || game::environment::is_dedicated()) return;
 
 			try
 			{
@@ -245,6 +247,8 @@ namespace steam_proxy
 
 	void initialize()
 	{
+		if (game::environment::is_dedicated()) return;
+
 		if (client_engine || !steam_client_module) return;
 
 		steam_client = steam_client_module.invoke<steam::client*>("CreateInterface", "SteamClient017", nullptr);

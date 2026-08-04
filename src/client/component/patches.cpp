@@ -58,10 +58,8 @@ namespace patches
 	public:
 		void post_thread_setup() override
 		{
-#ifdef DEBUG
-			// Allow multiple instances for testing purposes.
+			// Intentionally allow multiple clients and dedicated servers in every build and mode.
 			utils::hook::set(0x78A5F0_g, 0xC301B0);
-#endif
 		}
 
 		void post_unpack() override
