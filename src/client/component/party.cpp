@@ -161,13 +161,18 @@ namespace party
 				return true;
 			}
 
-			map_index = game::UI_GetListIndexFromMapName(map_name.data());
-			if (map_index <= 0)
+			// The sorted UI lookup returns zero for both a missing map and its first
+			// entry. Validate membership with the unambiguous catalog lookup first.
+			game::GameInfo_UpdateArenas();
+			if (game::GameInfo_GetIndexForMapName(map_name.data()) < 0)
 			{
-				console::error("Map '%s' not found in UI list.\n", map_name.data());
+				console::error(
+					"Multiplayer map '%s' is not present in the stock arena catalog.\n",
+					map_name.data());
 				return false;
 			}
 
+			map_index = game::UI_GetListIndexFromMapName(map_name.data());
 			return true;
 		}
 
