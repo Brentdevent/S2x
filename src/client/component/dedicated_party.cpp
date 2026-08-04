@@ -57,7 +57,7 @@ namespace dedicated_party
 		};
 
 		dedicated_party_state_t dedicated_party_state{};
-		game::dvar_t* dedicated_lobby_time{};
+		game::dvar_t* party_match_start_delay{};
 		game::dvar_t* party_maxplayers{};
 		game::dvar_t* party_minplayers{};
 		game::dvar_t* sv_maprotation{};
@@ -566,18 +566,19 @@ namespace dedicated_party
 			}
 		}
 
-		void apply_lobby_time()
+		void apply_match_start_delay()
 		{
-			if (!dedicated_lobby_time
+			if (!party_match_start_delay
 				|| game::environment::is_zombies())
 			{
 				return;
 			}
 
-			// PartyHost_Frame builds its launch deadline from the native pregame (4853)
-			// and game-start (901) timers. Keep the whole intermission in the countdown.
-			game::Dvar_SetIntByName("4853", 0);
-			game::Dvar_SetIntByName("901", dedicated_lobby_time->current.integer);
+			// PartyHost_Frame adds the native pregame and game-start timers. Remove the
+			// stock pregame delay so party_matchStartDelay remains the complete countdown.
+			game::Dvar_SetIntByName("pt_pregameStartTimerLength", 0);
+			game::Dvar_SetIntByName("pt_gameStartTimerLength",
+				party_match_start_delay->current.integer);
 		}
 
 		bool set_match_rules_gametype(const std::string& gametype)
@@ -632,7 +633,7 @@ namespace dedicated_party
 
 		void prepare_postmatch_lobby()
 		{
-			apply_lobby_time();
+			apply_match_start_delay();
 			configure_public_lobby();
 			apply_configured_party_limits();
 			reset_party_launch_state();
@@ -661,7 +662,7 @@ namespace dedicated_party
 
 		void apply_match(const dedicated_match_t& match)
 		{
-			apply_lobby_time();
+			apply_match_start_delay();
 			reset_party_launch_state();
 
 			configure_public_lobby();
@@ -793,7 +794,7 @@ namespace dedicated_party
 					apply_configured_party_limits();
 					console::info("Dedicated party: private party created.\n");
 
-					apply_lobby_time();
+					apply_match_start_delay();
 					// The stock command creates the hosted game-lobby object as a private
 					// match. MP exposes it through its existing public-lobby policy after
 					// creation; Zombies retains the native private-party flow.
@@ -858,7 +859,7 @@ namespace dedicated_party
 			case dedicated_party_stage::waiting_for_intermission:
 			{
 				if (stage_timed_out(std::chrono::seconds{
-					dedicated_lobby_time->current.integer }))
+					party_match_start_delay->current.integer }))
 				{
 					if (game::environment::is_zombies())
 					{
@@ -1042,7 +1043,7 @@ namespace dedicated_party
 			std::move(requested_next_match);
 
 		apply_configured_party_limits();
-		apply_lobby_time();
+		apply_match_start_delay();
 		set_stage(dedicated_party_stage::waiting_for_private_party);
 		scheduler::schedule(run_lifecycle, scheduler::pipeline::main);
 
@@ -1199,8 +1200,8 @@ namespace dedicated_party
 			party_minplayers = game::Dvar_RegisterInt(
 				"party_minplayers", 1, 1,
 				mode.max_players, game::DVAR_FLAG_NONE);
-			dedicated_lobby_time = game::Dvar_RegisterInt(
-				"dedicated_lobby_time", 60, 0, 120, game::DVAR_FLAG_NONE);
+			party_match_start_delay = game::Dvar_RegisterInt(
+				"party_matchStartDelay", 60, 0, 120, game::DVAR_FLAG_NONE);
 			map_rotate_requested = utils::flags::has_flag("+map_rotate");
 
 			scheduler::once([]
@@ -1232,7 +1233,7 @@ namespace dedicated_party
 				utils::hook::call(0x48B214_g, party_host_start_match_stub);
 			}
 
-			command::add("dedicated_end_match", [](const command::params&)
+			command::add("endMatch", [](const command::params&)
 			{
 				end_match();
 			});
