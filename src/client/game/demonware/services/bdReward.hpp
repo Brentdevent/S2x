@@ -14,5 +14,6 @@ namespace demonware
 		void reportRewardEvents(service_server* server, byte_buffer* buffer) const;
 		void reportRewardGameEventsForUsers(service_server* server, byte_buffer* buffer) const;
 		void reportRewardEventsSync(service_server* server, byte_buffer* buffer) const;
+		void reportRewardGameEvents(service_server* server, byte_buffer* buffer) const;
 	};
 }

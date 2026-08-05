@@ -12,6 +12,7 @@ namespace demonware
 		this->register_task(5, &bdReward::reportRewardEventsSync);
 
 		this->register_task(11, &bdReward::reportRewardGameEventsForUsers);
+		this->register_task(12, &bdReward::reportRewardGameEvents);
 	}
 
 	void bdReward::incrementTime(service_server* server, byte_buffer* /*buffer*/) const
@@ -50,6 +51,13 @@ namespace demonware
 	}
 
 	void bdReward::reportRewardEventsSync(service_server* server, byte_buffer* buffer) const
+	{
+		// TODO:
+		auto reply = server->create_reply(this->task_id());
+		reply.send();
+	}
+
+	void bdReward::reportRewardGameEvents(service_server* server, byte_buffer* /*buffer*/) const
 	{
 		// TODO:
 		auto reply = server->create_reply(this->task_id());
