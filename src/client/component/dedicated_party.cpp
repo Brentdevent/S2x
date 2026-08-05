@@ -690,7 +690,7 @@ namespace dedicated_party
 			return game::PartyHost_AutoStart(party_data, active_client);
 		}
 
-		std::int64_t party_host_start_match_stub(game::PartyData* party_data, void* active_client)
+		void party_host_start_match_stub(game::PartyData* party_data, void* active_client)
 		{
 			if (party_data == dedicated_party_state.game_lobby
 				&& dedicated_party_state.stage == dedicated_party_stage::waiting_for_countdown)
@@ -719,7 +719,7 @@ namespace dedicated_party
 				apply_configured_party_limits();
 			}
 
-			return game::PartyHost_StartMatch(party_data, active_client);
+			game::PartyHost_StartMatch(party_data, active_client);
 		}
 
 		void fail_lifecycle(const char* message)

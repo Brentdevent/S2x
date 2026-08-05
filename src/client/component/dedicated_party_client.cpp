@@ -113,15 +113,15 @@ namespace dedicated_party_client
 			return false;
 		}
 
-		bool party_is_member_ui_visible_stub(game::PartyData* party_data, const int member_index)
+		int party_is_member_ui_visible_stub(game::PartyData* party_data, const int member_index)
 		{
 			if (is_hosted_dedicated_game_lobby(party_data)
 				&& is_dedicated_host_member(party_data, member_index))
 			{
-				return false;
+				return 0;
 			}
 
-			return party_is_member_ui_visible_hook.invoke<bool>(party_data, member_index);
+			return party_is_member_ui_visible_hook.invoke<int>(party_data, member_index);
 		}
 
 		int get_hosted_dedicated_party_member_count()
@@ -411,7 +411,7 @@ namespace dedicated_party_client
 				local_client_num, session_info, target, map_name, gametype);
 		}
 
-		bool party_atomic_setup_potential_host_stub(const int controller_index,
+		int party_atomic_setup_potential_host_stub(const int controller_index,
 			const void* session_info, const int party_type, const int max_players,
 			const int a5, const int a6, game::PartyAtomicJoinInfo* join_info)
 		{
@@ -421,7 +421,7 @@ namespace dedicated_party_client
 				? pending_join.max_players
 				: max_players;
 
-			const auto result = party_atomic_setup_potential_host_hook.invoke<bool>(
+			const auto result = party_atomic_setup_potential_host_hook.invoke<int>(
 				controller_index, session_info, party_type, setup_max_players, a5, a6, join_info);
 
 			if (!is_hosted_party_join)

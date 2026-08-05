@@ -141,12 +141,12 @@ namespace game
 	WEAK symbol<void*(int localClientNum)> Lobby_GetLocalClientData{ 0x470D30 };
 	WEAK symbol<PartyData*(void* localClientData)> Lobby_GetPartyDataFromLocalClient{ 0x470F20 };
 	WEAK symbol<PartyData*()> Party_GetPrivatePartyData{ 0x47E350 };
-	WEAK symbol<bool(PartyData* partyData)> Party_IsRunning{ 0x47A6C0 };
-	WEAK symbol<bool(PartyData* partyData)> Party_AreWeHost{ 0x47A6F0 };
+	WEAK symbol<int(PartyData* partyData)> Party_IsRunning{ 0x47A6C0 };
+	WEAK symbol<int(PartyData* partyData)> Party_AreWeHost{ 0x47A6F0 };
 	WEAK symbol<bool(PartyData* partyData, int memberIndex)> Party_IsHost{ 0x480F10 };
-	WEAK symbol<bool(PartyData* partyData, int memberIndex)> Party_IsMemberLocalPlayer{ 0x481320 };
-	WEAK symbol<bool(PartyData* partyData, int memberIndex)> Party_IsMemberUIVisible{ 0x481370 };
-	WEAK symbol<bool(PartyData* partyData)> Party_IsWaitingForMembers{ 0x4819A0 };
+	WEAK symbol<int(PartyData* partyData, int memberIndex)> Party_IsMemberLocalPlayer{ 0x481320 };
+	WEAK symbol<int(PartyData* partyData, int memberIndex)> Party_IsMemberUIVisible{ 0x481370 };
+	WEAK symbol<int(PartyData* partyData)> Party_IsWaitingForMembers{ 0x4819A0 };
 	WEAK symbol<void(PartyData* partyData, int maxClients)> Party_SetMaxClients{ 0x1973D0 };
 	WEAK symbol<void(PartyData* partyData, int minClients)> Party_SetMinClients{ 0x1973E0 };
 	WEAK symbol<void(PartySettings* settings, bool privateMatch)> PartySettings_SetPrivateMatch{ 0x1973F0 };
@@ -155,7 +155,7 @@ namespace game
 	WEAK symbol<void()> PartyHost_NotifyPrivateMatchCreated{ 0x12A2F0 };
 	WEAK symbol<std::int64_t(PartyData* partyData, std::uint8_t state)> PartyHost_SetState{ 0x494930 };
 	WEAK symbol<void(PartyData* partyData, unsigned int localControllerIndex)> PartyHost_PreMatch{ 0x48D8C0 };
-	WEAK symbol<std::int64_t(PartyData* partyData, void* activeClient)> PartyHost_StartMatch{ 0x4917B0 };
+	WEAK symbol<void(PartyData* partyData, void* activeClient)> PartyHost_StartMatch{ 0x4917B0 };
 	WEAK symbol<std::int64_t(PartyData* partyData, void* activeClient)> PartyHost_AutoStart{ 0x491A80 };
 	WEAK symbol<std::int64_t(PartyData* partyData, void* commandData, netadr_s* from, msg_t* msg)> PartyClient_HandleGo{ 0x4728F0 };
 	WEAK symbol<void(PartyData* partyData, std::uint32_t* activeClient, netadr_s* from)> PartyClient_ProcessPartyState{ 0x4777E0 };
