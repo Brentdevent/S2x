@@ -1133,6 +1133,11 @@ namespace dedicated
 			
 			disable_p2p_auth_ticket_validation();
 
+			// The memory reconfiguration performed before SV_Startup replaces the
+			// configured sv_maxClients value with the frontend party capacity. Keep
+			// the dedicated limit so the following allocations use the intended size.
+			utils::hook::nop(0x62538_g, 5);
+
 			// The persistent frontend leaves S2's virtual-lobby allocation flag set.
 			// Force SV_Startup to use sv_maxClients instead of its 48-client frontend
 			// allocation; gameplay client sidecars only contain 18 valid entries.
