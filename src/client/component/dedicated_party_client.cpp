@@ -331,9 +331,13 @@ namespace dedicated_party_client
 			refresh_presentation();
 
 			// Public partystate applies its playlist rules after parsing and can replace
-			// the dedicated host's free-form map/gametype with a local default. Keep the
-			// native party state authoritative for UI and gameplay team initialization.
-			if (!hosted_dedicated_party_state.map_name.empty()
+			// the dedicated host's free-form map/gametype with a local default. Restore
+			// those settings during gameplay and go processing, but leave mapname under
+			// native control while it switches from the finished map to the virtual lobby.
+			const auto in_virtual_lobby = game::virtual_lobby_loaded();
+			if ((!in_virtual_lobby || hosted_dedicated_go_in_progress)
+				&& hosted_dedicated_party_state.sync_after_next_go
+				&& !hosted_dedicated_party_state.map_name.empty()
 				&& !hosted_dedicated_party_state.gametype.empty())
 			{
 				update_hosted_dedicated_party_match(
@@ -342,7 +346,7 @@ namespace dedicated_party_client
 					game::environment::is_multiplayer());
 			}
 
-			if (game::virtual_lobby_loaded())
+			if (in_virtual_lobby)
 			{
 				// Refresh once after a match so the next rotation selection is learned.
 				request_hosted_dedicated_party_sync();
@@ -668,10 +672,11 @@ namespace dedicated_party_client
 		{
 			hosted_dedicated_party_state.max_players = max_players;
 			apply_hosted_party_capacity(hosted_dedicated_party_state.game_lobby);
+			// Keep the next rotation entry out of live map dvars while the current map
+			// is unloading. CL_ConnectAndPreloadMap commits it when the server sends go.
 			if (match_sequence > hosted_dedicated_party_state.match_sequence
 				&& update_hosted_dedicated_party_match(
-					info.get("party_mapname"), info.get("party_gametype"),
-					game::environment::is_multiplayer()))
+					info.get("party_mapname"), info.get("party_gametype"), false))
 			{
 				hosted_dedicated_party_state.match_sequence = match_sequence;
 				hosted_dedicated_party_state.sync_after_next_go = false;

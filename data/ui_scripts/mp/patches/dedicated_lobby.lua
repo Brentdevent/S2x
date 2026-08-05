@@ -79,7 +79,7 @@ local function AddDedicatedNextMap( page, controller, properties )
 			mapButton.Name:setText( Game.GetMapDisplayName( value ), 0 )
 		end
 
-		local image = Lobby.GetMapImage()
+		local image = Lobby.GetMapImage( value )
 		if image and image ~= "" then
 			mapImage:setImage(
 				RegisterMaterial( MODIFIERS.CacheIconMaterial( image ) ),
