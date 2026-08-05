@@ -95,6 +95,7 @@ namespace game
 	WEAK symbol<void(int localClientNum, const char* map, bool mapIsPreloaded)> SV_StartMap{ 0x6D8200 };
 	WEAK symbol<void(const char* reason)> SV_Shutdown{ 0x6DBF50 };
 	WEAK symbol<bool()> SV_Loaded{ 0x6DB810 };
+	WEAK symbol<void(mp::client_t* client, svscmd_type type, const char* format, ...)> SV_SendServerCommand{ 0x6E0BA0 };
 
 	WEAK symbol<void(XZoneInfo* zoneInfo, unsigned int zoneCount, DBSyncMode syncMode)> DB_LoadXAssets{ 0xA4F60, 0x2ADB50 };
 	WEAK symbol<void(const char* zoneName, int zoneFlags, int isBaseMap)> DB_TryLoadXFileInternal{ 0xACE30, 0x2AF980 };

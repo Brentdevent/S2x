@@ -409,6 +409,12 @@ namespace game
 		NS_INVALID_NETSRC = 0x4,
 	};
 
+	enum svscmd_type : int
+	{
+		SV_CMD_CAN_IGNORE = 0x0,
+		SV_CMD_RELIABLE = 0x1,
+	};
+
 	struct netadr_s
 	{
 		netadrtype_t type;

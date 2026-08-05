@@ -2,6 +2,7 @@
 #include "loader/component_loader.hpp"
 
 #include "console/console.hpp"
+#include "command.hpp"
 #include "dedicated_party.hpp"
 #include "scheduler.hpp"
 
@@ -20,6 +21,7 @@ namespace dedicated
 	namespace
 	{
 		utils::hook::detour cl_check_for_resend_hook;
+		utils::hook::detour com_quit_f_hook;
 		utils::hook::detour db_release_upload_record_hook;
 		utils::hook::detour scr_begin_load_scripts_hook;
 		utils::hook::detour worker_dispatch_hook;
@@ -738,6 +740,24 @@ namespace dedicated
 			// keeping the dedicated process out of gameplay server-client slots.
 		}
 
+		void kill_server()
+		{
+			auto* clients = *game::mp::svs_clients;
+			if (clients)
+			{
+				for (auto i = 0; i < *game::sv_maxclients; ++i)
+				{
+					if (clients[i].state >= 3)
+					{
+						game::SV_SendServerCommand(&clients[i], game::SV_CMD_CAN_IGNORE,
+							"%c \"%s\"", 'r', "EXE_ENDOFGAME");
+					}
+				}
+			}
+
+			com_quit_f_hook.invoke<void>();
+		}
+
 		void gscr_is_using_match_rules_data_stub()
 		{
 			game::Scr_AddInt(0);
@@ -1130,6 +1150,8 @@ namespace dedicated
 			utils::hook::jump(0x89AF80_g, init_dedicated_graphics);
 
 			cl_check_for_resend_hook.create(game::CL_CheckForResend, cl_check_for_resend_stub);
+			com_quit_f_hook.create(game::Com_Quit_f, kill_server);
+			command::add("killserver", kill_server);
 			
 			disable_p2p_auth_ticket_validation();
 
