@@ -1219,19 +1219,16 @@ namespace dedicated_party
 				utils::hook::call(0x7F18C_g, xpartygo_private_match_stub);
 				utils::hook::call(0x7F1B7_g, xpartygo_private_match_stub);
 				utils::hook::call(0x7F1C3_g, xpartygo_private_match_stub);
+
+				// This is the final PartyHost_StartMatch call after public playlist
+				// setup. Reapply the MP rotation settings before it broadcasts go.
+				utils::hook::call(0x48B214_g, party_host_start_match_stub);
 			}
 
 			// PartyHost_Frame has separate public/private auto-start sites. Both stay
 			// gated until our dedicated intermission has elapsed.
 			utils::hook::call(0x48B605_g, party_host_auto_start_stub);
 			utils::hook::call(0x48B768_g, party_host_auto_start_stub);
-
-			if (game::environment::is_multiplayer())
-			{
-				// This is the final PartyHost_StartMatch call after public playlist
-				// setup. Reapply the MP rotation settings before it broadcasts go.
-				utils::hook::call(0x48B214_g, party_host_start_match_stub);
-			}
 
 			command::add("endMatch", [](const command::params&)
 			{
