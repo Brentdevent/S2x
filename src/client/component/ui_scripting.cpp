@@ -622,6 +622,11 @@ namespace ui_scripting
 
 		void post_unpack() override
 		{
+			if (game::environment::is_dedicated())
+			{
+				return;
+			}
+			
 			utils::hook::call(game::select(0x309B7B, 0x17E16B), db_find_x_asset_header_stub);
 			utils::hook::call(game::select(0x309CBC, 0x17E2AC), db_find_x_asset_header_stub);
 			utils::hook::call(game::select(0x309CFF, 0x17E2EF), hks_load_stub);
