@@ -843,6 +843,13 @@ namespace dedicated
 			game::Dvar_RegisterBool("dedicated", true, game::DVAR_FLAG_READ);
 			game::Dvar_RegisterBool("sv_lanOnly", false, game::DVAR_FLAG_NONE);
 
+			// S2's console split-screen heuristic marks every client sharing one
+			// base address as split-screen. On a PC dedicated server, separate
+			// clients can legitimately share an address through NAT. Keep the
+			// stock connect/disconnect bookkeeping, but never set its split-screen
+			// flag; _playerlogic otherwise sends cg_fovScale ("3078") as 0.75.
+			utils::hook::set<std::uint32_t>(0xF70DF_g, 0);
+
 			// R_Init normally marks the renderer active after device creation.
 			// Our dedicated bootstrap creates no device, so keep that state false
 			// and let the native frontend paths skip renderer ownership waits.
