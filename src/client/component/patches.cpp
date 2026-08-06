@@ -77,7 +77,10 @@ namespace patches
 			// vlobby enabled
 			game::Dvar_RegisterBool("4287", true, game::DVAR_FLAG_NONE);          
 			// Skip intro's
-			game::Dvar_RegisterBool("2665", true, game::DVAR_FLAG_NONE);          
+			game::Dvar_RegisterBool("2665", true, game::DVAR_FLAG_NONE);   
+
+			// Enable the stock AAR winners-circle flow
+			game::Dvar_RegisterBool("5320", true, game::DVAR_FLAG_READ);
 		}
 	};
 }
