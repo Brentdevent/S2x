@@ -29,6 +29,34 @@ namespace party
 	{
 		utils::hook::detour cl_connect_hook;
 		utils::hook::detour disconnect_command_hook;
+		const game::dvar_t* change_team_enabled{};
+
+		bool can_change_assigned_team()
+		{
+			return game::environment::is_dedicated()
+				&& change_team_enabled && change_team_enabled->current.enabled;
+		}
+
+		bool has_assigned_team_stub(const char client_num)
+		{
+			const auto has_assigned_team = game::mp::SV_HasAssignedTeam_Internal(client_num);
+			return has_assigned_team && !can_change_assigned_team();
+		}
+
+		std::uint64_t update_session_team_stub(const char client_num)
+		{
+			// Preserve the stock propagation from gclient::sessionTeam into the
+			// server character info before publishing the new PartyMember team.
+			const auto team = utils::hook::invoke<std::uint64_t>(0x547A60_g, client_num);
+
+			if (can_change_assigned_team()
+				&& game::mp::SV_HasAssignedTeam_Internal(client_num))
+			{
+				game::mp::SV_SetAssignedTeam(client_num, static_cast<int>(team));
+			}
+
+			return team;
+		}
 
 		struct connect_state_t
 		{
@@ -887,7 +915,18 @@ namespace party
 			if (game::environment::is_multiplayer())
 			{
 				// Enables the stock Change Team pause-menu action in Multiplayer.
-				game::Dvar_RegisterBool("3193", true, game::DVAR_FLAG_READ);
+				change_team_enabled = game::Dvar_RegisterBool(
+					"3193", true, game::DVAR_FLAG_READ);
+
+				if (game::environment::is_dedicated())
+				{
+					// Public lobbies normally lock gclient::sessionTeam to the team
+					// assigned by PartyHost_PreMatch. Permit the stock team_select GSC
+					// path to change it, then mirror that authoritative value back to
+					// PartyData so reconnects and lobby presentation stay consistent.
+					utils::hook::call(0x546128_g, has_assigned_team_stub);
+					utils::hook::call(0x546194_g, update_session_team_stub);
+				}
 			}
 
 			cl_connect_hook.create(game::CL_Connect, cl_connect_stub);

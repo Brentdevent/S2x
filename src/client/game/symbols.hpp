@@ -283,6 +283,8 @@ namespace game
 		WEAK symbol<mp::gentity_s*(const char* name, int customizationGroup)> SV_AddBot{ 0xF2650 };
 
 		WEAK symbol<int(mp::gentity_s* entity)> SV_SpawnTestClient{ 0xF6AA0 };
+		WEAK symbol<bool(char clientNum)> SV_HasAssignedTeam_Internal{ 0x6DF9D0 };
+		WEAK symbol<void(char clientNum, int team)> SV_SetAssignedTeam{ 0x6E1410 };
 
 		WEAK symbol<mp::client_t*> svs_clients{ 0xC5FBA58 };
 		WEAK symbol<mp::gentity_s> g_entities{ 0x9ED4430 };
