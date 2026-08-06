@@ -9,11 +9,23 @@
 #include <utils/string.hpp>
 #include <utils/flags.hpp>
 
+#include <charconv>
+
 namespace demonware
 {
 	namespace
 	{
+		constexpr std::array<char, 32> steam_auth_magic{'S', '2', 'x'};
+
 #pragma pack(push, 1)
+		struct steam_auth_token
+		{
+			char m_magic[32];
+			char m_authKey[24];
+			unsigned __int64 m_userID;
+			char m_username[64];
+		};
+
 		struct auth_ticket
 		{
 			unsigned int m_magicNumber;
@@ -29,6 +41,22 @@ namespace demonware
 			char m_hash[4];
 		};
 #pragma pack(pop)
+
+		static_assert(sizeof(steam_auth_token) == 128);
+		static_assert(sizeof(auth_ticket) == 128);
+
+		bool parse_unsigned_integer(const rapidjson::Value& value, unsigned int& result)
+		{
+			if (!value.IsString())
+			{
+				return false;
+			}
+
+			const auto* begin = value.GetString();
+			const auto* end = begin + value.GetStringLength();
+			const auto [position, error] = std::from_chars(begin, end, result);
+			return error == std::errc{} && position == end;
+		}
 	}
 
 	void auth3_server::send_reply(reply* data)
@@ -52,15 +80,17 @@ namespace demonware
 
 		rapidjson::Document j;
 		j.Parse(packet.data(), packet.size());
-
-		if (j.HasMember("title_id") && j["title_id"].IsString())
+		if (j.HasParseError() || !j.IsObject())
 		{
-			title_id = std::stoul(j["title_id"].GetString());
+			console::error("[DW]: [auth]: received an invalid authentication request.\n");
+			return;
 		}
 
-		if (j.HasMember("iv_seed") && j["iv_seed"].IsString())
+		if (!j.HasMember("title_id") || !parse_unsigned_integer(j["title_id"], title_id)
+			|| !j.HasMember("iv_seed") || !parse_unsigned_integer(j["iv_seed"], iv_seed))
 		{
-			iv_seed = std::stoul(j["iv_seed"].GetString());
+			console::error("[DW]: [auth]: received invalid authentication parameters.\n");
+			return;
 		}
 
 		if (j.HasMember("identity") && j["identity"].IsString())
@@ -74,7 +104,8 @@ namespace demonware
 			auto& ed = j["extra_data"];
 			extra_data.Parse(ed.GetString(), ed.GetStringLength());
 
-			if (extra_data.HasMember("token") && extra_data["token"].IsString())
+			if (!extra_data.HasParseError() && extra_data.IsObject()
+				&& extra_data.HasMember("token") && extra_data["token"].IsString())
 			{
 				auto& token_field = extra_data["token"];
 				std::string token_b64(token_field.GetString(), token_field.GetStringLength());
@@ -82,9 +113,25 @@ namespace demonware
 			}
 		}
 
-		console::demonware("[DW]: [auth]: authenticating user %s\n", token.data() + 64);
+		if (token.size() != sizeof(steam_auth_token))
+		{
+			console::error("[DW]: [auth]: received an invalid authentication token.\n");
+			return;
+		}
 
-		std::string auth_key(reinterpret_cast<char*>(token.data() + 32), 24);
+		steam_auth_token steam_token{};
+		std::memcpy(&steam_token, token.data(), sizeof(steam_token));
+		if (!std::equal(steam_auth_magic.begin(), steam_auth_magic.end(), steam_token.m_magic)
+			|| steam_token.m_userID == 0)
+		{
+			console::error("[DW]: [auth]: received an invalid authentication token.\n");
+			return;
+		}
+
+		console::demonware("[DW]: [auth]: authenticating user %.*s\n",
+			static_cast<int>(sizeof(steam_token.m_username)), steam_token.m_username);
+
+		std::string auth_key(steam_token.m_authKey, sizeof(steam_token.m_authKey));
 		std::string session_key(
 			"\x13\x37\x13\x37\x13\x37\x13\x37\x13\x37\x13\x37\x13\x37\x13\x37\x13\x37\x13\x37\x13\x37\x13\x37", 24);
 
@@ -97,8 +144,8 @@ namespace demonware
 		ticket.m_timeIssued = static_cast<uint32_t>(time(nullptr));
 		ticket.m_timeExpires = ticket.m_timeIssued + 30000;
 		ticket.m_licenseID = 0;
-		ticket.m_userID = reinterpret_cast<uint64_t>(token.data() + 56);
-		strncpy_s(ticket.m_username, sizeof(ticket.m_username), reinterpret_cast<char*>(token.data() + 64), 64);
+		ticket.m_userID = steam_token.m_userID;
+		std::memcpy(ticket.m_username, steam_token.m_username, sizeof(ticket.m_username));
 		std::memcpy(ticket.m_sessionKey, session_key.data(), 24);
 
 		const auto iv = utils::cryptography::tiger::compute(std::string(reinterpret_cast<char*>(&iv_seed), 4));
