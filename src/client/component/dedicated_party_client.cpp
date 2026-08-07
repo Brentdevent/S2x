@@ -61,6 +61,28 @@ namespace dedicated_party_client
 		hosted_dedicated_party_state_t hosted_dedicated_party_state{};
 		bool hosted_dedicated_go_in_progress{};
 
+		void party_atomic_activate_lobby_stub(game::PartyData* party_data,
+			const unsigned int controller_index, const int joining)
+		{
+			const auto hosted_join = !hosted_dedicated_party_state.session_id.empty()
+				&& party_data == game::Lobby_GetPartyData(0);
+			
+			if (hosted_join)
+			{
+				// PartyAtomic_RequestJoin clears the frontend mode for non-system-link
+				// joins. Stock matchmaking starts the lobby again afterward, but our
+				// hosted dedicated join activates the received party directly. Restore
+				// hub mode before PartyAtomic opens public_lobby; its LUI predicates,
+				// Soldier screen, and virtual-lobby character scene all consume it.
+				const auto previous_mode = utils::hook::invoke<int>(0x8555C0_g);
+				utils::hook::invoke<void>(0x857A10_g, 1);
+				
+				console::info("[hosted-party] lobby activation restored hub mode %d -> 1.\n", previous_mode);
+			}
+
+			utils::hook::invoke<void>(0x47A720_g, party_data, controller_index, joining);
+		}
+
 		bool is_hosted_dedicated_game_lobby(game::PartyData* party_data)
 		{
 			if (!party_data)
@@ -773,6 +795,9 @@ namespace dedicated_party_client
 				game::CL_ConnectAndPreloadMap, cl_connect_and_preload_map_stub);
 			party_atomic_setup_potential_host_hook.create(
 				0x497EF0_g, party_atomic_setup_potential_host_stub);
+
+			utils::hook::call(0x497767_g, party_atomic_activate_lobby_stub);
+
 			party_client_handle_go_hook.create(
 				game::PartyClient_HandleGo, party_client_handle_go_stub);
 			party_client_process_party_state_hook.create(
