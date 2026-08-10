@@ -3,13 +3,15 @@
 # S2x ⭐
 
 > [!WARNING]
-> S2x is still very early in development.
+> S2x is actively being developed, and several features are already implemented, but the project is not yet feature-complete.
 >
-> Expect bugs, crashes, missing features, and general instability. At the moment, the project is mostly useful for offline play, testing, and development.
+> Expect bugs, crashes, missing features, and general instability.
 >
-> Dedicated servers, modding support, and proper gameplay stability are still planned/in progress.
+> Dedicated servers, modding support, online functionality, and further gameplay stability are still in development.
 
 S2x is a custom client project for **Call of Duty®: WWII**, focused on preserving and extending functionality for campaign, multiplayer, and zombies.
+
+Join the S2x community on [Discord](https://discord.gg/wdC8Jpc2cC).
 
 The project is inspired by the work of the former XLabs community, but S2x is an independent project and is not affiliated with XLabs, Activision, Sledgehammer Games, Microsoft, or any related publisher, developer, or trademark holder.
 
