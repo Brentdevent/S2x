@@ -27,7 +27,7 @@ namespace demonware
 	private:
 		std::unordered_map<uint8_t, std::unique_ptr<service>> services_;
 
-		void handle(const std::string& packet) override;
+		void handle(SOCKET socket, const std::string& packet) override;
 		void call_service(uint8_t id, const std::string& data);
 	};
 }

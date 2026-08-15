@@ -87,6 +87,15 @@ namespace game
 	WEAK symbol<void()> Cmd_EndTokenizedString{ 0x64AA00, 0x465410 };
 	WEAK symbol<void(const char* cmdName, void(__fastcall* function)(), cmd_function_s* allocedCmd)> Cmd_AddCommandInternal{ 0x64A6B0, 0x465150 };
 	WEAK symbol<void(const char* cmdName, void(__fastcall* function)(), cmd_function_s* allocedCmd)> Cmd_AddServerCommandInternal{ 0x64A720, 0x4651C0 };
+	WEAK symbol<unsigned int(const char* string)> DDL_HashString{ 0x8E900 };
+	WEAK symbol<unsigned int(const void* state)> DDL_GetType{ 0xA1CA40 };
+	WEAK symbol<void(const void* definition, void* state, unsigned int statsGroup)> DDL_InitState{ 0x6546A0 };
+	WEAK symbol<bool(const void* fromState, void* toState, int pathCount, const unsigned int* path)> DDL_MoveToPath{ 0xA1D1C0 };
+	WEAK symbol<bool(int controllerIndex)> LiveStorage_DoWeHaveStats{ 0xCECE0 };
+	WEAK symbol<const void*(unsigned int statsGroup)> LiveStorage_GetStatsGroupDDLDefinition{ 0x653FC0 };
+	WEAK symbol<bool(int controllerIndex, const unsigned int* path, unsigned int pathCount, int value,
+		unsigned int statsGroup)> LiveStorage_PlayerDataSetIntByNameArray{ 0x18E8B0 };
+	WEAK symbol<void(int controllerIndex)> LiveStorage_StatsWriteNeeded{ 0xD4DB0 };
 	WEAK symbol<char*(const char* filename, char* buffer, int size)> DB_ReadRawFile{ 0xA7330, 0x2AED30 };
 	WEAK symbol<std::int64_t(const char* filename, char** buffer)> FS_ReadFile{ 0x7583C0, 0x4C0E60 };
 	WEAK symbol<void(void* buffer)> FS_FreeFile{ 0x7583B0, 0x4C0E50 };
@@ -295,6 +304,16 @@ namespace game
 	WEAK symbol<void(bool cg)> LUI_CoD_Restart{ 0x3200A0, 0x1A3810 };
 	WEAK symbol<void()> LUI_EnterCriticalSection{ 0xBE8D0, 0x18B1F0 };
 	WEAK symbol<void()> LUI_LeaveCriticalSection{ 0xC5F80, 0x191FB0 };
+	WEAK symbol<std::int64_t(void* transactionId)> AE_GenerateTransactionId{ 0x8390A0 };
+	WEAK symbol<bool(unsigned int controllerIndex, const void* transactionId)> AE_FetchUserAchievements{ 0x139350 };
+	WEAK symbol<bool(unsigned int controllerIndex, const char* pageToken, const void* transactionId,
+		unsigned int accountIndex)> AE_FetchUserAchievementsByPage{ 0x139400 };
+	WEAK symbol<std::byte> AE_UserAchievementTaskData{ 0x6039A60 };
+	WEAK symbol<bool(void* response, const char* value)> AE_SetResponseString{ 0xA3B8F0 };
+	WEAK symbol<void(unsigned int controllerIndex, const void* response,
+		unsigned int taskGroup)> AE_ProcessResponse{ 0x676A40 };
+	WEAK symbol<int(unsigned int controllerIndex, unsigned int itemGuid)> Inventory_GetItemQuantity{ 0x279480 };
+	WEAK symbol<bool(unsigned int itemGuid)> Inventory_IsItemGuidAZMConsumable{ 0x652490 };
 
 	namespace hks
 	{

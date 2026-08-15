@@ -65,7 +65,7 @@ namespace demonware
 		this->send(data->data());
 	}
 
-	void auth3_server::handle(const std::string& packet)
+	void auth3_server::handle(const SOCKET /*socket*/, const std::string& packet)
 	{
 		if (packet.starts_with("POST /auth/"))
 		{

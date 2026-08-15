@@ -4,7 +4,7 @@
 
 namespace demonware
 {
-	class umbrella_server final : public http_server
+	class glutton_server final : public http_server
 	{
 	public:
 		using http_server::http_server;

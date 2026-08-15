@@ -146,13 +146,32 @@ namespace demonware
 		return true;
 	}
 
+	bool byte_buffer::read_struct(std::string* output, const size_t maximum_size)
+	{
+		if (!output || !this->read_data_type(BD_BB_STRUCTURED_DATA_TYPE))
+		{
+			return false;
+		}
+
+		unsigned int size{};
+		if (!this->read_uint32(&size) || size > maximum_size ||
+			this->current_byte_ > this->buffer_.size() ||
+			size > this->buffer_.size() - this->current_byte_)
+		{
+			return false;
+		}
+
+		output->assign(this->buffer_.data() + this->current_byte_, size);
+		this->current_byte_ += size;
+		return true;
+	}
+
 	bool byte_buffer::read_data_type(const unsigned char expected)
 	{
 		if (!this->use_data_types_) return true;
 
-		unsigned char type;
-		this->read(sizeof(type), &type);
-		return type == expected;
+		unsigned char type{};
+		return this->read(sizeof(type), &type) && type == expected;
 	}
 
 	bool byte_buffer::read_array_header(const unsigned char expected, unsigned int* element_count,

@@ -11,6 +11,6 @@ namespace demonware
 
 	private:
 		void send_reply(reply* data);
-		void handle(const std::string& packet) override;
+		void handle(SOCKET socket, const std::string& packet) override;
 	};
 }

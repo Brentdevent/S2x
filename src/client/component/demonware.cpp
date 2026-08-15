@@ -9,6 +9,8 @@
 #include "game/demonware/servers/auth3_server.hpp"
 #include "game/demonware/servers/stun_server.hpp"
 #include "game/demonware/servers/umbrella_server.hpp"
+#include "game/demonware/servers/uno_server.hpp"
+#include "game/demonware/servers/glutton_server.hpp"
 #include "game/demonware/server_registry.hpp"
 
 #include "master_server.hpp"
@@ -27,7 +29,6 @@ namespace demonware
 		server_registry<tcp_server> tcp_servers{};
 		server_registry<udp_server> udp_servers{};
 		std::unordered_map<void*, void*> original_imports{};
-
 		tcp_server* find_server(const SOCKET socket)
 		{
 			return socket_map.access<tcp_server*>([&](const std::unordered_map<SOCKET, tcp_server*>& map) -> tcp_server*
@@ -252,6 +253,11 @@ namespace demonware
 
 			int closesocket_stub(const SOCKET s)
 			{
+				if (auto* server = find_server(s))
+				{
+					server->disconnect(s);
+				}
+
 				remove_blocking_socket(s);
 				socket_unlink(s);
 
@@ -264,7 +270,7 @@ namespace demonware
 
 				if (server)
 				{
-					server->handle_input(buf, len);
+					server->handle_input(s, buf, len);
 					return len;
 				}
 
@@ -277,9 +283,9 @@ namespace demonware
 
 				if (server)
 				{
-					if (server->pending_data())
+					if (server->pending_data(s))
 					{
-						return static_cast<int>(server->handle_output(buf, len));
+						return static_cast<int>(server->handle_output(s, buf, len));
 					}
 					else
 					{
@@ -373,7 +379,7 @@ namespace demonware
 						{
 							if (FD_ISSET(s.first, readfds))
 							{
-								if (s.second->pending_data())
+								if (s.second->pending_data(s.first))
 								{
 									read_sockets.push_back(s.first);
 									FD_CLR(s.first, readfds);
@@ -481,6 +487,8 @@ namespace demonware
 			tcp_servers.create<auth3_server>("ww2-pc-auth3.prod.demonware.net");
 			tcp_servers.create<lobby_server>("ww2-pc-lobby.prod.demonware.net");
 			tcp_servers.create<umbrella_server>("prod.umbrella.demonware.net");
+			tcp_servers.create<uno_server>("prod.uno.demonware.net");
+			tcp_servers.create<glutton_server>("pipes-prod-glutton.public.aws.demonware.net");
 		}
 
 		void post_load() override
@@ -524,8 +532,15 @@ namespace demonware
 			utils::hook::copy_string(game::select(0xC62F50, 0x96FA30), "http://prod.umbrella.demonware.net");
 			utils::hook::copy_string(game::select(0xC62F28, 0x96FA08), "http://cert.umbrella.demonware.net");
 			utils::hook::copy_string(game::select(0xC62F00, 0x96F9E0), "http://dev.umbrella.demonware.net");
+			utils::hook::copy_string(game::select(0xB4A998, 0x861958),
+				"http://prod.umbrella.demonware.net/v1.0/");
 
 			utils::hook::copy_string(game::select(0xB4AA88, 0x861A48), "http://prod.uno.demonware.net/v1.0/");
+			if (game::environment::uses_multiplayer_binary())
+			{
+				utils::hook::copy_string(0xB4AB98_g,
+					"http://pipes-prod-glutton.public.aws.demonware.net/v1.0");
+			}
 
 			utils::hook::copy_string(game::select(0xC63F90, 0x9705D0), "http://%s:%d/auth/");
 		}

@@ -48,7 +48,7 @@ namespace demonware
 		this->send(data->data());
 	}
 
-	void lobby_server::handle(const std::string& packet)
+	void lobby_server::handle(const SOCKET socket, const std::string& packet)
 	{
 		byte_buffer buffer(packet);
 		buffer.set_use_data_types(false);
