@@ -1,27 +1,19 @@
 #include <std_include.hpp>
-#include "loader/component_loader.hpp"
-
 #include "unlock_zombies.hpp"
 
-#include "component/scheduler.hpp"
+#include "component/achievement_sync.hpp"
 
 #include "game/game.hpp"
 #include "game/demonware/achievement_store.hpp"
 
-#include <utils/hook.hpp>
-
 #include <charconv>
-#include <mutex>
-#include <optional>
+#include <unordered_set>
 #include <vector>
 
 namespace unlock_zombies
 {
 	namespace
 	{
-		constexpr int unlimited_consumable_quantity = 999;
-		constexpr int zombie_weapon_challenges_achievement_id = 1141;
-		constexpr std::uint16_t zombie_weapon_challenges_completed_progress = 31;
 		constexpr std::array supplemental_zombie_achievements
 		{
 			std::pair{1112, std::uint16_t{1}}, // Tortured Path maps completed.
@@ -37,14 +29,7 @@ namespace unlock_zombies
 		constexpr int challenge_bit_column = 5;
 		constexpr int achievement_definition_id_column = 0;
 		constexpr int achievement_definition_name_column = 1;
-		constexpr std::ptrdiff_t achievement_response_offset = 0xF8;
-
-		const game::dvar_t* cg_unlimited_zm_consumables{};
-
-		utils::hook::detour get_item_quantity_hook;
-		std::atomic_uint64_t achievement_refresh_generation{};
-		std::mutex pending_achievement_update_mutex{};
-		std::optional<std::string> pending_achievement_update{};
+		constexpr int achievement_definition_kind_column = 2;
 
 		struct zombie_achievement_list
 		{
@@ -75,6 +60,19 @@ namespace unlock_zombies
 			return result.ec == std::errc{} && result.ptr == end;
 		}
 
+		void append_unique_achievement(std::vector<std::pair<int, std::uint16_t>>& values,
+			const int id, const std::uint16_t progress)
+		{
+			const auto existing = std::find_if(values.begin(), values.end(), [id](const auto& value)
+			{
+				return value.first == id;
+			});
+			if (existing == values.end())
+			{
+				values.emplace_back(id, progress);
+			}
+		}
+
 		int find_row_by_reference(const game::StringTable* table, const std::string_view reference)
 		{
 			for (auto row = 0; table && row < table->rowCount; ++row)
@@ -89,7 +87,8 @@ namespace unlock_zombies
 			return -1;
 		}
 
-		const char* find_achievement_name(const game::StringTable* definitions, const int id)
+		bool find_achievement_definition(const game::StringTable* definitions, const int id,
+			const char*& name, int& kind)
 		{
 			const auto id_string = std::to_string(id);
 			for (auto row = 0; definitions && row < definitions->rowCount; ++row)
@@ -97,11 +96,14 @@ namespace unlock_zombies
 				const auto* value = get_cell(definitions, row, achievement_definition_id_column);
 				if (value && id_string == value)
 				{
-					return get_cell(definitions, row, achievement_definition_name_column);
+					name = get_cell(definitions, row, achievement_definition_name_column);
+					return name && *name &&
+						parse_integer(get_cell(definitions, row, achievement_definition_kind_column), kind) &&
+						kind > 0;
 				}
 			}
 
-			return nullptr;
+			return false;
 		}
 
 		bool get_category_progress(const game::StringTable* challenges, const int category_row,
@@ -173,37 +175,39 @@ namespace unlock_zombies
 				int id{};
 				std::uint16_t progress{};
 				if (!parse_integer(get_cell(challenges, row, achievement_id_column), id) || id <= 0 ||
-					!get_category_progress(challenges, row, progress) ||
-					std::find_if(values.begin(), values.end(), [id](const auto& value)
-					{
-						return value.first == id;
-					}) != values.end())
+					!get_category_progress(challenges, row, progress))
 				{
 					continue;
 				}
 
-				values.emplace_back(id, progress);
+				append_unique_achievement(values, id, progress);
 			}
 
-			// The four challenge-locked starting weapons share this five-bit achievement.
-			values.emplace_back(zombie_weapon_challenges_achievement_id,
-				zombie_weapon_challenges_completed_progress);
-			values.insert(values.end(), supplemental_zombie_achievements.begin(),
-				supplemental_zombie_achievements.end());
+			for (const auto& [id, progress] : supplemental_zombie_achievements)
+			{
+				append_unique_achievement(values, id, progress);
+			}
 
 			zombie_achievement_list result{};
 			result.total = static_cast<int>(values.size());
 			result.records.reserve(values.size());
+			std::unordered_set<std::string> achievement_names{};
 			for (const auto& [id, progress] : values)
 			{
-				const auto* name = find_achievement_name(definitions, id);
-				if (!name || !*name)
+				const char* name{};
+				int kind{};
+				if (!find_achievement_definition(definitions, id, name, kind))
+				{
+					continue;
+				}
+				if (!achievement_names.emplace(name).second)
 				{
 					continue;
 				}
 
 				demonware::achievement_record achievement{};
 				achievement.name = name;
+				achievement.kind = kind;
 				achievement.progress = progress;
 				achievement.progress_target = progress;
 				achievement.fulfilled_times = 1;
@@ -212,116 +216,6 @@ namespace unlock_zombies
 			}
 
 			return result;
-		}
-
-		int get_item_quantity_stub(const unsigned int controller_index, const unsigned int item_guid)
-		{
-			if (cg_unlimited_zm_consumables && cg_unlimited_zm_consumables->current.enabled &&
-				game::Inventory_IsItemGuidAZMConsumable(item_guid))
-			{
-				return unlimited_consumable_quantity;
-			}
-
-			return get_item_quantity_hook.invoke<int>(controller_index, item_guid);
-		}
-
-		void queue_achievement_update(std::string transaction)
-		{
-			std::lock_guard lock{pending_achievement_update_mutex};
-			pending_achievement_update = std::move(transaction);
-		}
-
-		std::optional<std::string> take_achievement_update()
-		{
-			std::lock_guard lock{pending_achievement_update_mutex};
-			auto transaction = std::move(pending_achievement_update);
-			pending_achievement_update.reset();
-			return transaction;
-		}
-
-		std::string make_user_achievement_response(const std::string_view client_transaction)
-		{
-			const auto records = demonware::achievement_store::get_all();
-			rapidjson::Document document{};
-			document.SetObject();
-			auto& allocator = document.GetAllocator();
-			document.AddMember("Action", "get_user_achievements", allocator);
-			document.AddMember("Status", "ok", allocator);
-			document.AddMember("ClientTx", rapidjson::Value{client_transaction.data(),
-				static_cast<rapidjson::SizeType>(client_transaction.size()), allocator}, allocator);
-
-			rapidjson::Value achievements{rapidjson::kArrayType};
-			for (const auto& record : records)
-			{
-				rapidjson::Value value{rapidjson::kObjectType};
-				value.AddMember("kind", record.kind, allocator);
-				value.AddMember("name", rapidjson::Value{record.name.data(),
-					static_cast<rapidjson::SizeType>(record.name.size()), allocator}, allocator);
-				value.AddMember("requiresClaim", false, allocator);
-				value.AddMember("progress", record.progress, allocator);
-				value.AddMember("progressTarget", record.progress_target, allocator);
-				value.AddMember("fulfilledTimes", record.fulfilled_times, allocator);
-				value.AddMember("completionTimestamp", record.completion_timestamp, allocator);
-				value.AddMember("status", rapidjson::Value{
-					demonware::get_achievement_status_name(record.status), allocator}, allocator);
-				achievements.PushBack(value, allocator);
-			}
-
-			document.AddMember("Achievements", achievements, allocator);
-			document.AddMember("NextPageToken", "", allocator);
-
-			rapidjson::StringBuffer buffer{};
-			rapidjson::Writer<rapidjson::StringBuffer, rapidjson::Document::EncodingType,
-				rapidjson::ASCII<>> writer{buffer};
-			document.Accept(writer);
-			return {buffer.GetString(), buffer.GetSize()};
-		}
-
-		void dispatch_user_achievement_updates()
-		{
-			if (const auto transaction = take_achievement_update())
-			{
-				const auto response = make_user_achievement_response(*transaction);
-				auto* response_object = game::AE_UserAchievementTaskData.get() +
-					achievement_response_offset;
-				if (game::AE_SetResponseString(response_object, response.c_str()))
-				{
-					game::AE_ProcessResponse(0, response_object, 0);
-				}
-			}
-		}
-
-		bool refresh_user_achievements()
-		{
-			std::array<char, 32> transaction_id{};
-			game::AE_GenerateTransactionId(transaction_id.data());
-			if (!game::AE_FetchUserAchievementsByPage(0, "", transaction_id.data(), 0))
-			{
-				return false;
-			}
-
-			queue_achievement_update(transaction_id.data());
-			return true;
-		}
-
-		void refresh_user_achievements_when_ready()
-		{
-			const auto generation = ++achievement_refresh_generation;
-			if (refresh_user_achievements())
-			{
-				return;
-			}
-
-			scheduler::schedule([generation, attempts = 0]() mutable
-			{
-				if (achievement_refresh_generation.load() != generation ||
-					refresh_user_achievements())
-				{
-					return scheduler::cond_end;
-				}
-
-				return ++attempts >= 30 ? scheduler::cond_end : scheduler::cond_continue;
-			}, scheduler::pipeline::main, 1s);
 		}
 
 	}
@@ -336,29 +230,10 @@ namespace unlock_zombies
 		{
 			result.persisted = true;
 			result.completed = static_cast<int>(achievements.records.size());
-			refresh_user_achievements_when_ready();
+			achievement_sync::request_refresh();
 		}
 
 		return result;
 	}
 
-	class component final : public multiplayer_component
-	{
-	public:
-		void post_unpack() override
-		{
-			if (game::environment::is_dedicated() || !game::environment::is_zombies())
-			{
-				return;
-			}
-
-			cg_unlimited_zm_consumables = game::Dvar_RegisterBool(
-				"cg_unlimited_zm_consumables", false, game::DVAR_FLAG_SAVED);
-
-			get_item_quantity_hook.create(game::Inventory_GetItemQuantity, get_item_quantity_stub);
-			scheduler::loop(dispatch_user_achievement_updates, scheduler::pipeline::main, 50ms);
-		}
-	};
 }
-
-REGISTER_COMPONENT(unlock_zombies::component)

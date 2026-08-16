@@ -3,6 +3,7 @@
 
 #include "hidden_challenges.hpp"
 
+#include "component/achievement_sync.hpp"
 #include "component/console/console.hpp"
 #include "component/scheduler.hpp"
 
@@ -431,6 +432,7 @@ namespace hidden_challenges
 			{
 				console::debug("[hidden_challenges] %s: 0x%02X -> 0x%02X\n",
 					definition.achievement_name.data(), previous_progress, updated_progress);
+				achievement_sync::request_refresh();
 			}
 		}
 

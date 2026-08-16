@@ -1,6 +1,9 @@
 #include <std_include.hpp>
 #include "loader/component_loader.hpp"
 
+#include "component/console/console.hpp"
+#include "game/zombies_inventory.hpp"
+
 #include "game/game.hpp"
 
 #include <utils/hook.hpp>
@@ -12,11 +15,22 @@ namespace unlock_loot
 		const game::dvar_t* cg_unlock_all_loot{};
 
 		utils::hook::detour is_loot_item_unlocked_hook;
+		std::atomic_bool progression_override_reported{};
 
 		bool is_loot_item_unlocked_stub(const unsigned int item_id)
 		{
 			if (cg_unlock_all_loot && cg_unlock_all_loot->current.enabled)
 			{
+				if (game::zombies_inventory::is_progression_item(item_id))
+				{
+					if (!progression_override_reported.exchange(true))
+					{
+						console::debug("[unlock_loot] preserving Zombies progression-item ownership\n");
+					}
+
+					return is_loot_item_unlocked_hook.invoke<bool>(item_id);
+				}
+
 				return true;
 			}
 

@@ -3,6 +3,7 @@
 
 #include "glutton_server.hpp"
 
+#include "../achievement_response.hpp"
 #include "../achievement_store.hpp"
 
 #include "component/console/console.hpp"
@@ -13,37 +14,13 @@ namespace demonware
 {
 	namespace
 	{
-		rapidjson::Value serialize_achievements(
-			const std::vector<achievement_record>& achievements,
-			rapidjson::Document::AllocatorType& allocator)
-		{
-			rapidjson::Value array{rapidjson::kArrayType};
-			for (const auto& achievement : achievements)
-			{
-				rapidjson::Value value{rapidjson::kObjectType};
-				value.AddMember("kind", achievement.kind, allocator);
-				value.AddMember("name", rapidjson::Value{achievement.name.data(),
-					static_cast<rapidjson::SizeType>(achievement.name.size()), allocator}, allocator);
-				value.AddMember("requiresClaim", false, allocator);
-				value.AddMember("progress", achievement.progress, allocator);
-				value.AddMember("progressTarget", achievement.progress_target, allocator);
-				value.AddMember("fulfilledTimes", achievement.fulfilled_times, allocator);
-				value.AddMember("completionTimestamp", achievement.completion_timestamp, allocator);
-				value.AddMember("status", rapidjson::Value{
-					get_achievement_status_name(achievement.status), allocator}, allocator);
-				array.PushBack(value, allocator);
-			}
-
-			return array;
-		}
-
 		void add_user_achievements(rapidjson::Value& users, const std::string_view user_id,
 			const std::vector<achievement_record>& achievements,
 			rapidjson::Document::AllocatorType& allocator)
 		{
 			rapidjson::Value key{user_id.data(),
 				static_cast<rapidjson::SizeType>(user_id.size()), allocator};
-			auto array = serialize_achievements(achievements, allocator);
+			auto array = achievement_response::serialize_achievements(achievements, allocator);
 			users.AddMember(key, array, allocator);
 		}
 	}
@@ -124,7 +101,7 @@ namespace demonware
 			}
 			else
 			{
-				auto array = serialize_achievements(achievements, allocator);
+				auto array = achievement_response::serialize_achievements(achievements, allocator);
 				response.AddMember("Achievements", array, allocator);
 			}
 

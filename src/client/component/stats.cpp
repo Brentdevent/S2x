@@ -647,8 +647,8 @@ namespace stats
 				}
 			}
 
-			console::debug("unlockstatszm: rank progression updated: %s.\n",
-				rank_unlocked ? "yes" : "no");
+			console::debug("unlockstatszm: rank progression updated: %s.\n", rank_unlocked ? "yes" : "no");
+
 			if (!rank_unlocked)
 			{
 				console::warn("unlockstatszm: failed to update Zombies rank progression.\n");
@@ -657,8 +657,10 @@ namespace stats
 			const auto challenges = unlock_zombies::unlock_hidden_challenges();
 			console::debug("unlockstatszm: %d of %d Zombies achievement entries completed.\n",
 				challenges.completed, challenges.total);
+
 			const auto challenges_unlocked = challenges.persisted && challenges.total > 0 &&
 				challenges.completed == challenges.total;
+
 			if (!challenges.persisted)
 			{
 				console::warn("unlockstatszm: failed to persist Zombies Hidden Challenge progression.\n");
