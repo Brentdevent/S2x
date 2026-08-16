@@ -479,8 +479,15 @@ namespace stats
 			console::info("setPlayerDataInt: stat updated.\n");
 		}
 
-		void unlock_multiplayer_stats()
+		void unlock_multiplayer_stats(const command::params& params)
 		{
+			if (params.size() != 2 || std::string_view{params[1]} != "confirm")
+			{
+				console::warn("unlockstatsmp: this permanently changes Multiplayer progression and stats "
+					"and cannot be automatically undone. Run \"unlockstatsmp confirm\" to continue.\n");
+				return;
+			}
+
 			if (!game::environment::is_multiplayer())
 			{
 				console::error("unlockstatsmp: this command is only available in Multiplayer.\n");
@@ -624,8 +631,16 @@ namespace stats
 			}
 		}
 
-		void unlock_zombie_stats()
+		void unlock_zombie_stats(const command::params& params)
 		{
+			if (params.size() != 2 || std::string_view{params[1]} != "confirm")
+			{
+				console::warn("unlockstatszm: this permanently changes Zombies progression, including rank "
+					"and Hidden Challenges, and cannot be automatically undone. Run \"unlockstatszm confirm\" "
+					"to continue.\n");
+				return;
+			}
+
 			if (!game::environment::is_zombies())
 			{
 				console::error("unlockstatszm: this command is only available in Zombies.\n");
