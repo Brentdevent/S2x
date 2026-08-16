@@ -494,6 +494,29 @@ namespace hidden_challenges
 		}
 	}
 
+	bool get_completion(const reward_game_event& event, std::uint32_t& group,
+		std::uint32_t& challenge)
+	{
+		std::uint64_t group_value{};
+		std::uint64_t challenge_value{};
+		if (!get_hidden_challenge_values(event, group_value, challenge_value))
+		{
+			return false;
+		}
+
+		group = static_cast<std::uint32_t>(group_value);
+		challenge = static_cast<std::uint32_t>(challenge_value);
+		return true;
+	}
+
+	void submit_completion(const std::uint32_t group, const std::uint32_t challenge)
+	{
+		reward_game_event event{};
+		event.name = hidden_challenge_event_name;
+		event.parameters = {{"3", group}, {"4", challenge}};
+		submit_reward_game_event(std::move(event));
+	}
+
 	void submit_reward_game_event(reward_game_event event)
 	{
 		std::uint64_t group_value{};

@@ -105,6 +105,7 @@ namespace game
 	WEAK symbol<void(const char* reason)> SV_Shutdown{ 0x6DBF50 };
 	WEAK symbol<bool()> SV_Loaded{ 0x6DB810 };
 	WEAK symbol<void(mp::client_t* client, svscmd_type type, const char* format, ...)> SV_SendServerCommand{ 0x6E0BA0 };
+	WEAK symbol<void(unsigned int localClientNum)> CG_DeployServerCommandString{ 0x431EB0 };
 
 	WEAK symbol<void(XZoneInfo* zoneInfo, unsigned int zoneCount, DBSyncMode syncMode)> DB_LoadXAssets{ 0xA4F60, 0x2ADB50 };
 	WEAK symbol<void(const char* zoneName, int zoneFlags, int isBaseMap)> DB_TryLoadXFileInternal{ 0xACE30, 0x2AF980 };
@@ -151,6 +152,8 @@ namespace game
 	WEAK symbol<void*(int localClientNum)> Lobby_GetLocalClientData{ 0x470D30 };
 	WEAK symbol<PartyData*(void* localClientData)> Lobby_GetPartyDataFromLocalClient{ 0x470F20 };
 	WEAK symbol<PartyData*()> Party_GetPrivatePartyData{ 0x47E350 };
+	WEAK symbol<PartyData*()> Live_GetGameParty{ 0x789620 };
+	WEAK symbol<std::uint8_t(PartyData* partyData, std::uint64_t xuid)> Party_FindMemberByXUID{ 0x6FDDA0 };
 	WEAK symbol<int(PartyData* partyData)> Party_IsRunning{ 0x47A6C0 };
 	WEAK symbol<int(PartyData* partyData)> Party_AreWeHost{ 0x47A6F0 };
 	WEAK symbol<bool(PartyData* partyData, int memberIndex)> Party_IsHost{ 0x480F10 };

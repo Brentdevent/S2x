@@ -2,8 +2,10 @@
 #include "../dw_include.hpp"
 
 #include "component/console/console.hpp"
+#include "component/hidden_challenge_relay.hpp"
 #include "component/hidden_challenges.hpp"
 
+#include "game/game.hpp"
 #include "game/demonware/reward_game_event.hpp"
 
 #include "steam/steam.hpp"
@@ -66,12 +68,35 @@ namespace demonware
 		std::vector<reward_game_events::user_event_batch> users{};
 		if (reward_game_events::parse_report_for_users_request(buffer, users))
 		{
-			const auto local_user_id = steam::SteamUser()->GetSteamID().bits;
+			const auto dedicated = game::environment::is_dedicated();
+			const auto local_user_id = dedicated ? 0 : steam::SteamUser()->GetSteamID().bits;
 			for (auto& user : users)
 			{
-				if (user.user_id == local_user_id && user.account_type == "steam")
+				if (user.account_type != "steam")
 				{
-					submit_hidden_challenge_events(user.events);
+					continue;
+				}
+
+				for (auto& event : user.events)
+				{
+					std::uint32_t group{};
+					std::uint32_t challenge{};
+					if (!hidden_challenges::get_completion(event, group, challenge))
+					{
+						continue;
+					}
+
+					console::debug(
+						"[hidden_challenges] task11 XUID %llu: zombies [3=%u, 4=%u]\n",
+						static_cast<unsigned long long>(user.user_id), group, challenge);
+					if (!dedicated && user.user_id == local_user_id)
+					{
+						hidden_challenges::submit_reward_game_event(std::move(event));
+					}
+					else
+					{
+						hidden_challenge_relay::submit(user.user_id, group, challenge);
+					}
 				}
 			}
 		}
