@@ -8,6 +8,7 @@
 
 #include "game/game.hpp"
 #include "game/demonware/achievement_store.hpp"
+#include "game/demonware/reward_game_event.hpp"
 
 #include <charconv>
 #include <deque>
@@ -16,6 +17,8 @@
 
 namespace hidden_challenges
 {
+	using reward_game_event = demonware::reward_game_events::event;
+
 	namespace
 	{
 		constexpr auto hidden_challenge_event_id = 16;
@@ -42,11 +45,13 @@ namespace hidden_challenges
 		{
 			int value;
 			int achievement_id;
-			std::string_view challenge_prefix;
+			std::string_view diagnostic_prefix;
 		};
 
-		// Stock Zombies scripts report these group values through selector 3. The
-		// parent AE IDs join the shipped tables; prefixes are retained for diagnostics.
+		// Selector 3 contains the stock hidden-character group value. The parent AE IDs
+		// join the shipped tables, while the prefixes are only used in diagnostics.
+		// Group 22 is intentionally unused by the stock mapping; selector 4 is a
+		// zero-based challenge slot within the resolved group.
 		constexpr std::array hidden_groups
 		{
 			hidden_group{1, 363, "treasure_set"},
@@ -81,7 +86,7 @@ namespace hidden_challenges
 
 		struct hidden_challenge_definition
 		{
-			std::string challenge_prefix{};
+			std::string diagnostic_prefix{};
 			std::string achievement_name{};
 			std::string event_name{};
 			int achievement_kind{};
@@ -282,7 +287,7 @@ namespace hidden_challenges
 				return false;
 			}
 
-			result.challenge_prefix = group.challenge_prefix;
+			result.diagnostic_prefix = group.diagnostic_prefix;
 			result.achievement_name = achievement_name;
 			result.event_name = event_name;
 			result.achievement_kind = kind;
@@ -345,16 +350,6 @@ namespace hidden_challenges
 			}
 		}
 
-		const hidden_group* find_hidden_group(const int value)
-		{
-			const auto entry = std::find_if(hidden_groups.begin(), hidden_groups.end(),
-				[value](const hidden_group& group)
-				{
-					return group.value == value;
-				});
-			return entry == hidden_groups.end() ? nullptr : &*entry;
-		}
-
 		bool get_parameter(const reward_game_event& event, const std::string_view selector,
 			std::uint64_t& value)
 		{
@@ -376,6 +371,16 @@ namespace hidden_challenges
 			}
 
 			return found;
+		}
+
+		bool get_hidden_challenge_values(const reward_game_event& event,
+			std::uint64_t& group_value, std::uint64_t& challenge_value)
+		{
+			return event.name == hidden_challenge_event_name &&
+				get_parameter(event, "3", group_value) &&
+				get_parameter(event, "4", challenge_value) &&
+				group_value <= std::numeric_limits<int>::max() &&
+				challenge_value < std::numeric_limits<std::uint16_t>::digits;
 		}
 
 		void update_progress(const hidden_challenge_definition& definition, const int challenge_index)
@@ -429,52 +434,39 @@ namespace hidden_challenges
 			}
 		}
 
-		bool process_event(const reward_game_event& event)
+		void process_event(const reward_game_event& event)
 		{
 			std::uint64_t group_value{};
 			std::uint64_t challenge_value{};
-			if (event.name != hidden_challenge_event_name ||
-				!get_parameter(event, "3", group_value) ||
-				!get_parameter(event, "4", challenge_value) ||
-				group_value > std::numeric_limits<int>::max() ||
-				challenge_value >= std::numeric_limits<std::uint16_t>::digits)
+			if (!get_hidden_challenge_values(event, group_value, challenge_value))
 			{
-				return true;
+				return;
 			}
 
 			const auto group = static_cast<int>(group_value);
-			const auto* group_info = find_hidden_group(group);
-			if (!group_info)
-			{
-				return true;
-			}
-
 			const auto definition = definitions.find(group);
 			if (definition == definitions.end())
 			{
-				return definitions_complete;
+				return;
 			}
 
 			const auto challenge_index = static_cast<int>(challenge_value);
 			if (event.name != definition->second.event_name ||
 				(definition->second.full_mask & (1u << challenge_index)) == 0)
 			{
-				return true;
+				return;
 			}
 
-			console::debug("[hidden_challenges] event %s [3=%llu, 4=%llu]\n",
-				event.name.data(), group_value, challenge_value);
 			console::debug("[hidden_challenges] matched %s%d -> %s\n",
-				group_info->challenge_prefix.data(), challenge_index,
+				definition->second.diagnostic_prefix.data(), challenge_index,
 				definition->second.achievement_name.data());
 			update_progress(definition->second, challenge_index);
-			return true;
 		}
 
 		void process_pending_events()
 		{
 			load_definitions();
-			if (definitions.empty())
+			if (!definitions_complete)
 			{
 				return;
 			}
@@ -485,25 +477,11 @@ namespace hidden_challenges
 				events.swap(pending_events);
 			}
 
-			std::deque<reward_game_event> retry{};
 			while (!events.empty())
 			{
 				auto event = std::move(events.front());
 				events.pop_front();
-				if (!process_event(event))
-				{
-					retry.push_back(std::move(event));
-				}
-			}
-
-			if (!retry.empty())
-			{
-				std::lock_guard lock{pending_event_mutex};
-				while (!retry.empty() && pending_events.size() < maximum_pending_events)
-				{
-					pending_events.push_front(std::move(retry.back()));
-					retry.pop_back();
-				}
+				process_event(event);
 			}
 		}
 
@@ -516,7 +494,10 @@ namespace hidden_challenges
 
 	void submit_reward_game_event(reward_game_event event)
 	{
-		if (!accepting_events.load() || event.name != hidden_challenge_event_name)
+		std::uint64_t group_value{};
+		std::uint64_t challenge_value{};
+		if (!accepting_events.load() ||
+			!get_hidden_challenge_values(event, group_value, challenge_value))
 		{
 			return;
 		}

@@ -2,13 +2,12 @@
 
 namespace unlock_zombies
 {
-	struct challenge_unlock_result
+	struct hidden_challenge_unlock_result
 	{
-		bool enabled{};
+		bool persisted{};
 		int completed{};
 		int total{};
 	};
 
-	challenge_unlock_result enable_challenges();
-	bool enable_consumables();
+	hidden_challenge_unlock_result unlock_hidden_challenges();
 }

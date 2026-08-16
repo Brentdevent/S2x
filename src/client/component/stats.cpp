@@ -479,11 +479,17 @@ namespace stats
 			console::info("setPlayerDataInt: stat updated.\n");
 		}
 
-		void unlock_stats()
+		void unlock_multiplayer_stats()
 		{
+			if (!game::environment::is_multiplayer())
+			{
+				console::error("unlockstatsmp: this command is only available in Multiplayer.\n");
+				return;
+			}
+
 			if (!has_stats())
 			{
-				console::error("unlockstats: player stats are not available.\n");
+				console::error("unlockstatsmp: player stats are not available.\n");
 				return;
 			}
 
@@ -556,84 +562,65 @@ namespace stats
 
 			const auto [unlocked_challenges, challenges] = unlock_challenges();
 
+			console::debug("unlockstatsmp: rank progression updated: %s.\n",
+				rank_unlocked ? "yes" : "no");
+			console::debug("unlockstatsmp: %zu of %zu weapon progression entries updated.\n",
+				unlocked_weapons, weapons.size());
+			console::debug("unlockstatsmp: %zu weapon prestige entries updated.\n",
+				prestiged_weapons);
+			console::debug("unlockstatsmp: %zu division progression entries updated.\n",
+				unlocked_divisions);
+			console::debug("unlockstatsmp: %zu division prestige entries updated.\n",
+				prestiged_divisions);
+			console::debug("unlockstatsmp: %zu of %zu challenge entries updated.\n",
+				unlocked_challenges, challenges);
+
 			if (!rank_unlocked)
 			{
-				console::warn("unlockstats: failed to update rank progression.\n");
-			}
-			else
-			{
-				console::info("unlockstats: rank progression updated.\n");
+				console::warn("unlockstatsmp: failed to update rank progression.\n");
 			}
 
 			if (weapons.empty())
 			{
-				console::warn("unlockstats: no weapon-leveling table was available.\n");
+				console::warn("unlockstatsmp: no weapon-leveling table was available.\n");
 			}
-			else if (unlocked_weapons != weapons.size())
+			else if (unlocked_weapons == 0)
 			{
-				console::warn("unlockstats: updated %zu of %zu weapon progression entries.\n",
-					unlocked_weapons, weapons.size());
-			}
-			else
-			{
-				console::info("unlockstats: %zu weapon progression entries updated.\n",
-					unlocked_weapons);
+				console::warn("unlockstatsmp: no compatible weapon progression entries were found.\n");
 			}
 
-			if (!weapons.empty())
+			if (!weapons.empty() && prestiged_weapons == 0)
 			{
-				if (prestiged_weapons != unlocked_weapons)
-				{
-					console::warn("unlockstats: updated %zu of %zu compatible weapon prestige entries.\n",
-						prestiged_weapons, unlocked_weapons);
-				}
-				else
-				{
-					console::info("unlockstats: %zu weapon prestige entries updated.\n",
-						prestiged_weapons);
-				}
+				console::warn("unlockstatsmp: no compatible weapon prestige entries were found.\n");
 			}
 
 			if (division_progress.level <= 0)
 			{
-				console::warn("unlockstats: no division-leveling table was available.\n");
+				console::warn("unlockstatsmp: no division-leveling table was available.\n");
 			}
 			else if (unlocked_divisions == 0)
 			{
-				console::warn("unlockstats: no compatible division progression entries were found.\n");
-			}
-			else
-			{
-				console::info("unlockstats: %zu division progression entries updated.\n",
-					unlocked_divisions);
+				console::warn("unlockstatsmp: no compatible division progression entries were found.\n");
 			}
 
-			if (division_progress.level > 0)
+			if (division_progress.level > 0 && prestiged_divisions == 0)
 			{
-				if (prestiged_divisions != unlocked_divisions)
-				{
-					console::warn("unlockstats: updated %zu of %zu compatible division prestige entries.\n",
-						prestiged_divisions, unlocked_divisions);
-				}
-				else
-				{
-					console::info("unlockstats: %zu division prestige entries updated.\n",
-						prestiged_divisions);
-				}
+				console::warn("unlockstatsmp: no compatible division prestige entries were found.\n");
 			}
 
 			if (challenges == 0)
 			{
-				console::warn("unlockstats: no challenge table was available.\n");
+				console::warn("unlockstatsmp: no challenge table was available.\n");
 			}
-			else if (unlocked_challenges != challenges)
+			else if (unlocked_challenges == 0)
 			{
-				console::warn("unlockstats: updated %zu of %zu challenge entries.\n",
-					unlocked_challenges, challenges);
+				console::warn("unlockstatsmp: no compatible challenge entries were found.\n");
 			}
-			else
+
+			if (rank_unlocked && unlocked_weapons > 0 && prestiged_weapons > 0 &&
+				unlocked_divisions > 0 && prestiged_divisions > 0 && unlocked_challenges > 0)
 			{
-				console::info("unlockstats: %zu challenge entries updated.\n", unlocked_challenges);
+				console::info("unlockstatsmp: Multiplayer progression and challenges unlocked.\n");
 			}
 		}
 
@@ -645,56 +632,45 @@ namespace stats
 				return;
 			}
 
-			if (!has_stats())
-			{
-				console::error("unlockstatszm: player stats are not available.\n");
-				return;
-			}
-
 			bool rank_unlocked{};
-			int max_prestige{};
-			int max_experience{};
-			unsigned int stats_group{};
-			if (get_rank_caps("mp/cp_rankTable.csv", max_prestige, max_experience) &&
-				find_zombie_stats_group(stats_group))
+			if (has_stats())
 			{
-				const auto prestige_set = set_stat({"prestigeLevel"}, max_prestige, stats_group);
-				const auto experience_set = set_stat({"totalXP"}, max_experience, stats_group);
-				rank_unlocked = prestige_set && experience_set;
+				int max_prestige{};
+				int max_experience{};
+				unsigned int stats_group{};
+				if (get_rank_caps("mp/cp_rankTable.csv", max_prestige, max_experience) &&
+					find_zombie_stats_group(stats_group))
+				{
+					const auto prestige_set = set_stat({"prestigeLevel"}, max_prestige, stats_group);
+					const auto experience_set = set_stat({"totalXP"}, max_experience, stats_group);
+					rank_unlocked = prestige_set && experience_set;
+				}
 			}
 
-			if (rank_unlocked)
-			{
-				console::info("unlockstatszm: Zombies rank progression updated.\n");
-			}
-			else
+			console::debug("unlockstatszm: rank progression updated: %s.\n",
+				rank_unlocked ? "yes" : "no");
+			if (!rank_unlocked)
 			{
 				console::warn("unlockstatszm: failed to update Zombies rank progression.\n");
 			}
 
-			const auto challenges = unlock_zombies::enable_challenges();
-			if (challenges.enabled && challenges.completed == challenges.total && challenges.total > 0)
+			const auto challenges = unlock_zombies::unlock_hidden_challenges();
+			console::debug("unlockstatszm: %d of %d Zombies achievement entries completed.\n",
+				challenges.completed, challenges.total);
+			const auto challenges_unlocked = challenges.persisted && challenges.total > 0 &&
+				challenges.completed == challenges.total;
+			if (!challenges.persisted)
 			{
-				console::info("unlockstatszm: %d Zombies achievement entries completed.\n",
-					challenges.completed);
+				console::warn("unlockstatszm: failed to persist Zombies Hidden Challenge progression.\n");
 			}
-			else if (challenges.enabled)
+			else if (!challenges_unlocked)
 			{
-				console::warn("unlockstatszm: completed %d of %d Zombies achievement entries.\n",
-					challenges.completed, challenges.total);
-			}
-			else
-			{
-				console::warn("unlockstatszm: failed to enable Zombies challenge unlocks.\n");
+				console::warn("unlockstatszm: some Zombies Hidden Challenge definitions could not be resolved.\n");
 			}
 
-			if (unlock_zombies::enable_consumables())
+			if (rank_unlocked && challenges_unlocked)
 			{
-				console::info("unlockstatszm: unlimited Zombies consumables enabled.\n");
-			}
-			else
-			{
-				console::warn("unlockstatszm: failed to enable unlimited Zombies consumables.\n");
+				console::info("unlockstatszm: Zombies progression and Hidden Challenges unlocked.\n");
 			}
 		}
 	}
@@ -710,7 +686,7 @@ namespace stats
 			}
 
 			command::add("setPlayerDataInt", set_player_data_int);
-			command::add("unlockstats", unlock_stats);
+			command::add("unlockstatsmp", unlock_multiplayer_stats);
 			command::add("unlockstatszm", unlock_zombie_stats);
 		}
 	};

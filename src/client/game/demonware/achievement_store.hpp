@@ -39,7 +39,6 @@ namespace demonware
 
 		std::vector<achievement_record> get_all();
 		bool merge(const std::vector<achievement_record>& records);
-		bool update(achievement_record record);
 		mutation_result mutate(const std::string& name,
 			const std::function<bool(achievement_record&)>& mutator);
 	}

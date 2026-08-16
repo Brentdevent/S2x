@@ -230,42 +230,6 @@ namespace demonware::achievement_store
 		return false;
 	}
 
-	bool update(achievement_record record)
-	{
-		if (record.name.empty())
-		{
-			return false;
-		}
-
-		std::lock_guard lock{achievement_mutex};
-		load_achievements();
-		const auto entry = achievements.find(record.name);
-		const auto existed = entry != achievements.end();
-		achievement_record original{};
-		if (existed)
-		{
-			original = entry->second;
-		}
-
-		const auto name = record.name;
-		merge_record(std::move(record), static_cast<std::uint64_t>(time(nullptr)));
-		if (save_achievements())
-		{
-			return true;
-		}
-
-		if (existed)
-		{
-			achievements[name] = std::move(original);
-		}
-		else
-		{
-			achievements.erase(name);
-		}
-
-		return false;
-	}
-
 	mutation_result mutate(const std::string& name,
 		const std::function<bool(achievement_record&)>& mutator)
 	{

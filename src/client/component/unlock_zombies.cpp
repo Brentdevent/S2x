@@ -39,11 +39,9 @@ namespace unlock_zombies
 		constexpr int achievement_definition_name_column = 1;
 		constexpr std::ptrdiff_t achievement_response_offset = 0xF8;
 
-		const game::dvar_t* cg_unlock_all_zm_challenges{};
-		const game::dvar_t* cg_unlock_all_zm_consumables{};
+		const game::dvar_t* cg_unlimited_zm_consumables{};
 
 		utils::hook::detour get_item_quantity_hook;
-		utils::hook::detour fetch_user_achievements_hook;
 		std::atomic_uint64_t achievement_refresh_generation{};
 		std::mutex pending_achievement_update_mutex{};
 		std::optional<std::string> pending_achievement_update{};
@@ -218,19 +216,13 @@ namespace unlock_zombies
 
 		int get_item_quantity_stub(const unsigned int controller_index, const unsigned int item_guid)
 		{
-			if (cg_unlock_all_zm_consumables && cg_unlock_all_zm_consumables->current.enabled &&
+			if (cg_unlimited_zm_consumables && cg_unlimited_zm_consumables->current.enabled &&
 				game::Inventory_IsItemGuidAZMConsumable(item_guid))
 			{
 				return unlimited_consumable_quantity;
 			}
 
 			return get_item_quantity_hook.invoke<int>(controller_index, item_guid);
-		}
-
-		void clear_pending_achievement_update()
-		{
-			std::lock_guard lock{pending_achievement_update_mutex};
-			pending_achievement_update.reset();
 		}
 
 		void queue_achievement_update(std::string transaction)
@@ -285,35 +277,8 @@ namespace unlock_zombies
 			return {buffer.GetString(), buffer.GetSize()};
 		}
 
-		bool fetch_user_achievements_stub(const unsigned int controller_index, const void* page_token,
-			const void* transaction_id, const unsigned int account_index)
-		{
-			const auto result = fetch_user_achievements_hook.invoke<bool>(controller_index,
-				page_token, transaction_id, account_index);
-			if (!cg_unlock_all_zm_challenges ||
-				!cg_unlock_all_zm_challenges->current.enabled)
-			{
-				clear_pending_achievement_update();
-				return result;
-			}
-
-			if (result && transaction_id && controller_index == 0)
-			{
-				queue_achievement_update(static_cast<const char*>(transaction_id));
-			}
-
-			return result;
-		}
-
 		void dispatch_user_achievement_updates()
 		{
-			if (!cg_unlock_all_zm_challenges ||
-				!cg_unlock_all_zm_challenges->current.enabled)
-			{
-				clear_pending_achievement_update();
-				return;
-			}
-
 			if (const auto transaction = take_achievement_update())
 			{
 				const auto response = make_user_achievement_response(*transaction);
@@ -330,8 +295,13 @@ namespace unlock_zombies
 		{
 			std::array<char, 32> transaction_id{};
 			game::AE_GenerateTransactionId(transaction_id.data());
-			return game::AE_FetchUserAchievementsByPage(0, "",
-				transaction_id.data(), 0);
+			if (!game::AE_FetchUserAchievementsByPage(0, "", transaction_id.data(), 0))
+			{
+				return false;
+			}
+
+			queue_achievement_update(transaction_id.data());
+			return true;
 		}
 
 		void refresh_user_achievements_when_ready()
@@ -356,40 +326,20 @@ namespace unlock_zombies
 
 	}
 
-	challenge_unlock_result enable_challenges()
+	hidden_challenge_unlock_result unlock_hidden_challenges()
 	{
-		if (!cg_unlock_all_zm_challenges)
+		hidden_challenge_unlock_result result{};
+		const auto achievements = get_zombie_challenge_achievements();
+		result.total = achievements.total;
+		if (!achievements.records.empty() &&
+			demonware::achievement_store::merge(achievements.records))
 		{
-			return {};
-		}
-
-		game::Dvar_SetBool(const_cast<game::dvar_t*>(cg_unlock_all_zm_challenges), true);
-		challenge_unlock_result result{};
-		result.enabled = cg_unlock_all_zm_challenges->current.enabled;
-		if (result.enabled)
-		{
-			const auto achievements = get_zombie_challenge_achievements();
-			result.total = achievements.total;
-			if (!achievements.records.empty() &&
-				demonware::achievement_store::merge(achievements.records))
-			{
-				result.completed = static_cast<int>(achievements.records.size());
-				refresh_user_achievements_when_ready();
-			}
+			result.persisted = true;
+			result.completed = static_cast<int>(achievements.records.size());
+			refresh_user_achievements_when_ready();
 		}
 
 		return result;
-	}
-
-	bool enable_consumables()
-	{
-		if (!cg_unlock_all_zm_consumables)
-		{
-			return false;
-		}
-
-		game::Dvar_SetBool(const_cast<game::dvar_t*>(cg_unlock_all_zm_consumables), true);
-		return cg_unlock_all_zm_consumables->current.enabled;
 	}
 
 	class component final : public multiplayer_component
@@ -402,23 +352,11 @@ namespace unlock_zombies
 				return;
 			}
 
-			cg_unlock_all_zm_challenges = game::Dvar_RegisterBool(
-				"cg_unlockall_zm_challenges", false, game::DVAR_FLAG_SAVED);
-			cg_unlock_all_zm_consumables = game::Dvar_RegisterBool(
-				"cg_unlockall_zm_consumables", false, game::DVAR_FLAG_SAVED);
+			cg_unlimited_zm_consumables = game::Dvar_RegisterBool(
+				"cg_unlimited_zm_consumables", false, game::DVAR_FLAG_SAVED);
 
 			get_item_quantity_hook.create(game::Inventory_GetItemQuantity, get_item_quantity_stub);
-			fetch_user_achievements_hook.create(game::AE_FetchUserAchievementsByPage,
-				fetch_user_achievements_stub);
 			scheduler::loop(dispatch_user_achievement_updates, scheduler::pipeline::main, 50ms);
-
-			scheduler::once([]
-			{
-				if (cg_unlock_all_zm_challenges && cg_unlock_all_zm_challenges->current.enabled)
-				{
-					refresh_user_achievements_when_ready();
-				}
-			}, scheduler::pipeline::main, 5s);
 		}
 	};
 }
