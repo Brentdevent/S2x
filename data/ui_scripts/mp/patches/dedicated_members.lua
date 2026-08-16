@@ -7,6 +7,10 @@ local function IsVisibleDedicatedPartyMember( xuid, controller )
 	end
 
 	controller = controller or Engine.GetFirstActiveController()
+	if xuid == Engine.GetXUIDByController( controller ) then
+		return true
+	end
+
 	local members = DataSources and DataSources.inFrontend and
 		DataSources.inFrontend.MP and DataSources.inFrontend.MP.lobby and
 		DataSources.inFrontend.MP.lobby.members or nil
