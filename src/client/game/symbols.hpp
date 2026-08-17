@@ -34,6 +34,7 @@ namespace game
 		nullptr \
 	)
 	
+	WEAK symbol<void()> Com_InitDvars{ 0x93260 };
 	WEAK symbol<void()> Com_Quit_f{ 0x9A130, 0x471D30 };
 	WEAK symbol<void()> j_Com_Quit_f{ 0x78A5E0, 0x4E9AF0 };
 	WEAK symbol<void()> SV_FastRestart_f{ 0x6D6BA0, 0x5885D0 };

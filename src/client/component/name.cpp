@@ -4,7 +4,6 @@
 #include "name.hpp"
 
 #include "game/game.hpp"
-#include "scheduler.hpp"
 
 #include "steam_proxy.hpp"
 
@@ -16,6 +15,7 @@ namespace name
 	{
 		game::dvar_t* name_dvar{};
 		
+		utils::hook::detour com_init_dvars_hook;
 		utils::hook::detour cl_get_username_for_local_client_hook;
 		utils::hook::detour live_get_local_client_name_hook;
 
@@ -29,6 +29,12 @@ namespace name
 		{
 			name_dvar = game::Dvar_RegisterString("name", get_default_player_name(),
 				static_cast<game::DvarFlags>(game::DVAR_FLAG_SAVED | game::DVAR_FLAG_USERINFO));
+		}
+
+		void com_init_dvars_stub()
+		{
+			register_name_dvar();
+			com_init_dvars_hook.invoke<void>();
 		}
 
 		char* cl_get_username_for_local_client_stub(const int /*controller_index*/)
@@ -69,9 +75,7 @@ namespace name
 	public:
 		void post_unpack() override
 		{
-			// Register on the game thread after the engine's dvar initialization has
-			// completed. Registering from Com_InitDvars can block on its dvar lock.
-			scheduler::once(register_name_dvar, scheduler::pipeline::main);
+			com_init_dvars_hook.create(game::Com_InitDvars, com_init_dvars_stub);
 
 			cl_get_username_for_local_client_hook.create(game::CL_GetUsernameForLocalClient,
 				cl_get_username_for_local_client_stub);

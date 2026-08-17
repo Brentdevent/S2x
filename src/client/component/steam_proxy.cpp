@@ -239,10 +239,15 @@ namespace steam_proxy
 	{
 		if (client_friends)
 		{
-			return client_friends.invoke<const char*>("GetPersonaName");
+			const auto* player_name = client_friends.invoke<const char*>("GetPersonaName");
+			if (player_name && *player_name)
+			{
+				return player_name;
+			}
 		}
 
-		return "Unknown Soldier";
+		static const auto user_name = utils::nt::get_user_name();
+		return user_name.empty() ? "Unknown Soldier" : user_name.data();
 	}
 
 	void initialize()
