@@ -242,7 +242,7 @@ namespace steam_proxy
 			return client_friends.invoke<const char*>("GetPersonaName");
 		}
 
-		return "S2x";
+		return "Unknown Soldier";
 	}
 
 	void initialize()
