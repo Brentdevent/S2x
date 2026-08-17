@@ -82,6 +82,7 @@ local function multiplayer_options( controller )
 end
 
 local function zombies_options( controller )
+	local loot_toggle = toggle_dvar( "cg_unlockall_loot" )
 	local consumables_toggle = toggle_dvar( "cg_unlimited_zm_consumables" )
 
 	return {
@@ -95,6 +96,14 @@ local function zombies_options( controller )
 					"WARNING: This permanently changes Zombies progression, including rank " ..
 					"and Hidden Challenges. It cannot automatically be undone." )
 			end
+		},
+		{
+			buttonType = "GenericButtonScrollable",
+			buttonText = Engine.Localize( "Unlock All Loot" ),
+			buttonDesc = Engine.Localize( "Override loot item availability." ),
+			buttonDisplayFunc = get_toggle_text( "cg_unlockall_loot" ),
+			buttonLeftFunc = loot_toggle,
+			buttonRightFunc = loot_toggle
 		},
 		{
 			buttonType = "GenericButtonScrollable",
