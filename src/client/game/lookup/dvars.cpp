@@ -12,6 +12,7 @@ namespace game::lookup::dvars
 			static const detail::string_map values
 			{
 				{ "cl_paused", "183" },
+				{ "sv_allowAimAssist", "387" },
 				{ "net_socksEnabled", "464" },
 				{ "net_socksPassword", "542"},
 				{ "net_noudp", "707" },
@@ -57,6 +58,7 @@ namespace game::lookup::dvars
 			static const detail::string_map values
 			{
 				{ "183", "cl_paused" },
+				{ "387", "sv_allowAimAssist" },
 				{ "464", "net_socksEnabled" },
 				{ "542", "net_socksPassword" },
 				{ "707", "net_noudp" },
