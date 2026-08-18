@@ -670,6 +670,13 @@ namespace game
 		unsigned short classnum;
 	};
 
+	struct Weapon
+	{
+		unsigned short weaponIdx;
+		char __pad0[0xA];
+	};
+	static_assert(sizeof(Weapon) == 0xC);
+
 	typedef void(*BuiltinMethod)(scr_entref_t);
 	typedef void(*BuiltinFunction)();
 
@@ -895,6 +902,8 @@ namespace game
 			char __pad0[0xF24C];
 			int autoMantle;
 			int sprintCancel;
+			char __padF254[0xF258 - 0xF254];
+			int flags;
 
 			// ... incomplete
 		};
@@ -903,12 +912,19 @@ namespace game
 		{
 			char __pad0[0x1C0];
 			gclient_s* client;
-			char __pad1C8[0x400 - 0x1C8];
+			char __pad1C8[0x210 - 0x1C8];
+			int flags;
+			char __pad214[0x22C - 0x214];
+			int health;
+			char __pad230[0x400 - 0x230];
 		};
 		static_assert(sizeof(gentity_s) == 0x400);
 		static_assert(offsetof(gentity_s, client) == 0x1C0);
+		static_assert(offsetof(gentity_s, flags) == 0x210);
+		static_assert(offsetof(gentity_s, health) == 0x22C);
 		static_assert(offsetof(gclient_s, autoMantle) == 0xF24C);
 		static_assert(offsetof(gclient_s, sprintCancel) == 0xF250);
+		static_assert(offsetof(gclient_s, flags) == 0xF258);
 
 		struct XZone
 		{
@@ -938,19 +954,28 @@ namespace game
 			playerState_s ps;
 			char __pad0[0x5AB8 - sizeof(playerState_s)];
 			int team;
+			char __pad5ABC[0x5DFC - 0x5ABC];
+			int flags;
 
 			// ... incomplete
 		};
 		static_assert(offsetof(gclient_s, team) == 0x5AB8);
+		static_assert(offsetof(gclient_s, flags) == 0x5DFC);
 
 		struct gentity_s
 		{
 			char __pad0[0x258];
 			gclient_s* client;
-			char __pad260[0x418 - 0x260];
+			char __pad260[0x2B8 - 0x260];
+			int flags;
+			char __pad2BC[0x2DC - 0x2BC];
+			int health;
+			char __pad2E0[0x418 - 0x2E0];
 		};
 		static_assert(sizeof(gentity_s) == 0x418);
 		static_assert(offsetof(gentity_s, client) == 0x258);
+		static_assert(offsetof(gentity_s, flags) == 0x2B8);
+		static_assert(offsetof(gentity_s, health) == 0x2DC);
 
 		struct client_t
 		{

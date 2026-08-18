@@ -104,10 +104,15 @@ namespace game
 	WEAK symbol<void(const char* path, const char* dir)> FS_AddLocalizedGameDirectory{ 0x755850, 0x4BE590 };
 	WEAK symbol<void(int localClientNum, const char* map, bool mapIsPreloaded)> SV_StartMap{ 0x6D8200 };
 	WEAK symbol<void(const char* reason)> SV_Shutdown{ 0x6DBF50 };
-	WEAK symbol<bool()> SV_Loaded{ 0x6DB810 };
+	WEAK symbol<bool()> SV_Loaded{ 0x6DB810, 0x58A2C0 };
 	WEAK symbol<void(mp::client_t* client, svscmd_type type, const char* format, ...)> SV_SendServerCommand{ 0x6E0BA0 };
+	WEAK symbol<void(int localClientNum, const char* text)> CL_ForwardCommandToServer{ 0x75060 };
 	WEAK symbol<void(unsigned int localClientNum)> CG_DeployServerCommandString{ 0x431EB0 };
 
+	WEAK symbol<void(XAssetType type, void(*callback)(XAssetHeader, void*), void* data,
+		bool includeOverride)> DB_EnumXAssets_FastFile{ 0xA0B00, 0x2AAFF0 };
+	WEAK symbol<const char*(const XAsset* asset)> DB_GetXAssetName{ 0x4A3EF0, 0x2764F0 };
+	WEAK symbol<const char*(XAssetType type)> DB_GetXAssetTypeName{ 0x4A3F10, 0x276510 };
 	WEAK symbol<void(XZoneInfo* zoneInfo, unsigned int zoneCount, DBSyncMode syncMode)> DB_LoadXAssets{ 0xA4F60, 0x2ADB50 };
 	WEAK symbol<void(const char* zoneName, int zoneFlags, int isBaseMap)> DB_TryLoadXFileInternal{ 0xACE30, 0x2AF980 };
 	WEAK symbol<void(uint16_t* zoneIndices, unsigned int zoneCount, bool createDefault)> DB_UnloadXZones{ 0xADE50, 0x2B05D0 };
@@ -290,11 +295,36 @@ namespace game
 	namespace sp
 	{
 		WEAK symbol<void(int savegame, int loadScripts)> SV_MapRestart{ 0x0, 0x5883E0 };
+		WEAK symbol<sp::playerState_s*(int clientNum)> SV_GetPlayerstateForClientNum{ 0x0, 0x589830 };
+
+		WEAK symbol<Weapon(const char* name)> G_GetWeaponForName{ 0x0, 0x3D4A30 };
+		WEAK symbol<bool(sp::playerState_s* ps, const Weapon* weapon, int dualWield, int startAlt,
+			int a5, int a6)> G_GivePlayerWeapon{ 0x0, 0x3D5010 };
+		WEAK symbol<void(sp::playerState_s* ps, const Weapon* weapon, int hadWeapon)> G_InitializeAmmo{ 0x0, 0x36EE60 };
+		WEAK symbol<void(char clientNum, const Weapon* weapon)> G_SelectWeapon{ 0x0, 0x3D59D0 };
+		WEAK symbol<int(sp::playerState_s* ps, const Weapon* weapon)> G_TakePlayerWeapon{ 0x0, 0x3D5DD0 };
+		WEAK symbol<bool(sp::gentity_s* target, const sp::gentity_s* inflictor, sp::gentity_s* attacker,
+			const float* direction, const float* point, int damage, int damageFlags, int meansOfDeath,
+			const Weapon* weapon, bool isAlternate, int timeOffset, int hitLocation,
+			unsigned int modelIndex, scr_string_t partName)> G_Damage{ 0x0, 0x3669B0 };
+
+		WEAK symbol<void(int localClientNum, const char* message, int type)> CG_GameMessage{ 0x0, 0x20DDF0 };
+		WEAK symbol<sp::gentity_s> g_entities{ 0x0, 0x8313160 };
 	}
 
 	namespace mp
 	{
 		WEAK symbol<void(int migrate, int loadScripts)> SV_MapRestart{ 0x6D6F60 };
+		WEAK symbol<mp::playerState_s*(int clientNum)> SV_GetPlayerstateForClientNum{ 0x6D9AF0 };
+
+		WEAK symbol<Weapon(const char* name)> G_GetWeaponForName{ 0x5C4C00 };
+		WEAK symbol<int(mp::playerState_s* ps, const Weapon* weapon, int dualWield, int startAlt,
+			int a5, unsigned char sourceClientNum, unsigned short a7, unsigned short a8)> G_GivePlayerWeapon{ 0x5C5290 };
+		WEAK symbol<void(mp::playerState_s* ps, const Weapon* weapon, int hadWeapon)> G_InitializeAmmo{ 0x55AD90 };
+		WEAK symbol<void(char clientNum, const Weapon* weapon)> G_SelectWeapon{ 0x5C6120 };
+		WEAK symbol<int(mp::playerState_s* ps, const Weapon* weapon)> G_TakePlayerWeapon{ 0x5C6490 };
+		WEAK symbol<void(scr_entref_t entref)> PlayerCmd_Suicide{ 0x549F40 };
+
 		WEAK symbol<mp::gentity_s*(const char* name, int customizationGroup)> SV_AddBot{ 0xF2650 };
 
 		WEAK symbol<int(mp::gentity_s* entity)> SV_SpawnTestClient{ 0xF6AA0 };
