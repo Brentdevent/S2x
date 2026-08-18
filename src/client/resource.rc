@@ -100,6 +100,11 @@ DW_PLAYLISTS          RCDATA "resources/dw/playlists_tu26.aggr"
 DW_SURVEYS            RCDATA "resources/dw/publisher_storage_surveys.csv"
 DW_TASKCONFIG         RCDATA "resources/dw/dwtaskconfig"
 DW_PLAYERDATA         RCDATA "resources/dw/metplayerdata"
+DW_PUBLISHER_VARIABLES_MP       RCDATA "resources/dw/publisher_variables/mp_tu26_1_20.json"
+DW_PUBLISHER_VARIABLES_MM_GAME  RCDATA "resources/dw/publisher_variables/mm_game_tu26_1_12.json"
+DW_PUBLISHER_VARIABLES_MM_HUB   RCDATA "resources/dw/publisher_variables/mm_hub_tu26_1_12.json"
+DW_PUBLISHER_VARIABLES_MM_PARTY RCDATA "resources/dw/publisher_variables/mm_party_tu26_1_11.json"
+DW_PUBLISHER_VARIABLES_QOS      RCDATA "resources/dw/publisher_variables/qos_tu26_1_14.json"
 
 LAUNCHER_MENU         RCDATA "resources/main.html"
 
