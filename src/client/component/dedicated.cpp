@@ -58,6 +58,12 @@ namespace dedicated
 				"net_port", port, 0, 65535, game::DVAR_FLAG_LATCHED);
 		}
 
+		game::dvar_t* register_dedicated_data_validation_dvar(const char* name,
+			int, const int min, const int max, const game::DvarFlags flags)
+		{
+			return game::Dvar_RegisterInt(name, 0, min, max, flags);
+		}
+
 		bool disable_dedicated_external_streams(game::FastfileExternalHeader* header,
 			game::ExternalStreamFile* image_files, game::ExternalStreamFile* sound_files)
 		{
@@ -854,6 +860,20 @@ namespace dedicated
 			// Our dedicated bootstrap creates no device, so keep that state false
 			// and let the native frontend paths skip renderer ownership waits.
 			utils::hook::set<std::uint8_t>(0x899577_g, 0);
+
+			// Cinematic initialization tail-calls the system thread creator after its
+			// CPU-side state is ready. Dedicated servers never decode or present
+			// cinematics, so return at the tail call and leave initialization intact.
+			utils::hook::set<std::uint8_t>(0x86F100_g, 0xC3);
+
+			// S2's "3841" dvar is dvl. Its native validation paths CRC registered
+			// buffers whenever they change; a dedicated server does not need client
+			// data-tamper reporting, so use the engine's existing disabled mode.
+			utils::hook::call(0x1708F_g, register_dedicated_data_validation_dvar);
+
+			// One frame path explicitly forces a two-kilobyte validation pass even
+			// when dvl is disabled. It has no server-side consumer or enforcement.
+			utils::hook::call(0x84903_g, dedicated_noop);
 
 			// Dedicated servers never submit render commands. These are S2's
 			// render-thread entry and renderer frame begin/end builders.
