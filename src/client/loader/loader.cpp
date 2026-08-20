@@ -2,6 +2,8 @@
 #include "loader.hpp"
 #include "tls.hpp"
 
+#include <steam/steam.hpp>
+
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
 
@@ -13,6 +15,16 @@ namespace loader
 		T offset_pointer(void* data, const ptrdiff_t offset)
 		{
 			return reinterpret_cast<T>(reinterpret_cast<uintptr_t>(data) + offset);
+		}
+
+		FARPROC resolve_import(const std::string& library_name, const char* function_name)
+		{
+			if (!_stricmp(library_name.data(), "steam_api64.dll") && !IS_INTRESOURCE(function_name))
+			{
+				return reinterpret_cast<FARPROC>(steam::resolve_api_import(function_name));
+			}
+
+			return nullptr;
 		}
 
 		void load_imports(const utils::nt::library& target)
@@ -53,10 +65,14 @@ namespace loader
 						function_procname = function_name.data();
 					}
 
-					auto library = utils::nt::library::load(name);
-					if (library)
+					function = resolve_import(name, function_procname);
+					if (!function)
 					{
-						function = GetProcAddress(library, function_procname);
+						auto library = utils::nt::library::load(name);
+						if (library)
+						{
+							function = GetProcAddress(library, function_procname);
+						}
 					}
 
 					if (!function)

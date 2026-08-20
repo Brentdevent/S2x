@@ -52,6 +52,8 @@ typedef union
 
 namespace steam
 {
+	void* resolve_api_import(const std::string& name);
+
 	class callbacks
 	{
 	public:

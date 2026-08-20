@@ -10,8 +10,6 @@
 #include <utils/flags.hpp>
 #include <utils/string.hpp>
 
-#include <steam/steam.hpp>
-
 #include "game/game.hpp"
 #include "launcher/launcher.hpp"
 #include "component/console/console.hpp"
@@ -35,39 +33,8 @@ namespace
 		return SetThreadAffinityMask(hThread, dwThreadAffinityMask);
 	}
 
-	void patch_steam_import(const std::string& func, void* function)
-	{
-		static const utils::nt::library game{};
-
-		const auto game_entry = game.get_iat_entry("steam_api64.dll", func);
-		if (!game_entry)
-		{
-			return;
-		}
-
-		utils::hook::set(game_entry, function);
-	}
-
 	void patch_imports()
 	{
-		patch_steam_import("SteamAPI_RegisterCallback", steam::SteamAPI_RegisterCallback);
-		patch_steam_import("SteamAPI_RegisterCallResult", steam::SteamAPI_RegisterCallResult);
-		patch_steam_import("SteamGameServer_Shutdown", steam::SteamGameServer_Shutdown);
-		patch_steam_import("SteamGameServer_RunCallbacks", steam::SteamGameServer_RunCallbacks);
-		patch_steam_import("SteamGameServer_GetHSteamPipe", steam::SteamGameServer_GetHSteamPipe);
-		patch_steam_import("SteamGameServer_GetHSteamUser", steam::SteamGameServer_GetHSteamUser);
-		patch_steam_import("SteamInternal_GameServer_Init", steam::SteamInternal_GameServer_Init);
-		patch_steam_import("SteamAPI_UnregisterCallResult", steam::SteamAPI_UnregisterCallResult);
-		patch_steam_import("SteamAPI_UnregisterCallback", steam::SteamAPI_UnregisterCallback);
-		patch_steam_import("SteamAPI_RunCallbacks", steam::SteamAPI_RunCallbacks);
-		patch_steam_import("SteamInternal_CreateInterface", steam::SteamInternal_CreateInterface);
-		patch_steam_import("SteamInternal_ContextInit", steam::SteamInternal_ContextInit);
-		patch_steam_import("SteamAPI_GetHSteamUser", steam::SteamAPI_GetHSteamUser);
-		patch_steam_import("SteamAPI_GetHSteamPipe", steam::SteamAPI_GetHSteamPipe);
-		patch_steam_import("SteamAPI_Init", steam::SteamAPI_Init);
-		patch_steam_import("SteamAPI_Shutdown", steam::SteamAPI_Shutdown);
-		patch_steam_import("SteamAPI_RestartAppIfNecessary", steam::SteamAPI_RestartAppIfNecessary);
-
 		const utils::nt::library ucrt{ "ucrtbase.dll" };
 		auto* exit_func = ucrt.get_proc<void*>("exit");
 		exit_hook.create(exit_func, exit_stub);

@@ -8,6 +8,34 @@
 
 namespace steam
 {
+	void* resolve_api_import(const std::string& name)
+	{
+#define RETURN_API_IMPORT(api) if (name == #api) return reinterpret_cast<void*>(api)
+
+		RETURN_API_IMPORT(SteamInternal_CreateInterface);
+		RETURN_API_IMPORT(SteamInternal_ContextInit);
+		RETURN_API_IMPORT(SteamAPI_GetHSteamUser);
+		RETURN_API_IMPORT(SteamGameServer_RunCallbacks);
+		RETURN_API_IMPORT(SteamAPI_Shutdown);
+		RETURN_API_IMPORT(SteamAPI_Init);
+		RETURN_API_IMPORT(SteamAPI_RunCallbacks);
+		RETURN_API_IMPORT(SteamGameServer_GetHSteamUser);
+		RETURN_API_IMPORT(SteamAPI_GetSteamInstallPath);
+		RETURN_API_IMPORT(SteamAPI_RegisterCallback);
+		RETURN_API_IMPORT(SteamAPI_UnregisterCallback);
+		RETURN_API_IMPORT(SteamAPI_RegisterCallResult);
+		RETURN_API_IMPORT(SteamAPI_RestartAppIfNecessary);
+		RETURN_API_IMPORT(SteamAPI_UnregisterCallResult);
+		RETURN_API_IMPORT(SteamGameServer_Shutdown);
+		RETURN_API_IMPORT(SteamInternal_GameServer_Init);
+		RETURN_API_IMPORT(SteamAPI_GetHSteamPipe);
+		RETURN_API_IMPORT(SteamGameServer_GetHSteamPipe);
+
+#undef RETURN_API_IMPORT
+
+		return nullptr;
+	}
+
 	uint64_t callbacks::call_id_ = 0;
 	std::recursive_mutex callbacks::mutex_;
 	std::map<uint64_t, bool> callbacks::calls_;
