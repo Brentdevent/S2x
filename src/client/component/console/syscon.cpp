@@ -7,6 +7,8 @@
 
 #include "game/game.hpp"
 
+#include "component/scheduler.hpp"
+
 #include <utils/thread.hpp>
 #include <utils/concurrency.hpp>
 
@@ -61,6 +63,72 @@ namespace syscon
 	HICON icon;
 	HANDLE logo;
 
+	namespace
+	{
+		// The syscon window is created before the protected game binary has finished unpacking.
+		// Keep every call into the game behind the post_unpack lifecycle boundary.
+		std::mutex game_call_mutex;
+
+		bool game_ready = false;
+		bool quit_requested = false;
+		bool quit_scheduled = false;
+		bool shutdown_started = false;
+
+		void schedule_quit_if_ready_locked()
+		{
+			if (!game_ready || !quit_requested || quit_scheduled || shutdown_started)
+			{
+				return;
+			}
+
+			quit_scheduled = true;
+			scheduler::once([]
+			{
+				std::lock_guard lock{game_call_mutex};
+
+				if (!shutdown_started)
+				{
+					game::Cbuf_AddCall(game::Com_Quit_f);
+				}
+			}, scheduler::pipeline::main);
+		}
+
+		void request_game_quit()
+		{
+			std::lock_guard lock{game_call_mutex};
+
+			quit_requested = true;
+			schedule_quit_if_ready_locked();
+		}
+
+		void mark_game_ready()
+		{
+			std::lock_guard lock{game_call_mutex};
+
+			game_ready = true;
+			schedule_quit_if_ready_locked();
+		}
+
+		bool add_console_text_if_ready(const char* text)
+		{
+			std::lock_guard lock{game_call_mutex};
+
+			if (!game_ready || shutdown_started)
+			{
+				return false;
+			}
+
+			game::Cbuf_AddText(0, text);
+			return true;
+		}
+
+		void mark_shutdown_started()
+		{
+			std::lock_guard lock{game_call_mutex};
+			shutdown_started = true;
+		}
+	}
+
 	LRESULT ConWndProc(const HWND hwnd, const UINT umsg, const WPARAM wparam, const LPARAM lparam)
 	{
 		switch (umsg)
@@ -72,7 +140,7 @@ namespace syscon
 			}
 			break;
 		case WM_CLOSE:
-			game::Cbuf_AddCall(game::Com_Quit_f);
+			request_game_quit();
 			DestroyWindow(hwnd);
 			return 0;
 		case WM_CTLCOLOREDIT:
@@ -223,13 +291,12 @@ namespace syscon
 				memset(s_wcd.consoleText, 0, sizeof(s_wcd.consoleText));
 
 				const auto length = GetWindowTextA(s_wcd.hwndInputLine, s_wcd.consoleText, sizeof(s_wcd.consoleText));
-				if (length)
+				if (length && add_console_text_if_ready(s_wcd.consoleText))
 				{
 					sprintf_s(dest, sizeof(dest), "]%s\n", s_wcd.consoleText);
 					SetWindowTextA(s_wcd.hwndInputLine, "");
 
 					Sys_Print(dest);
-					game::Cbuf_AddText(0, s_wcd.consoleText);
 				}
 
 				return 0;
@@ -451,8 +518,14 @@ namespace syscon
 			this->initialize();
 		}
 
+		void post_unpack() override
+		{
+			scheduler::once(mark_game_ready, scheduler::pipeline::main);
+		}
+
 		void pre_destroy() override
 		{
+			mark_shutdown_started();
 			this->destroy();
 		}
 
