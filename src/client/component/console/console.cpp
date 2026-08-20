@@ -7,7 +7,6 @@
 
 #include <utils/flags.hpp>
 
-#include "wincon.hpp"
 #include "terminal.hpp"
 #include "syscon.hpp"
 
@@ -23,7 +22,6 @@ namespace console
 	enum console_type
 	{
 		con_type_none,
-		con_type_wincon,
 		con_type_terminal,
 		con_type_syscon,
 		con_type_game = con_type_syscon,
@@ -40,13 +38,6 @@ namespace console
 		if (!game::environment::is_dedicated() && noconsole_flag)
 		{
 			con_type = con_type_none;
-			return;
-		}
-
-		const auto wincon_flag = utils::flags::has_flag("-wincon");
-		if (wincon_flag)
-		{
-			con_type = con_type_wincon;
 			return;
 		}
 
@@ -73,14 +64,6 @@ namespace console
 	bool is_enabled()
 	{
 		return get_console_type() != console_type::con_type_none;
-	}
-
-	namespace wincon
-	{
-		bool is_enabled()
-		{
-			return get_console_type() == console_type::con_type_wincon;
-		}
 	}
 
 	namespace terminal
@@ -122,11 +105,7 @@ namespace console
 
 		if (console::is_enabled())
 		{
-			if (wincon::is_enabled())
-			{
-				printf("%s", message.data());
-			}
-			else if (terminal::is_enabled())
+			if (terminal::is_enabled())
 			{
 				::terminal::dispatch_message(type, message);
 				return;
@@ -163,7 +142,7 @@ namespace console
 	{
 		if (console::is_enabled())
 		{
-			if (wincon::is_enabled() || terminal::is_enabled())
+			if (terminal::is_enabled())
 			{
 				SetConsoleTitleA(title.data());
 			}
@@ -184,10 +163,6 @@ namespace console
 		if (get_console_type() == con_type_none)
 		{
 			return;
-		}
-		else if (get_console_type() == con_type_wincon)
-		{
-			::wincon::init();
 		}
 		else if (get_console_type() == con_type_terminal)
 		{

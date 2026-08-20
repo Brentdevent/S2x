@@ -288,8 +288,6 @@ int main()
 
 			game::environment::set_dedicated(options.dedicated);
 
-			console::init();
-
 			enable_dpi_awareness();
 			remove_crash_file();
 
@@ -302,6 +300,9 @@ int main()
 
 				game::environment::set_mode(*options.gameplay_mode);
 			}
+
+			launcher::apply_saved_launch_options();
+			console::init();
 
 			if (game::environment::is_zombies() && !has_zombies_argument())
 			{

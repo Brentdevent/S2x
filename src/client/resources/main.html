@@ -338,6 +338,73 @@
             letter-spacing: 0.10em;
             text-transform: uppercase;
         }
+
+        .options-box {
+            width: 650px;
+            max-width: 78%;
+            margin-top: 30px;
+            padding: 25px 27px;
+            border: 1px solid rgba(214, 164, 74, 0.24);
+            background: rgba(0, 0, 0, 0.64);
+            box-shadow: 0 18px 55px rgba(0, 0, 0, 0.55);
+        }
+
+        .options-box h2 {
+            margin: 0 0 7px 0;
+            color: #f7d58b;
+            font-size: 24px;
+            letter-spacing: 0.08em;
+        }
+
+        .options-intro {
+            color: rgba(244, 240, 232, 0.58);
+            font-size: 11px;
+            line-height: 1.55;
+            margin: 0 0 17px 0;
+        }
+
+        .option-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 62px;
+            padding: 10px 0;
+            border-top: 1px solid rgba(214, 164, 74, 0.14);
+        }
+
+        .option-copy {
+            max-width: 410px;
+            padding-right: 18px;
+        }
+
+        .option-title {
+            color: #f4f0e8;
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+        }
+
+        .option-desc {
+            margin-top: 5px;
+            color: rgba(244, 240, 232, 0.50);
+            font-size: 10px;
+            line-height: 1.45;
+        }
+
+        .option-select {
+            width: 188px;
+            padding: 9px 10px;
+            color: #f7d58b;
+            border: 1px solid rgba(214, 164, 74, 0.36);
+            background: #17130d;
+            font-size: 11px;
+        }
+
+        .option-toggle {
+            width: 18px;
+            height: 18px;
+            accent-color: #c99631;
+        }
     </style>
 </head>
 
@@ -354,6 +421,7 @@
 
                 <nav>
                     <a class="nav-link _play active" onclick="showMenu('play')">Play</a>
+                    <a class="nav-link _options" onclick="showMenu('options')">Options</a>
                     <a class="nav-link _about" onclick="showMenu('about')">About</a>
                 </nav>
             </header>
@@ -394,6 +462,51 @@
                     <div class="status-strip">
                         <div><span class="status-dot"></span>Ready for deployment</div>
                         <div id="selected-mode">Awaiting mode selection</div>
+                    </div>
+                </section>
+
+                <section class="panel _options">
+                    <div class="options-box">
+                        <h2>Launch Options</h2>
+                        <p class="options-intro">
+                            Choose from supported client-side launch parameters. These settings are saved and reused
+                            the next time you start S2x.
+                        </p>
+
+                        <div class="option-row">
+                            <div class="option-copy">
+                                <div class="option-title">Console type</div>
+                                <div class="option-desc">
+                                    Select the console used for game output and commands.
+                                </div>
+                            </div>
+                            <select id="console-mode" class="option-select" onchange="saveLaunchOptions()">
+                                <option value="syscon">S2x console (default)</option>
+                                <option value="terminal">Enhanced terminal</option>
+                                <option value="disabled">No console</option>
+                            </select>
+                        </div>
+
+                        <label class="option-row">
+                            <div class="option-copy">
+                                <div class="option-title">Launch without Steam</div>
+                                <div class="option-desc">
+                                    Launch S2x without initializing Steam integration.
+                                </div>
+                            </div>
+                            <input id="no-steam" class="option-toggle" type="checkbox" onchange="saveLaunchOptions()">
+                        </label>
+
+                        <label class="option-row">
+                            <div class="option-copy">
+                                <div class="option-title">Disable automatic updates</div>
+                                <div class="option-desc">
+                                    Skip the update check at startup. Manual updates become your responsibility.
+                                </div>
+                            </div>
+                            <input id="no-update" class="option-toggle" type="checkbox" onchange="saveLaunchOptions()">
+                        </label>
+
                     </div>
                 </section>
 
@@ -471,7 +584,38 @@
             }
         }
 
+        function loadLaunchOptions() {
+            try {
+                var serialized = window.external.getLaunchOptions();
+                if (!serialized) {
+                    return;
+                }
+
+                var values = serialized.split('|');
+                if (values.length != 3) {
+                    return;
+                }
+
+                document.getElementById('console-mode').value = values[0];
+                document.getElementById('no-steam').checked = values[1] == '1';
+                document.getElementById('no-update').checked = values[2] == '1';
+            } catch (e) {
+            }
+        }
+
+        function saveLaunchOptions() {
+            try {
+                window.external.setLaunchOptions(
+                    document.getElementById('console-mode').value,
+                    document.getElementById('no-steam').checked,
+                    document.getElementById('no-update').checked
+                );
+            } catch (e) {
+            }
+        }
+
         window.onload = function () {
+            loadLaunchOptions();
             showMenu('play');
         };
     </script>

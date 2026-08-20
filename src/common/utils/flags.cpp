@@ -3,6 +3,7 @@
 #include "nt.hpp"
 
 #include <shellapi.h>
+#include <mutex>
 #include <unordered_set>
 
 #include "finally.hpp"
@@ -11,6 +12,9 @@ namespace utils::flags
 {
 	namespace
 	{
+		std::mutex additional_flags_mutex{};
+		std::unordered_set<std::string> additional_flags{};
+
 		std::vector<std::string> parse_arguments()
 		{
 			int num_args{};
@@ -54,10 +58,32 @@ namespace utils::flags
 		}
 	}
 
+	void add_flag(const std::string& flag)
+	{
+		const auto normalized_flag = string::to_lower(flag);
+		if (normalized_flag.empty() || (normalized_flag[0] != '-' && normalized_flag[0] != '+'))
+		{
+			return;
+		}
+
+		const std::lock_guard lock(additional_flags_mutex);
+		additional_flags.emplace(normalized_flag);
+	}
+
 	bool has_flag(const std::string& flag)
 	{
 		static const auto enabled_flags = parse_flags();
-		return enabled_flags.contains(string::to_lower(flag));
+		const auto normalized_flag = string::to_lower(flag);
+
+		{
+			const std::lock_guard lock(additional_flags_mutex);
+			if (additional_flags.contains(normalized_flag))
+			{
+				return true;
+			}
+		}
+
+		return enabled_flags.contains(normalized_flag);
 	}
 
 	std::optional<std::string> get_value(const std::string& flag)

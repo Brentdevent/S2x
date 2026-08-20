@@ -5,6 +5,7 @@
 
 namespace utils::flags
 {
+	void add_flag(const std::string& flag);
 	bool has_flag(const std::string& flag);
 	std::optional<std::string> get_value(const std::string& flag);
 	std::optional<std::string> get_plus_value(const std::string& command);
