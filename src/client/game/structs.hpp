@@ -985,15 +985,18 @@ namespace game
 			int qport;
 			char __pad1[0x41DF0 - 0x48];
 			gentity_s* gentity;
-			char __pad2[0x42158 - 0x41DF8];
+			char __pad2[0x41E44 - 0x41DF8];
+			int pureAuthentic;
+			char __pad3[0x42158 - 0x41E48];
 			int testClient;
-			char __pad3[0x11E870 - 0x4215C];
+			char __pad4[0x11E870 - 0x4215C];
 		};
 		static_assert(sizeof(client_t) == 0x11E870);
 		static_assert(offsetof(client_t, state) == 0x00000);
 		static_assert(offsetof(client_t, remoteAddress) == 0x00030);
 		static_assert(offsetof(client_t, qport) == 0x00044);
 		static_assert(offsetof(client_t, gentity) == 0x41DF0);
+		static_assert(offsetof(client_t, pureAuthentic) == 0x41E44);
 		static_assert(offsetof(client_t, testClient) == 0x42158);
 
 		struct XZone
