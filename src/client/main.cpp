@@ -185,35 +185,25 @@ namespace
 		startup_options options{};
 		options.dedicated = has_dedicated_argument();
 
-		if (options.dedicated)
-		{
-			if (utils::flags::has_flag("-singleplayer"))
-			{
-				options.gameplay_mode = game::environment::mode::singleplayer;
-			}
-			else if (has_zombies_argument() || utils::flags::has_flag("-zombies"))
-			{
-				options.gameplay_mode = game::environment::mode::zombies;
-			}
-			else
-			{
-				options.gameplay_mode = game::environment::mode::multiplayer;
-			}
+		const auto multiplayer = utils::flags::has_flag("-multiplayer");
+		const auto singleplayer = utils::flags::has_flag("-singleplayer");
+		const auto zombies = utils::flags::has_flag("-zombies") || has_zombies_argument();
 
-			return options;
-		}
-
-		if (utils::flags::has_flag("-multiplayer"))
+		if (!options.dedicated && multiplayer)
 		{
 			options.gameplay_mode = game::environment::mode::multiplayer;
 		}
-		else if (utils::flags::has_flag("-singleplayer"))
+		else if (singleplayer)
 		{
 			options.gameplay_mode = game::environment::mode::singleplayer;
 		}
-		else if (utils::flags::has_flag("-zombies") || has_zombies_argument())
+		else if (zombies)
 		{
 			options.gameplay_mode = game::environment::mode::zombies;
+		}
+		else if (options.dedicated)
+		{
+			options.gameplay_mode = game::environment::mode::multiplayer;
 		}
 
 		return options;
@@ -245,7 +235,7 @@ int main()
 			const auto game_directory = utils::nt::library{}.get_folder();
 			const auto is_microsoft_store_install = utils::io::file_exists(
 				(game_directory / "MicrosoftGame.config").wstring());
-				
+
 			game::environment::set_platform(is_microsoft_store_install
 				? game::environment::platform::microsoft_store
 				: game::environment::platform::steam);
