@@ -44,8 +44,9 @@ namespace steam_proxy
 
 		bool is_disabled()
 		{
-			static const auto disabled = utils::flags::has_flag("-nosteam");
-			return disabled;
+			return utils::flags::has_flag("-nosteam") ||
+			       game::environment::is_microsoft_store() ||
+			       game::environment::is_dedicated();
 		}
 
 		void* load_client_engine()
@@ -174,7 +175,7 @@ namespace steam_proxy
 	public:
 		void post_load() override
 		{
-			if (is_disabled() || game::environment::is_dedicated()) return;
+			if (is_disabled()) return;
 
 			load_client();
 			perform_cleanup_if_needed();
@@ -182,7 +183,7 @@ namespace steam_proxy
 
 		void post_unpack() override
 		{
-			if (is_disabled() || game::environment::is_dedicated()) return;
+			if (is_disabled()) return;
 
 			try
 			{
@@ -252,7 +253,7 @@ namespace steam_proxy
 
 	void initialize()
 	{
-		if (game::environment::is_dedicated()) return;
+		if (is_disabled()) return;
 
 		if (client_engine || !steam_client_module) return;
 

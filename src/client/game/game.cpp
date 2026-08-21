@@ -64,8 +64,24 @@ namespace game
 				2,
 			};
 
+			platform current_platform = platform::steam;
 			mode current_mode = mode::singleplayer;
 			bool dedicated = false;
+		}
+
+		platform get_platform()
+		{
+			return current_platform;
+		}
+
+		void set_platform(const platform new_platform)
+		{
+			current_platform = new_platform;
+		}
+
+		bool is_microsoft_store()
+		{
+			return get_platform() == platform::microsoft_store;
 		}
 
 		mode get_mode()

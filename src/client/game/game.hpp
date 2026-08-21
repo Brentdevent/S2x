@@ -18,6 +18,12 @@ namespace game
 	
 	namespace environment
 	{
+		enum class platform
+		{
+			steam,
+			microsoft_store,
+		};
+
 		enum class mode
 		{
 			singleplayer,
@@ -36,6 +42,10 @@ namespace game
 
 		mode get_mode();
 		void set_mode(mode mode);
+
+		platform get_platform();
+		void set_platform(platform platform);
+		bool is_microsoft_store();
 
 		bool is_dedicated();
 		void set_dedicated(bool dedicated);

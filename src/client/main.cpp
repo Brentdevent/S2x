@@ -13,6 +13,7 @@
 #include "game/game.hpp"
 #include "launcher/launcher.hpp"
 #include "component/console/console.hpp"
+#include "component/updater.hpp"
 
 namespace
 {
@@ -241,6 +242,19 @@ int main()
 
 		try
 		{
+			const auto game_directory = utils::nt::library{}.get_folder();
+			const auto is_microsoft_store_install = utils::io::file_exists(
+				(game_directory / "MicrosoftGame.config").wstring());
+				
+			game::environment::set_platform(is_microsoft_store_install
+				? game::environment::platform::microsoft_store
+				: game::environment::platform::steam);
+
+			if (game::environment::is_microsoft_store())
+			{
+				std::filesystem::current_path(game_directory);
+			}
+
 			auto options = detect_startup_options();
 			if (options.dedicated
 				&& options.gameplay_mode == game::environment::mode::singleplayer)
@@ -277,13 +291,54 @@ int main()
 				return 0;
 			}
 
-			const auto mp_binary = "s2_mp64_ship.exe"s;
-			const auto sp_binary = "s2_sp64_ship.exe"s;
+			const auto mp_binary = game::environment::is_microsoft_store()
+				? "s2x_mp64_ship.exe"s
+				: "s2_mp64_ship.exe"s;
+			const auto sp_binary = game::environment::is_microsoft_store()
+				? "s2x_sp64_ship.exe"s
+				: "s2_sp64_ship.exe"s;
 
 			const auto& binary_to_load = game::environment::uses_multiplayer_binary() ? mp_binary : sp_binary;
+			const auto binary_path = game_directory / binary_to_load;
+			const auto updates_disabled = utils::flags::has_flag("-noupdate");
+			std::optional<std::string> store_runtime_update_warning{};
 
-			if (!utils::io::file_exists(binary_to_load))
+			if (game::environment::is_microsoft_store() && !updates_disabled)
 			{
+				try
+				{
+					updater::update_store_runtime(game_directory, binary_to_load);
+				}
+				catch (const std::exception& e)
+				{
+					if (!utils::io::file_exists(binary_path.wstring()))
+					{
+						throw std::runtime_error(utils::string::va(
+							"S2x could not obtain the required Microsoft Store/Xbox runtime '%s', and no "
+							"usable local runtime is installed.\n\n%s\n\n"
+							"Do not replace or rename the original Microsoft Store executables.",
+							binary_to_load.data(), e.what()
+						));
+					}
+
+					store_runtime_update_warning = e.what();
+				}
+			}
+
+			if (!utils::io::file_exists(binary_path.wstring()))
+			{
+				if (game::environment::is_microsoft_store())
+				{
+					const auto reason = updates_disabled
+						? "Automatic updates are disabled. Relaunch S2x without -noupdate so it can download the required runtime."
+						: "S2x could not download the required runtime. Check the update source and installation permissions.";
+					throw std::runtime_error(utils::string::va(
+						"S2x detected a Microsoft Store/Xbox installation, but '%s' is missing.\n\n%s\n\n"
+						"Do not replace or rename the original Microsoft Store executables.",
+						binary_to_load.data(), reason
+					));
+				}
+
 				throw std::runtime_error(utils::string::va(
 					"Could not find '%s'.\n\n"
 					"Make sure S2x.exe is placed in your Call of Duty: WWII installation folder.",
@@ -296,9 +351,39 @@ int main()
 				return 1;
 			}
 
-			entry_point = load_process(binary_to_load);
+			try
+			{
+				entry_point = load_process(binary_path.generic_string());
+			}
+			catch (const std::exception& e)
+			{
+				if (!game::environment::is_microsoft_store())
+				{
+					throw;
+				}
+
+				const auto action = updates_disabled
+					? "Relaunch S2x without -noupdate so it can download a valid runtime."
+					: "Check your connection and relaunch S2x so it can update the runtime.";
+				throw std::runtime_error(utils::string::va(
+					"The Microsoft Store/Xbox runtime '%s' could not be loaded.\n\n%s\n\n%s",
+					binary_to_load.data(), action, e.what()
+				));
+			}
+
 			if (!entry_point)
 			{
+				if (game::environment::is_microsoft_store())
+				{
+					const auto action = updates_disabled
+						? "Relaunch S2x without -noupdate so it can download a valid runtime."
+						: "Check your connection and relaunch S2x so it can update the runtime.";
+					throw std::runtime_error(utils::string::va(
+						"The Microsoft Store/Xbox runtime '%s' could not be loaded.\n\n%s",
+						binary_to_load.data(), action
+					));
+				}
+
 				throw std::runtime_error(utils::string::va(
 					"Failed to load '%s'.\n\n"
 					"The game binary could not be loaded into memory. "
@@ -309,10 +394,28 @@ int main()
 
 			if (!game::is_valid_binary())
 			{
+				if (game::environment::is_microsoft_store())
+				{
+					const auto action = updates_disabled
+						? "Relaunch S2x without -noupdate so it can download a supported runtime."
+						: "Check your connection and relaunch S2x so it can update the runtime.";
+					throw std::runtime_error(utils::string::va(
+						"The Microsoft Store/Xbox runtime '%s' is not compatible with this version of S2x.\n\n%s",
+						binary_to_load.data(), action
+					));
+				}
+
 				throw std::runtime_error(
 					"The game binary is not compatible with this version of S2x.\n\n"
 					"Please update Call of Duty: WWII through Steam and verify the integrity of the game files."
 				);
+			}
+
+			if (store_runtime_update_warning)
+			{
+				console::warn("[Updater] Store runtime update check failed: %s\n"
+					"[Updater] Continuing with the compatible local runtime '%s'.\n",
+					store_runtime_update_warning->data(), binary_to_load.data());
 			}
 
 			patch_imports();

@@ -2,6 +2,7 @@
 
 #include "file_updater.hpp"
 #include "updater.hpp"
+#include "update_source.hpp"
 
 #include <utils/concurrency.hpp>
 #include <utils/cryptography.hpp>
@@ -12,8 +13,6 @@
 #include <utils/nt.hpp>
 #include <utils/string.hpp>
 
-#define UPDATE_FILE_MAIN "https://updater.s2x.dev/s2x.json"
-#define UPDATE_FOLDER_MAIN "https://updater.s2x.dev/s2x/"
 #define UPDATE_HOST_BINARY "s2x.exe"
 
 namespace updater
@@ -150,18 +149,13 @@ namespace updater
 
 		std::vector<file_info> get_file_infos()
 		{
-			const auto json = utils::http::get_data(UPDATE_FILE_MAIN + get_cache_buster());
+			const auto json = utils::http::get_data(std::string{update_source::manifest} + get_cache_buster());
 			if (!json)
 			{
 				throw std::runtime_error("Unable to download the update manifest.");
 			}
 
 			return parse_file_infos(*json);
-		}
-
-		std::string get_hash(const std::string& data)
-		{
-			return utils::string::to_lower(utils::cryptography::sha1::compute(data, true));
 		}
 
 		const file_info* find_host_file_info(const std::vector<file_info>& outdated_files)
@@ -229,17 +223,32 @@ namespace updater
 
 	file_updater::file_updater(progress_listener& listener, std::filesystem::path base,
 	                           std::filesystem::path process_file)
+		: file_updater(listener, std::move(base), std::move(process_file), update_source::files,
+		               file_hash::sha1, {})
+	{
+	}
+
+	file_updater::file_updater(progress_listener& listener, std::filesystem::path base,
+	                           std::filesystem::path process_file, std::string update_folder,
+	                           const file_hash hash, std::unordered_set<std::string> allowed_root_files)
 		: listener_(listener)
 		, base_(std::move(base))
 		, process_file_(std::move(process_file))
 		, dead_process_file_(process_file_)
+		, update_folder_(std::move(update_folder))
+		, hash_(hash)
+		, allowed_root_files_(std::move(allowed_root_files))
 	{
 		this->dead_process_file_ += ".old";
 	}
 
 	void file_updater::run() const
 	{
-		const auto files = get_file_infos();
+		this->run(get_file_infos());
+	}
+
+	void file_updater::run(const std::vector<file_info>& files) const
+	{
 		for (const auto& file : files)
 		{
 			this->validate_file_path(file);
@@ -257,13 +266,19 @@ namespace updater
 
 	void file_updater::update_file(const file_info& file) const
 	{
-		const auto url = std::string{UPDATE_FOLDER_MAIN} + encode_url_path(file.name) + "?" + file.hash;
+		auto query = file.hash;
+		if (!file.version.empty())
+		{
+			query = "version=" + encode_url_path(file.version) + "&hash=" + file.hash;
+		}
+
+		const auto url = this->update_folder_ + encode_url_path(file.name) + "?" + query;
 		const auto data = utils::http::get_data(url, {}, [this, &file](const std::size_t progress)
 		{
 			this->listener_.file_progress(file, progress);
 		});
 
-		if (!data || data->size() != file.size || get_hash(*data) != file.hash)
+		if (!data || data->size() != file.size || this->get_hash(*data) != file.hash)
 		{
 			throw std::runtime_error("Failed to download or verify: " + file.name);
 		}
@@ -286,6 +301,16 @@ namespace updater
 		{
 			throw std::runtime_error("Failed to write or verify: " + file.name);
 		}
+	}
+
+	std::string file_updater::get_hash(const std::string& data) const
+	{
+		if (this->hash_ == file_hash::sha256)
+		{
+			return utils::string::to_lower(utils::cryptography::sha256::compute(data, true));
+		}
+
+		return utils::string::to_lower(utils::cryptography::sha1::compute(data, true));
 	}
 
 	std::vector<file_info> file_updater::get_outdated_files(const std::vector<file_info>& files) const
@@ -438,7 +463,8 @@ namespace updater
 		}
 
 		std::string data{};
-		return utils::io::read_file(path.wstring(), &data) && data.size() == file.size && get_hash(data) == file.hash;
+		return utils::io::read_file(path.wstring(), &data) && data.size() == file.size &&
+			this->get_hash(data) == file.hash;
 	}
 
 	std::filesystem::path file_updater::get_drive_filename(const file_info& file) const
@@ -453,7 +479,14 @@ namespace updater
 
 	void file_updater::validate_file_path(const file_info& file) const
 	{
-		if (file.name == UPDATE_HOST_BINARY)
+		if (!this->allowed_root_files_.empty())
+		{
+			if (!this->allowed_root_files_.contains(utils::string::to_lower(file.name)))
+			{
+				throw std::runtime_error("The update manifest contains an unexpected file: " + file.name);
+			}
+		}
+		else if (file.name == UPDATE_HOST_BINARY)
 		{
 			return;
 		}

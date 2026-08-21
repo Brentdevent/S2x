@@ -4,12 +4,22 @@
 
 namespace updater
 {
+	enum class file_hash
+	{
+		sha1,
+		sha256,
+	};
+
 	class file_updater
 	{
 	public:
 		file_updater(progress_listener& listener, std::filesystem::path base, std::filesystem::path process_file);
+		file_updater(progress_listener& listener, std::filesystem::path base, std::filesystem::path process_file,
+		             std::string update_folder, file_hash hash,
+		             std::unordered_set<std::string> allowed_root_files);
 
 		void run() const;
+		void run(const std::vector<file_info>& files) const;
 
 		[[nodiscard]] std::vector<file_info> get_outdated_files(const std::vector<file_info>& files) const;
 
@@ -22,8 +32,12 @@ namespace updater
 		std::filesystem::path base_;
 		std::filesystem::path process_file_;
 		std::filesystem::path dead_process_file_;
+		std::string update_folder_;
+		file_hash hash_;
+		std::unordered_set<std::string> allowed_root_files_;
 
 		void update_file(const file_info& file) const;
+		[[nodiscard]] std::string get_hash(const std::string& data) const;
 
 		[[nodiscard]] bool is_outdated_file(const file_info& file) const;
 		[[nodiscard]] bool file_matches(const file_info& file, const std::filesystem::path& path) const;

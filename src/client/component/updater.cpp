@@ -124,6 +124,21 @@ namespace updater
 		}
 	}
 
+	void update_store_runtime(const std::filesystem::path& base, const std::string& required_file)
+	{
+		const utils::named_mutex update_mutex{get_update_mutex_name()};
+		const std::unique_lock update_lock{update_mutex};
+
+		try
+		{
+			run_store_runtime_update(base, required_file);
+		}
+		catch (const std::exception& e)
+		{
+			throw std::runtime_error("Unable to update '" + required_file + "': " + e.what());
+		}
+	}
+
 	class component final : public generic_component
 	{
 	public:
