@@ -232,9 +232,9 @@ int main()
 
 		try
 		{
-			const auto game_directory = utils::nt::library{}.get_folder();
+			const auto application_directory = utils::nt::library{}.get_folder();
 			const auto is_microsoft_store_install = utils::io::file_exists(
-				(game_directory / "MicrosoftGame.config").wstring());
+				(application_directory / "MicrosoftGame.config").wstring());
 
 			game::environment::set_platform(is_microsoft_store_install
 				? game::environment::platform::microsoft_store
@@ -242,7 +242,7 @@ int main()
 
 			if (game::environment::is_microsoft_store())
 			{
-				std::filesystem::current_path(game_directory);
+				std::filesystem::current_path(application_directory);
 			}
 
 			auto options = detect_startup_options();
@@ -289,6 +289,13 @@ int main()
 				: "s2_sp64_ship.exe"s;
 
 			const auto& binary_to_load = game::environment::uses_multiplayer_binary() ? mp_binary : sp_binary;
+			auto game_directory = application_directory;
+			if (!game::environment::is_microsoft_store()
+				&& !utils::io::file_exists((game_directory / binary_to_load).wstring()))
+			{
+				game_directory = std::filesystem::current_path();
+			}
+
 			const auto binary_path = game_directory / binary_to_load;
 			const auto updates_disabled = utils::flags::has_flag("-noupdate");
 			std::optional<std::string> store_runtime_update_warning{};
