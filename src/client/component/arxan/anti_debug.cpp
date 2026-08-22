@@ -38,6 +38,7 @@ namespace arxan::anti_debug
 		utils::hook::detour virtual_alloc_hook;
 		utils::hook::detour check_remote_debugger_present_hook;
 		utils::hook::detour enum_windows_hook;
+		utils::hook::detour dbg_ui_remote_breakin_hook;
 
 		constexpr size_t arxan_worker_process_query_return_mp = 0x1CDF7F;
 		constexpr size_t arxan_worker_process_query_return_sp = 0x6238F;
@@ -114,6 +115,14 @@ namespace arxan::anti_debug
 				*reinterpret_cast<PDWORD>(LPSTR(heap) + 0x70) = 2;   // Force to HEAP_GROWABLE only
 				*reinterpret_cast<PDWORD>(LPSTR(heap) + 0x74) = 0;   // ForceFlags = 0
 			}
+		}
+
+		void NTAPI dbg_ui_remote_breakin_stub(void* context)
+		{
+			// BeingDebugged is deliberately cleared, so the clean NTDLL routine skips
+			// its breakpoint. Supply it on the debugger-created break-in thread instead.
+			__debugbreak();
+			dbg_ui_remote_breakin_hook.invoke<void>(context);
 		}
 
 		void restore_debug_functions()
@@ -319,6 +328,11 @@ namespace arxan::anti_debug
 				if (query_count >= bootstrap_query_count)
 				{
 					restore_debug_functions();
+
+					const utils::nt::library ntdll("ntdll.dll");
+					const auto dbg_ui_remote_breakin = ntdll.get_proc<void*>("DbgUiRemoteBreakin");
+					dbg_ui_remote_breakin_hook.create(dbg_ui_remote_breakin, dbg_ui_remote_breakin_stub);
+
 					WaitForSingleObject(arxan_worker_park_event, INFINITE);
 				}
 			}
