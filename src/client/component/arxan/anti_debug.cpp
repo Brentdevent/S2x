@@ -39,6 +39,14 @@ namespace arxan::anti_debug
 		utils::hook::detour check_remote_debugger_present_hook;
 		utils::hook::detour enum_windows_hook;
 
+		constexpr size_t arxan_worker_process_query_return_mp = 0x1CDF7F;
+		constexpr size_t arxan_worker_process_query_return_sp = 0x6238F;
+		constexpr std::uint32_t arxan_worker_bootstrap_query_count_mp = 4;
+		constexpr std::uint32_t arxan_worker_bootstrap_query_count_sp = 0;
+
+		std::atomic_uint32_t arxan_worker_process_query_count{};
+		HANDLE arxan_worker_park_event{};
+
 		void* original_first_tls_callback = nullptr;
 
 		void** get_tls_callbacks()
@@ -292,6 +300,28 @@ namespace arxan::anti_debug
 			const ULONG system_information_length,
 			const PULONG return_length)
 		{
+			const auto process_query_return = game::environment::uses_multiplayer_binary()
+				? arxan_worker_process_query_return_mp
+				: arxan_worker_process_query_return_sp;
+			const auto bootstrap_query_count = game::environment::uses_multiplayer_binary()
+				? arxan_worker_bootstrap_query_count_mp
+				: arxan_worker_bootstrap_query_count_sp;
+
+			if (arxan_worker_park_event
+				&& system_information_class == SystemProcessInformation
+				&& system_information == nullptr
+				&& system_information_length == 0
+				&& game::derelocate(_ReturnAddress()) == process_query_return)
+			{
+				// This size-query call is the loop boundary reached after the previous
+				// process-information allocation has been freed. Let bootstrap cycles complete.
+				const auto query_count = arxan_worker_process_query_count.fetch_add(1, std::memory_order_relaxed);
+				if (query_count >= bootstrap_query_count)
+				{
+					WaitForSingleObject(arxan_worker_park_event, INFINITE);
+				}
+			}
+
 			const auto status = nt_query_system_information_hook.invoke<NTSTATUS>(
 				system_information_class, system_information, system_information_length, return_length);
 
@@ -563,6 +593,10 @@ namespace arxan::anti_debug
 	public:
 		void post_load() override
 		{
+			// Process-lifetime event: it intentionally remains unsignaled so the initialized
+			// Arxan worker stays alive while consuming no CPU.
+			arxan_worker_park_event = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+
 			auto* dll_characteristics = &utils::nt::library().get_optional_header()->DllCharacteristics;
 			utils::hook::set<WORD>(dll_characteristics, *dll_characteristics | IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE);
 
