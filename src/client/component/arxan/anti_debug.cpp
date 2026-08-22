@@ -318,6 +318,7 @@ namespace arxan::anti_debug
 				const auto query_count = arxan_worker_process_query_count.fetch_add(1, std::memory_order_relaxed);
 				if (query_count >= bootstrap_query_count)
 				{
+					restore_debug_functions();
 					WaitForSingleObject(arxan_worker_park_event, INFINITE);
 				}
 			}
