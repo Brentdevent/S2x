@@ -54,12 +54,14 @@ namespace steam
 	{
 		std::lock_guard<std::recursive_mutex> _(mutex_);
 		handler->set_i_callback(callback);
+		handler->set_registered(true);
 		callback_list_.push_back(handler);
 	}
 
 	void callbacks::unregister_callback(base* handler)
 	{
 		std::lock_guard<std::recursive_mutex> _(mutex_);
+		handler->set_registered(false);
 		for (auto i = callback_list_.begin(); i != callback_list_.end();)
 		{
 			if (*i == handler)

@@ -70,6 +70,18 @@ namespace steam
 
 			int get_i_callback() const { return callback_; }
 			void set_i_callback(const int i_callback) { callback_ = i_callback; }
+			void set_registered(const bool registered)
+			{
+				constexpr unsigned char registered_flag = 1;
+				if (registered)
+				{
+					flags_ |= registered_flag;
+				}
+				else
+				{
+					flags_ &= ~registered_flag;
+				}
+			}
 
 		protected:
 			~base() = default;
