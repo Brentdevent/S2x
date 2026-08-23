@@ -31,6 +31,27 @@ namespace dedicated
 		constexpr std::uint16_t invalid_image_stream_file_index = 191;
 		constexpr std::uint16_t xpak_initialized_unavailable = 0x2000;
 		constexpr auto default_net_port = 27016;
+		constexpr std::array zone_load_event_offsets{0x2B8u, 0x2E0u, 0x308u};
+
+		void* reset_dedicated_zone_load_state(void* const state, const int value, const size_t size)
+		{
+			// DB_TryLoadXFileInternal reuses this 0x5B0-byte record after the
+			// preceding batch has completed. Its three OVERLAPPED readers retain
+			// manual-reset events at these offsets, and the native memset otherwise
+			// loses their handles on every full zone transition.
+			for (const auto offset : zone_load_event_offsets)
+			{
+				auto& event = *reinterpret_cast<HANDLE*>(
+					static_cast<std::uint8_t*>(state) + offset);
+				if (event)
+				{
+					CloseHandle(event);
+					event = nullptr;
+				}
+			}
+
+			return std::memset(state, value, size);
+		}
 
 		void register_dedicated_net_port()
 		{
@@ -899,6 +920,10 @@ namespace dedicated
 			// Convert them to native absent descriptors after S2 transforms the
 			// header, while retaining the counts used by sequential consumers.
 			utils::hook::call(0x4A5D7C_g, disable_dedicated_external_streams);
+
+			// Release the completed fastfile readers' OVERLAPPED events before
+			// DB_TryLoadXFileInternal clears and reuses their zone-load record.
+			utils::hook::call(0xAD004_g, reset_dedicated_zone_load_state);
 
 			// XSurfaceShared and GfxWorld post-link callbacks resolve renderer-only
 			// geometry through XPAKs. With no TOCs, their fatal lookup re-enters DB
