@@ -9,6 +9,9 @@
 #include "network.hpp"
 
 #include "game/dvars.hpp"
+#include "game/ui_scripting/execution.hpp"
+
+#include "ui_scripting.hpp"
 
 #include "console/console.hpp"
 
@@ -69,7 +72,28 @@ namespace party
 
 		connect_state_t connect_state{};
 
-		bool listen_map_transition_in_progress{};
+		bool client_map_session_active{};
+
+		struct queued_map_start_t
+		{
+			std::string map_name{};
+			std::string gametype{};
+			int map_index{};
+			bool set_gametype{};
+		};
+
+		std::optional<queued_map_start_t> queued_map_start{};
+
+		enum class listen_map_transition_phase
+		{
+			none,
+			waiting_for_disconnect,
+			waiting_for_frontend,
+			starting,
+		};
+
+		listen_map_transition_phase listen_map_phase{ listen_map_transition_phase::none };
+		constexpr auto listen_map_transition_timeout = 90s;
 
 		bool parse_info_int(const std::string& value, const int minimum,
 			const int maximum, int& result)
@@ -258,6 +282,117 @@ namespace party
 			}
 		}
 
+		bool is_active_party_host(game::PartyData* party_data)
+		{
+			return party_data && game::Party_IsRunning(party_data)
+				&& game::Party_AreWeHost(party_data);
+		}
+
+		bool is_party_host_ready(game::PartyData* party_data)
+		{
+			return is_active_party_host(party_data)
+				&& !game::Party_IsWaitingForMembers(party_data);
+		}
+
+		bool is_unranked_private_match(game::PartyData* party_data)
+		{
+			return party_data
+				&& game::PartySettings_GetPrivateMatch(&party_data->settings) == 1
+				&& game::PartySettings_GetRankedMatch(&party_data->settings) == 0;
+		}
+
+		bool is_s2x_map_match(game::PartyData* party_data)
+		{
+			return client_map_session_active && party_data
+				&& game::Party_GetPublicMatch(party_data) == 0
+				&& game::PartySettings_GetRankedMatch(&party_data->settings) == 0;
+		}
+
+		game::PartyData* get_local_game_lobby()
+		{
+			auto* local_data = game::Lobby_GetLocalClientData(0);
+			return game::Lobby_GetPartyDataFromLocalClient(local_data);
+		}
+
+		void enable_online_stats_for_map_match(game::PartyData* game_lobby)
+		{
+			if (!game::environment::is_multiplayer())
+			{
+				return;
+			}
+
+			// MP's stock connect and storage paths only enable online stats when
+			// onlinegame is set and privateMatch is clear. Keep publicMatch clear so
+			// this S2x-hosted session remains non-advertised and invite-only.
+			game::PartySettings_SetPrivateMatch(&game_lobby->settings, false);
+			game::PartySettings_SetPublicMatch(&game_lobby->settings, false);
+			game::PartySettings_SetRankedMatch(&game_lobby->settings, false);
+		}
+
+		int get_private_match_player_limit()
+		{
+			const auto& mode = game::environment::get_online_mode_info();
+			const auto* party_maxplayers = game::Dvar_FindMalleableVar("5321");
+			const auto configured_max = party_maxplayers
+				? party_maxplayers->current.integer
+				: mode.max_players;
+			auto max_players = std::clamp(configured_max, 1, mode.max_players);
+
+			const auto hosting_limit = game::Lobby_HowManyPlayersCanWeHost();
+			if (hosting_limit > 0)
+			{
+				max_players = std::min(max_players, hosting_limit);
+			}
+
+			return max_players;
+		}
+
+		bool validate_client_map_state(const bool server_running)
+		{
+			if (game::is_local_play())
+			{
+				console::error(
+					"Cannot use map in Local Play. Enter the online Multiplayer or Zombies frontend first.\n");
+				return false;
+			}
+
+			const auto* onlinegame = game::Dvar_FindMalleableVar("onlinegame");
+			if (!onlinegame || !onlinegame->current.enabled)
+			{
+				console::error(
+					"Cannot use map while offline. Enter the online Multiplayer or Zombies frontend first.\n");
+				return false;
+			}
+
+			if (!server_running && !game::virtual_lobby_loaded())
+			{
+				console::error(
+					"Cannot use map from this screen. Enter the online Multiplayer or Zombies frontend first.\n");
+				return false;
+			}
+
+			auto* private_party = game::Party_GetPrivatePartyData();
+			if (!server_running && !is_party_host_ready(private_party))
+			{
+				console::error(
+					"Cannot use map until the online private party is ready and you are its host.\n");
+				return false;
+			}
+
+			auto* game_lobby = game::Lobby_GetPartyData(0);
+			if (game_lobby && game::Party_IsRunning(game_lobby)
+				&& (!game::Party_AreWeHost(game_lobby)
+					|| (!is_unranked_private_match(game_lobby)
+						&& !is_s2x_map_match(game_lobby))))
+			{
+				console::error(
+					"Cannot use map from a public, ranked, or joined lobby. Leave it and start an online private match.\n");
+				return false;
+			}
+
+			return true;
+		}
+
 		std::string get_current_mapname()
 		{
 			const auto* dvar = game::Dvar_FindMalleableVar("mapname");
@@ -286,6 +421,41 @@ namespace party
 			return std::string{ mode.default_gametype };
 		}
 
+		std::string get_map_session_gametype()
+		{
+			if (!client_map_session_active || !game::environment::is_multiplayer())
+			{
+				return {};
+			}
+
+			auto* game_lobby = game::Lobby_GetPartyData(0);
+			const auto* gametype = game_lobby
+				? game::Party_GetGameType(game_lobby)
+				: nullptr;
+			return gametype ? gametype : "";
+		}
+
+		void install_map_lobby_functions()
+		{
+			const auto lua = ui_scripting::get_globals();
+			auto lobby_value = lua.get("Lobby");
+
+			ui_scripting::table lobby{};
+			if (lobby_value.is<ui_scripting::table>())
+			{
+				lobby = lobby_value.as<ui_scripting::table>();
+			}
+			else
+			{
+				lua["Lobby"] = lobby;
+			}
+
+			lobby["GetS2xMapGameType"] = []
+			{
+				return get_map_session_gametype();
+			};
+		}
+
 		std::string get_current_hostname()
 		{
 			const auto* dvar = game::Dvar_FindMalleableVar("sv_hostname");
@@ -297,9 +467,11 @@ namespace party
 			return "S2x Dedicated Server";
 		}
 
-		std::string get_gametype_or_default(const command::params& params)
+		std::string get_gametype_or_default(const command::params& params,
+			const std::string& map_name, bool& set_gametype)
 		{
-			if (params.size() >= 3)
+			set_gametype = params.size() >= 3;
+			if (set_gametype)
 			{
 				return params[2];
 			}
@@ -307,13 +479,36 @@ namespace party
 			const auto& mode = game::environment::get_online_mode_info();
 			if (game::environment::is_zombies())
 			{
+				set_gametype = true;
 				return std::string{ mode.default_gametype };
 			}
 
+			if (map_name.starts_with("mp_raid_"))
+			{
+				set_gametype = true;
+				return "raid";
+			}
+
+			if (map_name.ends_with("_dogfight"))
+			{
+				set_gametype = true;
+				return "dogfight";
+			}
+
 			const auto* g_gametype = game::Dvar_FindMalleableVar("g_gametype");
-			return g_gametype
+			auto gametype = g_gametype && g_gametype->current.string
 				? std::string{ g_gametype->current.string }
 				: std::string{ mode.default_gametype };
+
+			const auto lower_gametype = utils::string::to_lower(gametype);
+			if (lower_gametype == "hub" || lower_gametype == "zombies"
+				|| lower_gametype == "raid" || lower_gametype.starts_with("dogfight"))
+			{
+				set_gametype = true;
+				gametype = "war";
+			}
+
+			return gametype;
 		}
 
 		bool is_valid_gametype(const std::string& gametype)
@@ -327,15 +522,6 @@ namespace party
 			// The stock helper returns its input pointer when the gametype is absent
 			// from maps/mp/gametypes/_gametypes.txt.
 			return utils::hook::invoke<const char*>(0x6500E0_g, gametype.data()) != gametype.data();
-		}
-
-		void start_server_ui()
-		{
-			*game::sv_migrate = 0;
-
-			const auto* args = "StartServer";
-			dedicated_party_client::reset();
-			game::UI_RunMenuScript(0, &args);
 		}
 
 		bool com_sv_running()
@@ -378,14 +564,12 @@ namespace party
 
 		void perform_game_init()
 		{
-			if (game::environment::is_multiplayer())
-			{
-				game::Cbuf_AddText(0, "exec default_xboxlive.cfg\n");
+			game::Cbuf_AddText(0, "exec default_xboxlive.cfg\n");
 
-				if (!game::environment::is_dedicated())
-				{
-					set_max_agents(6);
-				}
+			if (game::environment::is_multiplayer()
+				&& !game::environment::is_dedicated())
+			{
+				set_max_agents(6);
 			}
 		}
 
@@ -398,47 +582,180 @@ namespace party
 			game::mp::SV_MapRestart(*game::sv_migrate, *game::sv_loadScripts);
 		}
 
-		void start_validated_map(const std::string& map_name, const std::string& gametype,
-			const int map_index, const bool set_gametype)
+		void start_server_ui()
 		{
-			perform_game_init();
-			set_party_map_settings(map_name, gametype);
-			set_map_dvars(map_name, gametype, map_index, set_gametype);
-			start_server_ui();
+			if (!queued_map_start)
+			{
+				return;
+			}
+
+			auto map_start = std::move(*queued_map_start);
+			queued_map_start.reset();
+
+			// default_xboxlive.cfg and private-party startup can restore the stock
+			// frontend gametype (war). Reapply the requested PartySettings immediately
+			// before UI_StartServer reads them and queues UI_Map.
+			set_party_map_settings(
+				map_start.map_name, map_start.gametype);
+			set_map_dvars(
+				map_start.map_name, map_start.gametype,
+				map_start.map_index, map_start.set_gametype);
+
+			*game::sv_migrate = 0;
+			dedicated_party_client::reset();
+			game::UI_StartServer(0);
 		}
 
-		void start_listen_map_transition(const std::string& map_name, const std::string& gametype,
+		void queue_start_server_ui(const std::string& map_name,
+			const std::string& gametype, const int map_index, const bool set_gametype)
+		{
+			queued_map_start = queued_map_start_t{
+				map_name,
+				gametype,
+				map_index,
+				set_gametype,
+			};
+
+			game::Cbuf_AddCall(reinterpret_cast<void*>(start_server_ui));
+		}
+
+		void configure_online_private_map(const std::string& map_name,
+			const std::string& gametype, const int map_index, const bool set_gametype,
+			game::PartyData* game_lobby)
+		{
+			set_party_map_settings(map_name, gametype);
+			set_map_dvars(map_name, gametype, map_index, set_gametype);
+
+			// PartyHost_StartParty reads this value when it creates the session, so it
+			// must be set before xstartprivatematch rather than repaired after the fact.
+			game::Party_SetMaxClients(
+				game_lobby, get_private_match_player_limit());
+		}
+
+		void publish_online_private_map()
+		{
+			// Stock UpdatePrivateMatchMaxPlayers republishes the private/public slot
+			// split after the game party has been created.
+			game::Cbuf_AddText(
+				0, "xtogprivateslots; xtogprivateslots; xsessionupdate;\n");
+
+			// This is Engine.SendJoinedLobbyMsgToParty from the stock Custom Match flow.
+			game::PartyHost_NotifyPrivateMatchCreated();
+		}
+
+		void start_online_private_map(const std::string& map_name,
+			const std::string& gametype, const int map_index, const bool set_gametype)
+		{
+			client_map_session_active = false;
+
+			auto* game_lobby = get_local_game_lobby();
+			if (!game_lobby)
+			{
+				console::error("Unable to access the online game party.\n");
+				return;
+			}
+
+			// Stock Custom Match sets these fields and its map defaults before
+			// xstartprivatematch. CL_Live_StartPrivateMatchHost then stops and wakes the
+			// game PartyData, clears its registered session users, rebuilds the session,
+			// and calls PartyHost_StartParty. SV_DirectConnect treats a registered-user
+			// slot match as a reconnect and otherwise may replace that slot's client.
+			// Calling that handler directly keeps map immediate while performing the
+			// same party/session initialization the old direct path omitted.
+			game::PartySettings_SetPrivateMatch(&game_lobby->settings, true);
+			game::PartySettings_SetPublicMatch(&game_lobby->settings, false);
+			game::PartySettings_SetRankedMatch(&game_lobby->settings, false);
+
+			perform_game_init();
+
+			configure_online_private_map(
+				map_name, gametype, map_index, set_gametype, game_lobby);
+
+			game::CL_Live_StartPrivateMatchHost();
+
+			// Stock host startup activates the game party and enables its match-rules
+			// data. MatchRules.SetData rejects the update before this point.
+			if (game::environment::is_multiplayer()
+				&& !set_match_rules_gametype(gametype))
+			{
+				console::warn("Unable to update private-match rules for gametype '%s'.\n",
+					gametype.data());
+			}
+
+			// Create the session through the private-match path first, then expose the
+			// stock online-stats state before publishing the PartySettings to clients.
+			enable_online_stats_for_map_match(game_lobby);
+			publish_online_private_map();
+
+			// Engine.StartServer in the stock LUI flow queues UI_StartServer rather
+			// than invoking it in the xstartprivatematch command's frame. UI_StartServer
+			// subsequently queues UI_Map, preserving the two-stage stock transition.
+			queue_start_server_ui(map_name, gametype, map_index, set_gametype);
+			client_map_session_active = true;
+		}
+
+		void change_listen_map(const std::string& map_name, const std::string& gametype,
 			const int map_index, const bool set_gametype)
 		{
-			listen_map_transition_in_progress = true;
+			auto* game_lobby = game::Lobby_GetPartyData(0);
+			if (!game_lobby || !is_active_party_host(game_lobby))
+			{
+				console::error("Unable to access the hosted game party for the map change.\n");
+				return;
+			}
+
+			listen_map_phase = listen_map_transition_phase::waiting_for_disconnect;
 			const auto start_time = std::chrono::steady_clock::now();
 
+			// Stock S1 only host-preloads a match when no server is running, and S1x's
+			// map command leaves a running match before invoking StartServer. S2's direct
+			// UI_Map path passes mapIsPreloaded=false; using it while the server is live
+			// unloads the current UI zones before LUI reloads main.lua. Return to the
+			// online frontend first, then create the replacement private match through
+			// the same initialized path as the initial map command.
 			const auto* args = "Leave";
 			game::UI_RunMenuScript(0, &args);
 
-			// S2's Leave menu script queues "disconnect\n" in the command buffer.
-			// Wait for that command and its UI transition to complete on later main frames.
-			scheduler::schedule([map_name, gametype, map_index, set_gametype, start_time,
-				map_start_requested = false]() mutable
+			scheduler::schedule([map_name, gametype, map_index, set_gametype, start_time]
 			{
-				if (!map_start_requested && !com_sv_running() && !game::SV_Loaded()
-					&& *game::frontend_state != 0)
+				if (listen_map_phase == listen_map_transition_phase::none)
 				{
-					map_start_requested = true;
-					start_validated_map(map_name, gametype, map_index, set_gametype);
-				}
-
-				if (map_start_requested && game::is_server_running()
-					&& get_current_mapname() == map_name)
-				{
-					listen_map_transition_in_progress = false;
 					return scheduler::cond_end;
 				}
 
-				if (std::chrono::steady_clock::now() - start_time >= 30s)
+				if (std::chrono::steady_clock::now() - start_time
+					>= listen_map_transition_timeout)
 				{
-					console::error("Listen map transition to '%s' timed out.\n", map_name.data());
-					listen_map_transition_in_progress = false;
+					console::error("Listen map transition to '%s' timed out.\n",
+						map_name.data());
+					if (!game::is_server_running())
+					{
+						client_map_session_active = false;
+					}
+					queued_map_start.reset();
+					listen_map_phase = listen_map_transition_phase::none;
+					return scheduler::cond_end;
+				}
+
+				if (listen_map_phase == listen_map_transition_phase::waiting_for_frontend
+					&& !com_sv_running() && !game::SV_Loaded() && *game::frontend_state != 0)
+				{
+					listen_map_phase = listen_map_transition_phase::starting;
+					start_online_private_map(map_name, gametype, map_index, set_gametype);
+
+					if (!client_map_session_active)
+					{
+						listen_map_phase = listen_map_transition_phase::none;
+						return scheduler::cond_end;
+					}
+				}
+
+				if (listen_map_phase == listen_map_transition_phase::starting
+					&& game::is_server_running()
+					&& get_current_mapname() == map_name
+					&& get_current_gametype() == gametype)
+				{
+					listen_map_phase = listen_map_transition_phase::none;
 					return scheduler::cond_end;
 				}
 
@@ -597,14 +914,21 @@ namespace party
 
 		void disconnect_command_stub()
 		{
-			const auto preserve_hosted_party = listen_map_transition_in_progress;
-			party::cancel_pending_connection();
-			disconnect_command_hook.invoke<void>();
-
-			if (!preserve_hosted_party)
+			if (listen_map_phase == listen_map_transition_phase::waiting_for_disconnect)
 			{
-				dedicated_party_client::reset();
+				listen_map_phase = listen_map_transition_phase::waiting_for_frontend;
 			}
+			else if (listen_map_phase != listen_map_transition_phase::none)
+			{
+				// A second disconnect supersedes the command-owned transition.
+				listen_map_phase = listen_map_transition_phase::none;
+			}
+
+			party::cancel_pending_connection();
+			client_map_session_active = false;
+			queued_map_start.reset();
+			disconnect_command_hook.invoke<void>();
+			dedicated_party_client::reset();
 		}
 
 		void start_map(const command::params& params)
@@ -615,14 +939,16 @@ namespace party
 				return;
 			}
 
-			if (listen_map_transition_in_progress)
+			if (queued_map_start
+				|| listen_map_phase != listen_map_transition_phase::none)
 			{
 				console::error("A map transition is already in progress.\n");
 				return;
 			}
 
 			const auto map_name = utils::string::to_lower(params[1]);
-			auto gametype = get_gametype_or_default(params);
+			bool set_gametype{};
+			auto gametype = get_gametype_or_default(params, map_name, set_gametype);
 			const bool has_gametype = params.size() >= 3;
 			if (!validate_map_and_gametype(map_name, gametype))
 			{
@@ -635,12 +961,6 @@ namespace party
 				return;
 			}
 
-			if (game::environment::is_zombies())
-			{
-				gametype = std::string{
-					game::environment::get_online_mode_info().default_gametype };
-			}
-
 			int map_index = 0;
 			if (!get_map_index(map_name, map_index))
 			{
@@ -649,6 +969,11 @@ namespace party
 
 			const auto server_running = game::is_server_running();
 			const auto is_dedicated = game::environment::is_dedicated();
+			if (!is_dedicated && !validate_client_map_state(server_running))
+			{
+				return;
+			}
+
 			if (is_dedicated && (server_running || dedicated_party::is_active()))
 			{
 				if (!dedicated_party::set_next_match(map_name, gametype, map_index))
@@ -664,7 +989,8 @@ namespace party
 				cancel_pending_connection();
 			}
 
-			if (server_running && get_current_mapname() == map_name)
+			if (server_running && get_current_mapname() == map_name
+				&& (!set_gametype || get_current_gametype() == gametype))
 			{
 				restart_map();
 				return;
@@ -672,7 +998,7 @@ namespace party
 
 			if (!is_dedicated && server_running)
 			{
-				start_listen_map_transition(map_name, gametype, map_index, has_gametype);
+				change_listen_map(map_name, gametype, map_index, set_gametype);
 				return;
 			}
 
@@ -700,7 +1026,7 @@ namespace party
 				map_index,
 				gametype.data());
 
-			start_validated_map(map_name, gametype, map_index, has_gametype);
+			start_online_private_map(map_name, gametype, map_index, set_gametype);
 		}
 
 		int get_bot_count()
@@ -785,6 +1111,38 @@ namespace party
 
 			network::send(from, response_command, info.build(), '\n');
 		}
+	}
+
+	bool set_match_rules_gametype(const std::string& gametype)
+	{
+		if (!*game::hks::lui_lua_state)
+		{
+			return false;
+		}
+
+		game::LUI_EnterCriticalSection();
+
+		bool success = false;
+		try
+		{
+			const auto match_rules_value = ui_scripting::get_globals().get("MatchRules");
+			if (match_rules_value.is<ui_scripting::table>())
+			{
+				const auto set_data = match_rules_value.as<ui_scripting::table>().get("SetData");
+				if (set_data.is<ui_scripting::function>())
+				{
+					const auto result = set_data("gametype", gametype);
+					success = !result.empty() && result[0].is<bool>() && result[0].as<bool>();
+				}
+			}
+		}
+		catch (const std::exception& e)
+		{
+			console::error("Failed to update match rules: %s\n", e.what());
+		}
+
+		game::LUI_LeaveCriticalSection();
+		return success;
 	}
 
 	game::netadr_s& get_target()
@@ -931,6 +1289,10 @@ namespace party
 
 			cl_connect_hook.create(game::CL_Connect, cl_connect_stub);
 			disconnect_command_hook.create(game::CL_Disconnect_f, disconnect_command_stub);
+			if (!game::environment::is_dedicated())
+			{
+				ui_scripting::on_start(install_map_lobby_functions);
+			}
 
 			command::add("map_restart", []()
 			{

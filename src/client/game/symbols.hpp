@@ -132,6 +132,7 @@ namespace game
 	WEAK symbol<void(int localClientNum, void* sessionInfo, netadr_s* to, const char* mapname, const char* gametype)> CL_ConnectAndPreloadMap{ 0x6CCA0 };
 	WEAK symbol<void()> CL_Connect{ 0x6D0A0 };
 	WEAK symbol<void()> CL_Disconnect_f{ 0x6F7A0 };
+	WEAK symbol<void()> CL_Live_StartPrivateMatchHost{ 0x80290 };
 	WEAK symbol<int(int localClientNum)> CL_ControllerIndexFromClientNum{ 0x4A0B80 };
 	WEAK symbol<char*(int controllerIndex)> CL_GetUsernameForLocalClient{ 0x789680 };
 	WEAK symbol<bool(int controllerIndex, char* name, std::size_t nameSize)> Live_GetLocalClientName{ 0x7896E0 };
@@ -168,11 +169,15 @@ namespace game
 	WEAK symbol<int(PartyData* partyData, int memberIndex)> Party_IsMemberLocalPlayer{ 0x481320 };
 	WEAK symbol<int(PartyData* partyData, int memberIndex)> Party_IsMemberUIVisible{ 0x481370 };
 	WEAK symbol<int(PartyData* partyData)> Party_IsWaitingForMembers{ 0x4819A0 };
+	WEAK symbol<int(PartyData* partyData)> Party_GetPublicMatch{ 0x197190 };
 	WEAK symbol<void(PartyData* partyData, int maxClients)> Party_SetMaxClients{ 0x1973D0 };
 	WEAK symbol<void(PartyData* partyData, int minClients)> Party_SetMinClients{ 0x1973E0 };
+	WEAK symbol<int(PartySettings* settings)> PartySettings_GetPrivateMatch{ 0x197140 };
+	WEAK symbol<int(PartySettings* settings)> PartySettings_GetRankedMatch{ 0x197180 };
 	WEAK symbol<void(PartySettings* settings, bool privateMatch)> PartySettings_SetPrivateMatch{ 0x1973F0 };
 	WEAK symbol<void(PartySettings* settings, bool publicMatch)> PartySettings_SetPublicMatch{ 0x197440 };
 	WEAK symbol<void(PartySettings* settings, bool rankedMatch)> PartySettings_SetRankedMatch{ 0x197430 };
+	WEAK symbol<int()> Lobby_HowManyPlayersCanWeHost{ 0x663BF0 };
 	WEAK symbol<void()> PartyHost_NotifyPrivateMatchCreated{ 0x12A2F0 };
 	WEAK symbol<std::int64_t(PartyData* partyData, std::uint8_t state)> PartyHost_SetState{ 0x494930 };
 	WEAK symbol<void(PartyData* partyData, unsigned int localControllerIndex)> PartyHost_PreMatch{ 0x48D8C0 };

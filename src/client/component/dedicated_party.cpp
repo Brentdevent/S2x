@@ -11,9 +11,6 @@
 
 #include "game/dvars.hpp"
 #include "game/game.hpp"
-#include "game/ui_scripting/execution.hpp"
-
-#include "ui_scripting.hpp"
 
 #include <utils/flags.hpp>
 #include <utils/hook.hpp>
@@ -590,38 +587,6 @@ namespace dedicated_party
 			}
 		}
 
-		bool set_match_rules_gametype(const std::string& gametype)
-		{
-			if (!*game::hks::lui_lua_state)
-			{
-				return false;
-			}
-
-			game::LUI_EnterCriticalSection();
-
-			bool success = false;
-			try
-			{
-				const auto match_rules_value = ui_scripting::get_globals().get("MatchRules");
-				if (match_rules_value.is<ui_scripting::table>())
-				{
-					const auto set_data = match_rules_value.as<ui_scripting::table>().get("SetData");
-					if (set_data.is<ui_scripting::function>())
-					{
-						const auto result = set_data("gametype", gametype);
-						success = !result.empty() && result[0].is<bool>() && result[0].as<bool>();
-					}
-				}
-			}
-			catch (const std::exception& e)
-			{
-				console::error("Dedicated party: failed to update match rules: %s\n", e.what());
-			}
-
-			game::LUI_LeaveCriticalSection();
-			return success;
-		}
-
 		void prepare_match_settings(const dedicated_match_t& match)
 		{
 			if (game::environment::is_zombies())
@@ -629,7 +594,7 @@ namespace dedicated_party
 				return;
 			}
 
-			if (!set_match_rules_gametype(match.gametype))
+			if (!party::set_match_rules_gametype(match.gametype))
 			{
 				console::error("Dedicated party: failed to select match-rules gametype '%s'.\n",
 					match.gametype.data());
