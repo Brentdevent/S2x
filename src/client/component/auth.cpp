@@ -149,8 +149,8 @@ namespace auth
 				p(0x786D73_g, 0x786DB6_g);
 				p(0x82D4D0_g, 0x82D527_g);
 				p(0x82E576_g, 0x82E5BB_g);
-				p(0x82FD79_g, 0x82FDD0_g); // Include the account-type zero branch
-				p(0x830312_g, 0x83036F_g); // Include the account-type zero branch
+				p(0x82FD79_g, 0x82FDD0_g);
+				p(0x830312_g, 0x83036F_g);
 				p(0x830548_g, 0x830588_g);
 				p(0x830B7B_g, 0x830BB1_g);
 				p(0x84D9CC_g, 0x84DA21_g);
