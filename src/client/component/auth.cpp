@@ -17,6 +17,8 @@ namespace auth
 {
 	namespace
 	{
+		constexpr uint64_t splitscreen_guest_guid_flag = 1ull << 63;
+
 		std::string get_hdd_serial()
 		{
 			DWORD serial{};
@@ -111,7 +113,9 @@ namespace auth
 				return 0x110000100000000 | (::utils::cryptography::random::get_integer() & ~0x80000000);
 			}
 
-			return get_key().get_hash();
+			// Stock S2 derives a guest XUID by setting bit 63 on the primary XUID.
+			// Reserve that bit so the guest cannot collapse onto the primary identity.
+			return get_key().get_hash() & ~splitscreen_guest_guid_flag;
 		}();
 
 		return guid;
