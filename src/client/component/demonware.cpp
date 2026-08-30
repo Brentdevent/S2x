@@ -215,16 +215,36 @@ namespace demonware
 					server = udp_servers.find(name);
 				}
 
+				uint32_t resolved_address{};
 				if (!server)
 				{
 #pragma warning(push)
 #pragma warning(disable: 4996)
-					return gethostbyname(name);
+					auto* result = gethostbyname(name);
 #pragma warning(pop)
+					if (result)
+					{
+						return result;
+					}
+
+					// Windows may not resolve the local hostname without an active network adapter.
+					// bdNet requires at least one local address, so use loopback only for that lookup.
+					char hostname[256]{};
+					if (gethostname(hostname, static_cast<int>(sizeof(hostname))) == SOCKET_ERROR ||
+						_stricmp(name, hostname) != 0)
+					{
+						return nullptr;
+					}
+
+					resolved_address = htonl(INADDR_LOOPBACK);
+				}
+				else
+				{
+					resolved_address = server->get_address();
 				}
 
 				static thread_local in_addr address{};
-				address.s_addr = server->get_address();
+				address.s_addr = resolved_address;
 
 				static thread_local in_addr* addr_list[2]{};
 				addr_list[0] = &address;
