@@ -487,6 +487,11 @@ namespace demonware
 		{
 			return TRUE;
 		}
+
+		bool online_data_qos_ready_stub()
+		{
+			return true;
+		}
 	}
 
 	class component final : public generic_component
@@ -558,6 +563,8 @@ namespace demonware
 			utils::hook::copy_string(game::select(0xB4AA88, 0x861A48), "http://prod.uno.demonware.net/v1.0/");
 			if (game::environment::uses_multiplayer_binary())
 			{
+				utils::hook::jump(0x200C90_g, online_data_qos_ready_stub);
+
 				utils::hook::copy_string(0xB4AB98_g,
 					"http://pipes-prod-glutton.public.aws.demonware.net/v1.0");
 			}
