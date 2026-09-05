@@ -45,6 +45,7 @@ namespace steam_proxy
 		bool is_disabled()
 		{
 			return utils::flags::has_flag("-nosteam") ||
+				   utils::nt::is_wine() ||
 			       game::environment::is_microsoft_store() ||
 			       game::environment::is_dedicated();
 		}
