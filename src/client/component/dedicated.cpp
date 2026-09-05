@@ -915,6 +915,13 @@ namespace dedicated
 			// fastfile loading retains server assets without building GPU data.
 			utils::hook::set<std::uint8_t>(0x88FF2A_g, 0);
 
+			// Texture-filter dvars can change after startup, including when Proton
+			// applies graphics settings. Keep the native sampler lookup table and
+			// mip-bias update, but skip the 256-entry COM release/CreateSamplerState
+			// loop: dedicated mode has no D3D device or sampler objects. Returning
+			// through the native epilogue also preserves frame-update bookkeeping.
+			utils::hook::jump(0x8CEC80_g, 0x8CED81_g);
+
 			// DB_LoadXFile validates every external image and sound descriptor
 			// before the renderer/audio load flags can discard their payloads.
 			// Convert them to native absent descriptors after S2 transforms the

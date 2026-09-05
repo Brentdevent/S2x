@@ -40,6 +40,9 @@ namespace arxan::anti_debug
 		utils::hook::detour enum_windows_hook;
 		utils::hook::detour dbg_ui_remote_breakin_hook;
 
+		std::uint8_t* ntdll_code_address{};
+		size_t ntdll_code_size{};
+
 		constexpr size_t arxan_worker_process_query_return_mp = 0x1CDF7F;
 		constexpr size_t arxan_worker_process_query_return_sp = 0x6238F;
 		constexpr std::uint32_t arxan_worker_bootstrap_query_count_mp = 4;
@@ -543,30 +546,60 @@ namespace arxan::anti_debug
 			return result;
 		}
 
+		struct ntdll_copy_site
+		{
+			size_t return_rva;
+			size_t loop_rva;
+			size_t resume_rva;
+			std::uint8_t original[8];
+		};
+
+		// Each copy loop is decrypted just before its corresponding VirtualAlloc call.
+		constexpr ntdll_copy_site ntdll_copy_sites_mp[] = {
+			{0x1B4C56, 0x113B7253, 0x1B9607, {0x41, 0x0F, 0xB6, 0x41, 0xFF, 0x4D, 0x8D, 0x49}},
+			{0x794244, 0x794E70, 0x794EA7, {0x76, 0x16, 0x41, 0x0F, 0xB6, 0x00, 0x4D, 0x8D}},
+		};
+		constexpr ntdll_copy_site ntdll_copy_sites_sp[] = {
+			{0x49066, 0xF29B68C, 0xF29B6A7, {0x41, 0x0F, 0xB6, 0x41, 0xFF, 0x4D, 0x8D, 0x49}},
+			{0x4F35C4, 0x4F4210, 0x4F4227, {0x41, 0x0F, 0xB6, 0x41, 0xFF, 0x4D, 0x8D, 0x49}},
+		};
+
 		LPVOID WINAPI virtual_alloc_stub(LPVOID address, SIZE_T size, DWORD allocation_type, DWORD protect)
 		{
-			if ((allocation_type & MEM_COMMIT) &&
-				protect == PAGE_EXECUTE_READWRITE &&
-				size > 0x100000 && size < 0x180000)
+			const auto return_rva = game::derelocate(_ReturnAddress());
+			const auto& sites = game::environment::uses_multiplayer_binary()
+				? ntdll_copy_sites_mp : ntdll_copy_sites_sp;
+			for (const auto& site : sites)
 			{
-#ifdef ARXAN_DEBUG
-				OutputDebugStringA("[VirtualAlloc] Intercepted NTDLL copy allocation - returning original mapping\n");
-#endif
-
-				// Skip copy of ntdll data
-				if (game::environment::uses_multiplayer_binary())
+				if (site.return_rva != return_rva)
 				{
-					utils::hook::jump(0x113B7253_g, 0x1B9607_g); // First NTDLL copy mem section
-					utils::hook::jump(0x794E70_g, 0x794EA7_g); // Second NTDLL copy mem section
-				}
-				else
-				{
-					utils::hook::jump(0xF29B68C_g, 0xF29B6A7_g); // First NTDLL copy mem section
-					utils::hook::jump(0x4F4210_g, 0x4F4227_g); // Second NTDLL copy mem section
+					continue;
 				}
 
-				const utils::nt::library ntdll("ntdll.dll");
-				return static_cast<std::uint8_t*>(ntdll.get_ptr()) + 0x1000;
+				auto* loop = reinterpret_cast<std::uint8_t*>(game::relocate(site.loop_rva));
+				auto* resume = reinterpret_cast<void*>(game::relocate(site.resume_rva));
+				const auto patched = loop[0] == 0xE9 && utils::hook::follow_branch(loop) == resume;
+				const auto valid_request = address == nullptr && (allocation_type & MEM_COMMIT) != 0 &&
+					(allocation_type & ~(MEM_COMMIT | MEM_RESERVE)) == 0 && protect == PAGE_EXECUTE_READWRITE;
+
+				if (!valid_request || size != ntdll_code_size ||
+					(!patched && std::memcmp(loop, site.original, sizeof(site.original)) != 0))
+				{
+					// Never return live RX code unless the matching copy loop can be
+					// skipped. This can run in a TLS callback with the loader lock
+					// held, so terminate without dispatching UI work to another thread.
+					TerminateProcess(GetCurrentProcess(), 1);
+					return nullptr;
+				}
+
+				// Only this loop is guaranteed to be decrypted here. In particular,
+				// patching the second loop during the first allocation is too early.
+				if (!patched)
+				{
+					utils::hook::jump(loop, resume);
+				}
+
+				return ntdll_code_address;
 			}
 
 			return virtual_alloc_hook.invoke<LPVOID>(address, size, allocation_type, protect);
@@ -647,6 +680,33 @@ namespace arxan::anti_debug
 			get_thread_context_hook.create(get_thread_context_func, get_thread_context_stub);
 
 			const auto nt_set_information_thread = ntdll.get_proc<void*>("NtSetInformationThread");
+			const auto function_rva = reinterpret_cast<size_t>(nt_set_information_thread) -
+				reinterpret_cast<size_t>(ntdll.get_ptr());
+			const auto image_size = ntdll.get_optional_header()->SizeOfImage;
+			// The game copies SizeOfRawData. Discover and validate the loaded code
+			// section once, since Wine's size and layout can differ from Windows'.
+			for (const auto* section : ntdll.get_section_headers())
+			{
+				if ((section->Characteristics & IMAGE_SCN_MEM_EXECUTE) &&
+					function_rva >= section->VirtualAddress &&
+					function_rva - section->VirtualAddress < section->Misc.VirtualSize)
+				{
+					if (section->VirtualAddress == 0 || section->VirtualAddress >= image_size ||
+						section->Misc.VirtualSize > image_size - section->VirtualAddress ||
+						section->SizeOfRawData == 0 || section->SizeOfRawData > image_size - section->VirtualAddress)
+					{
+						break;
+					}
+
+					ntdll_code_address = ntdll.get_ptr() + section->VirtualAddress;
+					ntdll_code_size = section->SizeOfRawData;
+					break;
+				}
+			}
+			if (!ntdll_code_address)
+			{
+				throw std::runtime_error("Unable to locate the NTDLL executable section for game startup");
+			}
 			nt_set_information_thread_hook.create(nt_set_information_thread, nt_set_information_thread_stub);
 			nt_set_information_thread_hook.move();
 
