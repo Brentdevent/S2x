@@ -47,6 +47,7 @@ namespace game
 	WEAK symbol<dvar_t*(const char* dvarName, float value, float min, float max, DvarFlags flags)> Dvar_RegisterFloat{ 0xB0A50, 0x4CEA90 };
 	WEAK symbol<dvar_t*(const char* dvarName, int value, int min, int max, DvarFlags flags)> Dvar_RegisterInt{ 0xB0C70, 0x4CEB00 };
 	WEAK symbol<dvar_t*(const char* dvarName, const char* value, DvarFlags flags)> Dvar_RegisterString{ 0xB1460, 0x4CEDF0 };
+	WEAK symbol<dvar_t*(const char* dvarName, DvarType type, DvarFlags flags, DvarValue* value, DvarLimits* domain)> Dvar_RegisterVariant{ 0, 0x4CEE30 };
 	WEAK symbol<dvar_t*(const char* dvarName, const char* const* valueList, int defaultIndex, DvarFlags flags)> Dvar_RegisterEnum{ 0xB0970, 0x4CEA20 };
 	WEAK symbol<dvar_t*(const char* dvarName, float x, float y, float min, float max, DvarFlags flags)> Dvar_RegisterVec2{ 0xB1520, 0x4CF000 };
 	WEAK symbol<dvar_t*(const char* dvarName, float x, float y, float z, float min, float max, DvarFlags flags)> Dvar_RegisterVec3{ 0xB1620, 0x4CF100 };
@@ -58,10 +59,10 @@ namespace game
 	WEAK symbol<dvar_t*(const char* dvarName, int value, int min, int max, DvarFlags flags)> Dvar_RegisterIntProtected{ 0xB0D40 };
 
 	WEAK symbol<dvar_t*(const char* dvarName)> Dvar_FindMalleableVar{ 0xAF8E0, 0x4CDBE0 };
-	WEAK symbol<void (dvar_t* dvar, DvarFlags flags)> Dvar_SetFlags{ 0xAF370 };
+	WEAK symbol<void (dvar_t* dvar, DvarFlags flags)> Dvar_SetFlags{ 0xAF370, 0x4CD680 };
 
 	WEAK symbol<bool(const char* dvarName)> Dvar_GetBool{ 0xAFA70 };
-	WEAK symbol<float(const char* dvarName)> Dvar_GetFloat{ 0xAFBC0 };
+	WEAK symbol<float(const char* dvarName)> Dvar_GetFloat{ 0xAFBC0, 0x4CDF30 };
 	WEAK symbol<int(const char* dvarName)> Dvar_GetInt{ 0xAFCB0 };
 	WEAK symbol<const char*(const char* dvarName)> Dvar_GetString{ 0xAFD20 };
 	WEAK symbol<int64_t(const char* dvarName)> Dvar_GetInt64{ 0xAFC10 };
@@ -78,6 +79,11 @@ namespace game
 	WEAK symbol<void(dvar_t* dvar, float value)> Dvar_SetFloat{ 0xB2700 };
 	WEAK symbol<void(dvar_t* dvar, int value)> Dvar_SetInt{ 0xB29C0 };
 	WEAK symbol<void(dvar_t* dvar, const char* value)> Dvar_SetString{ 0xB2E30 };
+	WEAK symbol<void(dvar_t* dvar, DvarValue* value, DvarSetSource source)> Dvar_SetVariant{ 0xB30C0, 0x4D05C0 };
+	WEAK symbol<void(dvar_t* dvar, DvarSetSource source)> Dvar_Reset{ 0xB1DC0, 0x4CF5A0 };
+	WEAK symbol<float(const dvar_t* dvar)> Dvar_DecodeFloat{ 0xAF220 };
+
+	WEAK symbol<bool(int* min, int* max)> CG_GetFovRange{ 0x45830, 0x23F6B0 };
 
 	WEAK symbol<const ScreenPlacement*(const LocalClientNum_t localClientNum)> ScrPlace_GetViewPlacement{ 0x4A01B0, 0x272660 };
 
