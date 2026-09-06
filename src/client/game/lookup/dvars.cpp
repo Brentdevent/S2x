@@ -7,52 +7,9 @@ namespace game::lookup::dvars
 {
 	namespace
 	{
-		// Dvar identifiers are ASCII. Fold without locale dependence or temporary strings.
-		constexpr unsigned char lowercase(const unsigned char value)
+		const detail::string_map& dvar_engine_names()
 		{
-			return value >= 'A' && value <= 'Z' ? static_cast<unsigned char>(value + ('a' - 'A')) : value;
-		}
-
-		struct dvar_name_hash
-		{
-			std::size_t operator()(const std::string_view name) const noexcept
-			{
-				std::size_t hash = 0;
-				for (const auto value : name)
-				{
-					hash = hash * 31 + lowercase(static_cast<unsigned char>(value));
-				}
-
-				return hash;
-			}
-		};
-
-		struct dvar_name_equal
-		{
-			bool operator()(const std::string_view left, const std::string_view right) const noexcept
-			{
-				if (left.size() != right.size())
-				{
-					return false;
-				}
-
-				for (std::size_t i = 0; i < left.size(); ++i)
-				{
-					if (lowercase(static_cast<unsigned char>(left[i])) != lowercase(static_cast<unsigned char>(right[i])))
-					{
-						return false;
-					}
-				}
-
-				return true;
-			}
-		};
-
-		using dvar_name_map = std::unordered_map<std::string_view, std::string_view, dvar_name_hash, dvar_name_equal>;
-
-		const dvar_name_map& dvar_engine_names()
-		{
-			static const dvar_name_map values
+			static const detail::string_map values
 			{
 				{ "cl_paused", "183" },
 				{ "sv_allowAimAssist", "387" },

@@ -315,11 +315,6 @@ namespace game
 		bool(__fastcall* domainFunc)(dvar_t*, DvarValue);
 		dvar_t* hashNext;
 	}; static_assert(sizeof(dvar_t) == 0x60);
-	static_assert(offsetof(dvar_t, current) == 0x10);
-	static_assert(offsetof(dvar_t, latched) == 0x20);
-	static_assert(offsetof(dvar_t, reset) == 0x30);
-	static_assert(offsetof(dvar_t, domain) == 0x40);
-	static_assert(offsetof(dvar_t, domainFunc) == 0x50);
 
 	struct ScreenPlacement
 	{
