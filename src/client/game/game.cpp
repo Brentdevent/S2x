@@ -267,10 +267,10 @@ namespace game
 
 	bool is_server_running()
 	{
-		const auto* com_sv_running = game::Dvar_FindMalleableVar("com_sv_running");
+		const auto* sv_running = game::Dvar_FindMalleableVar("sv_running");
 
-		return com_sv_running &&
-			com_sv_running->current.enabled &&
+		return sv_running &&
+			sv_running->current.enabled &&
 			game::SV_Loaded() &&
 			!*game::virtualLobby_Loaded;
 	}

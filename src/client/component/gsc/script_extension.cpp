@@ -263,7 +263,7 @@ namespace gsc
 
 		void vm_error_stub(uint64_t mark_pos)
 		{
-			if (!dvars::com_developer_script->current.enabled && !force_error_print)
+			if (dvars::developer_script->current.integer == 0 && !force_error_print)
 			{
 				game::LargeLocalResetToMark(mark_pos);
 				return;

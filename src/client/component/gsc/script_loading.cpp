@@ -398,12 +398,15 @@ namespace gsc
 		{
 			auto build = xsk::gsc::build::prod;
 
-			if (dvars::com_developer && dvars::com_developer->current.integer > 0)
+			// Stock registers developer during renderer initialization, after post_unpack.
+			// Resolve it for each script load so console/config changes use the same dvar.
+			const auto* developer = game::Dvar_FindMalleableVar("developer");
+			if (developer && developer->current.integer > 0)
 			{
 				build = static_cast<xsk::gsc::build>(static_cast<unsigned int>(build) | static_cast<unsigned int>(xsk::gsc::build::dev_maps));
 			}
 
-			if (dvars::com_developer_script && dvars::com_developer_script->current.integer > 0)
+			if (dvars::developer_script && dvars::developer_script->current.integer > 0)
 			{
 				build = static_cast<xsk::gsc::build>(static_cast<unsigned int>(build) | static_cast<unsigned int>(xsk::gsc::build::dev_blocks));
 			}
@@ -484,12 +487,10 @@ namespace gsc
 			utils::hook::call(game::select(0x68F1C7, 0x4958E7), find_script);
 			utils::hook::call(game::select(0x68F1D7, 0x4958F7), db_is_x_asset_default);
 
-			// Enable development options
-			dvars::com_developer = game::Dvar_RegisterInt("developer", 0, 0, 2, game::DVAR_FLAG_NONE);
-			
+			// S2x compiler control; no stock developer_script counterpart is known.
 			// Enable developer script comments: 0 disabled, 1 full developer script, 2 only dev scripts required by art/lighting tweaks.
 			// gsc-tool will only have one mode which supports both 1 and 2 dev blocks in the code simultaneously.
-			dvars::com_developer_script = game::Dvar_RegisterInt("developer_script", 0, 0, 2, game::DVAR_FLAG_NONE);
+			dvars::developer_script = game::Dvar_RegisterInt("developer_script", 0, 0, 2, game::DVAR_FLAG_NONE);
 
 			if (!game::environment::uses_multiplayer_binary())
 			{

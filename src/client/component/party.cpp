@@ -524,9 +524,9 @@ namespace party
 			return utils::hook::invoke<const char*>(0x6500E0_g, gametype.data()) != gametype.data();
 		}
 
-		bool com_sv_running()
+		bool sv_running()
 		{
-			const auto* dvar = game::Dvar_FindMalleableVar("com_sv_running");
+			const auto* dvar = game::Dvar_FindMalleableVar("sv_running");
 			return dvar && dvar->current.enabled;
 		}
 
@@ -738,7 +738,7 @@ namespace party
 				}
 
 				if (listen_map_phase == listen_map_transition_phase::waiting_for_frontend
-					&& !com_sv_running() && !game::SV_Loaded() && *game::frontend_state != 0)
+					&& !sv_running() && !game::SV_Loaded() && *game::frontend_state != 0)
 				{
 					listen_map_phase = listen_map_transition_phase::starting;
 					start_online_private_map(map_name, gametype, map_index, set_gametype);
@@ -1233,7 +1233,7 @@ namespace party
 
 	bool server_running()
 	{
-		return com_sv_running();
+		return sv_running();
 	}
 
 	int get_connected_client_count()
