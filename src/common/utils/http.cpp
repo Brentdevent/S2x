@@ -1,5 +1,7 @@
 #include "http.hpp"
+#include <chrono>
 #include <curl/curl.h>
+#include <thread>
 #include "finally.hpp"
 
 #pragma comment(lib, "ws2_32.lib")
@@ -115,9 +117,15 @@ namespace utils::http
 			long http_code = 0;
 			curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 
-			if (http_code > 0)
+			// Retry interrupted transfers and temporary server errors, including after headers arrived.
+			if (http_code >= 400 && http_code < 500 && http_code != 408 && http_code != 429)
 			{
 				break;
+			}
+
+			if (i < retries)
+			{
+				std::this_thread::sleep_for(std::chrono::milliseconds(500));
 			}
 		}
 

@@ -20,6 +20,15 @@ namespace updater
 {
 	namespace
 	{
+		void report_error(const char* error)
+		{
+			console::error("[Updater] Update failed: %s\n", error);
+			if (!game::environment::is_dedicated())
+			{
+				MessageBoxA(nullptr, error, "S2x Update Failed", MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+			}
+		}
+
 		std::string get_update_mutex_name()
 		{
 			const auto update_root = game::get_appdata_path();
@@ -63,7 +72,7 @@ namespace updater
 		{
 			if (!utils::nt::relaunch_self())
 			{
-				console::error("[Updater] The installed executable changed, but S2x could not be relaunched.\n");
+				report_error("The installed executable changed, but S2x could not be relaunched.");
 				utils::nt::terminate(1);
 			}
 
@@ -94,7 +103,7 @@ namespace updater
 			}
 			catch (const std::exception& e)
 			{
-				console::error("[Updater] Update failed: %s\n", e.what());
+				report_error(e.what());
 			}
 		}
 	}
@@ -119,8 +128,13 @@ namespace updater
 				relaunch_installed_binary();
 			}
 		}
+		catch (const std::exception& e)
+		{
+			report_error(e.what());
+		}
 		catch (...)
 		{
+			report_error("An unknown error occurred while updating S2x.");
 		}
 	}
 
