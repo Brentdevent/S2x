@@ -74,10 +74,7 @@ namespace dedicated_party_client
 				// hosted dedicated join activates the received party directly. Restore
 				// hub mode before PartyAtomic opens public_lobby; its LUI predicates,
 				// Soldier screen, and virtual-lobby character scene all consume it.
-				const auto previous_mode = utils::hook::invoke<int>(0x8555C0_g);
 				utils::hook::invoke<void>(0x857A10_g, 1);
-				
-				console::info("[hosted-party] lobby activation restored hub mode %d -> 1.\n", previous_mode);
 			}
 
 			utils::hook::invoke<void>(0x47A720_g, party_data, controller_index, joining);
