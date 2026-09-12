@@ -991,7 +991,8 @@ namespace game
 			char name[36];
 			char __pad41E1C[0x41E20 - 0x41E1C];
 			int lastPacketTime;
-			char __pad41E24[0x41E30 - 0x41E24];
+			int lastConnectTime;
+			char __pad41E28[0x41E30 - 0x41E28];
 			int ping;
 			char __pad41E34[0x41E40 - 0x41E34];
 			int rate;
@@ -1009,6 +1010,7 @@ namespace game
 		static_assert(offsetof(client_t, gentity) == 0x41DF0);
 		static_assert(offsetof(client_t, name) == 0x41DF8);
 		static_assert(offsetof(client_t, lastPacketTime) == 0x41E20);
+		static_assert(offsetof(client_t, lastConnectTime) == 0x41E24);
 		static_assert(offsetof(client_t, ping) == 0x41E30);
 		static_assert(offsetof(client_t, rate) == 0x41E40);
 		static_assert(offsetof(client_t, pureAuthentic) == 0x41E44);

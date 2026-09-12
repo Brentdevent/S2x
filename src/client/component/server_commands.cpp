@@ -5,8 +5,11 @@
 #include "console/console.hpp"
 #include "network.hpp"
 #include "party.hpp"
+#include "scheduler.hpp"
 
 #include "game/game.hpp"
+
+#include <charconv>
 
 namespace server_commands
 {
@@ -36,6 +39,152 @@ namespace server_commands
 			}
 
 			return result;
+		}
+
+		game::mp::client_t* get_kick_client(const unsigned int slot)
+		{
+			if (!game::is_server_running())
+			{
+				console::info("Server is not running.\n");
+				return nullptr;
+			}
+
+			const auto max_clients = *game::sv_maxclients;
+			if (max_clients <= 0 || slot >= static_cast<unsigned int>(max_clients))
+			{
+				console::info("Invalid client slot %u. Use status to find a client slot.\n", slot);
+				return nullptr;
+			}
+
+			auto* clients = *game::mp::svs_clients;
+			if (!clients || clients[slot].state <= client_zombie)
+			{
+				console::info("Client slot %u is empty or disconnecting.\n", slot);
+				return nullptr;
+			}
+
+			auto& client = clients[slot];
+			if (client.remoteAddress.type == game::NA_LOOPBACK)
+			{
+				console::info("Cannot kick the local/host client in slot %u.\n", slot);
+				return nullptr;
+			}
+
+			if (client.testClient || client.remoteAddress.type == game::NA_BOT)
+			{
+				console::info("Cannot kick a bot in slot %u.\n", slot);
+				return nullptr;
+			}
+
+			if (!client.guid[0])
+			{
+				console::info("Client slot %u has no identity yet. Try again after it connects.\n", slot);
+				return nullptr;
+			}
+
+			return &client;
+		}
+
+		void queue_kick(const unsigned int slot)
+		{
+			const auto* client = get_kick_client(slot);
+			if (!client)
+			{
+				return;
+			}
+
+			// Keep the connection identity, not a client pointer, across the thread handoff.
+			scheduler::once([slot, guid = std::to_array(client->guid), address = client->remoteAddress,
+				qport = client->qport, connect_time = client->lastConnectTime]
+			{
+				auto* target = get_kick_client(slot);
+				if (!target)
+				{
+					return;
+				}
+
+				if (std::to_array(target->guid) != guid || target->remoteAddress != address ||
+					target->qport != qport || target->lastConnectTime != connect_time)
+				{
+					console::info("Client slot %u changed before the kick could run. Use status and try again.\n", slot);
+					return;
+				}
+
+				const auto name = status_string(target->name);
+				// SV_KickClient can blacklist GUIDs via sv_blacklistReasons. Only disconnect here.
+				game::mp::SV_DropClient(target, "EXE_PLAYERKICKED", 1);
+				target->lastPacketTime = *game::mp::svs_time;
+				console::info("Kicked client %u (%s).\n", slot, name.c_str());
+			}, scheduler::server);
+		}
+
+		void clientkick(const command::params& params)
+		{
+			if (params.size() != 2)
+			{
+				console::info("Usage: clientkick <slot> (use status to find the slot).\n");
+				return;
+			}
+
+			const std::string_view text = params[1];
+			unsigned int slot{};
+			const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), slot);
+			if (error != std::errc{} || end != text.data() + text.size())
+			{
+				console::info("Invalid slot: enter a non-negative decimal slot number from status.\n");
+				return;
+			}
+
+			queue_kick(slot);
+		}
+
+		void kick(const command::params& params)
+		{
+			if (params.size() != 2)
+			{
+				console::info("Usage: kick <name> (exact name from status; quote names containing spaces).\n");
+				return;
+			}
+
+			const std::string_view name = params[1];
+			if (name.empty() || name.size() >= sizeof(game::mp::client_t::name) ||
+				std::any_of(name.begin(), name.end(), [](const unsigned char c) { return c < ' ' || c == 0x7F; }))
+			{
+				console::info("Invalid player name. Enter the exact name shown by status.\n");
+				return;
+			}
+
+			if (!game::is_server_running())
+			{
+				console::info("Server is not running.\n");
+				return;
+			}
+
+			const auto* clients = *game::mp::svs_clients;
+			const auto max_clients = *game::sv_maxclients;
+			auto slot = -1;
+
+			for (auto i = 0; clients && i < max_clients; ++i)
+			{
+				if (clients[i].state <= client_zombie || status_string(clients[i].name) != name)
+				{
+					continue;
+				}
+				if (slot != -1)
+				{
+					console::info("Multiple clients have that name. Use status and clientkick <slot>.\n");
+					return;
+				}
+				slot = i;
+			}
+			
+			if (slot == -1)
+			{
+				console::info("No client has that exact name (case-sensitive). Use status to list clients.\n");
+				return;
+			}
+
+			queue_kick(static_cast<unsigned int>(slot));
 		}
 
 		void status()
@@ -86,6 +235,8 @@ namespace server_commands
 		void post_unpack() override
 		{
 			command::add("status", status);
+			command::add("clientkick", clientkick);
+			command::add("kick", kick);
 		}
 	};
 }

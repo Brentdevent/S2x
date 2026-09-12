@@ -336,6 +336,7 @@ namespace game
 
 	namespace mp
 	{
+		WEAK symbol<void(mp::client_t* client, const char* reason, std::uint8_t notify)> SV_DropClient{ 0xF4030 };
 		WEAK symbol<void(int migrate, int loadScripts)> SV_MapRestart{ 0x6D6F60 };
 		WEAK symbol<mp::playerState_s*(int clientNum)> SV_GetPlayerstateForClientNum{ 0x6D9AF0 };
 
