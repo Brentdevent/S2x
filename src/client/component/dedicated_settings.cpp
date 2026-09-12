@@ -5,6 +5,7 @@
 
 #include "command.hpp"
 #include "filesystem.hpp"
+#include "scheduler.hpp"
 #include "console/console.hpp"
 
 #include "game/game.hpp"
@@ -388,6 +389,14 @@ namespace dedicated_settings
 			{
 				record(name, value, "command line");
 			}
+
+			// The engine does not apply +set arguments itself under S2x. Apply the
+			// recorded values once every component has registered its dvars, so
+			// limits such as party_maxplayers are right before the lobby exists.
+			scheduler::once([]
+			{
+				restore("command line");
+			}, scheduler::pipeline::main);
 
 			filesystem::on_exec_file_read(on_exec_file_read);
 

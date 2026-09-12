@@ -1324,6 +1324,13 @@ namespace dedicated_party
 			{
 				sv_maprotation = game::Dvar_RegisterString(
 					"sv_maprotation", "", game::DVAR_FLAG_NONE);
+
+				// The engine does not apply +set arguments itself under S2x (see
+				// net_port); honour +set sv_maprotation the same way.
+				if (const auto value = utils::flags::get_set_value("sv_maprotation"))
+				{
+					game::Dvar_SetString(sv_maprotation, value->data());
+				}
 			}, scheduler::pipeline::main);
 
 			if (game::environment::is_multiplayer())
