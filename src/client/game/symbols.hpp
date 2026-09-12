@@ -131,6 +131,9 @@ namespace game
 	WEAK symbol<void(const char* mapName)> CL_PreloadMap2{ 0x837E0 };
 	WEAK symbol<void(unsigned int localClientNum)> CL_CheckForResend{ 0x6AF20 };
 	WEAK symbol<bool(int localClientNum)> CL_IsLocalClientInGame{ 0x7E110 };
+	// Copy cg->refdef.view.org / axis[0]; the native wrappers handle CG_GetLocalClient's caller check.
+	WEAK symbol<void(int localClientNum, float* pos)> CL_GetViewPos{ 0x7B8B0 };
+	WEAK symbol<void(int localClientNum, float* forward)> CL_GetViewForward{ 0x7B880 };
 	// MP only. Use call_safe: this getter decrypts the client pointer and checks its caller.
 	WEAK symbol<const std::byte*(int localClientNum)> CL_GetLocalClientActive{ 0x795D0 };
 	WEAK symbol<void(int a, int b)> CL_VirtualLobbyShutdown{ 0x8BB80 };
@@ -320,6 +323,9 @@ namespace game
 			unsigned int modelIndex, scr_string_t partName)> G_Damage{ 0x0, 0x3669B0 };
 
 		WEAK symbol<void(int localClientNum, const char* message, int type)> CG_GameMessage{ 0x0, 0x20DDF0 };
+		// SP CG_CalcViewValues (0x242430): refdef.view.org and the first view-axis row.
+		WEAK symbol<const float> refdef_view_origin{ 0x0, 0x2D59224 };
+		WEAK symbol<const float> refdef_view_forward{ 0x0, 0x2D59230 };
 		WEAK symbol<sp::gentity_s> g_entities{ 0x0, 0x8313160 };
 	}
 
