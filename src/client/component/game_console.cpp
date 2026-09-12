@@ -174,7 +174,7 @@ namespace game_console
 				1.0f, 
 				0.0f, 
 				color,
-				0
+				nullptr
 			);
 
 			con.globals.x = game::R_TextWidth(str, 0, font, 0, 0) + con.globals.x + 6.0f;
@@ -216,7 +216,7 @@ namespace game_console
 				1.0f,
 				0.0f,
 				color,
-				0
+				nullptr
 			);
 		}
 
@@ -463,7 +463,7 @@ namespace game_console
 					1.0f,
 					0.0f,
 					color_white,
-					0
+					nullptr
 				);
 			}
 		}
@@ -501,7 +501,7 @@ namespace game_console
 					1.0f,
 					0.0f,
 					color_title,
-					0
+					nullptr
 				);
 
 				draw_output_scrollbar(x, y, width, height, output);

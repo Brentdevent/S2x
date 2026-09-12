@@ -8,7 +8,7 @@
 namespace game
 {
 	WEAK symbol<void(const char* text, int max_chars, const Font_s* font, int unk0, int unk1, int pixel_h, 
-		float pos_x, float pos_y, float scale_x, float scale_y, float rotation, const float* color, long long style)> R_AddCmdDrawText{ 0x8BA480, 0x639430 };
+		float pos_x, float pos_y, float scale_x, float scale_y, float rotation, const float* color, const void* glowStyle)> R_AddCmdDrawText{ 0x8BA480, 0x639430 };
 	WEAK symbol<Font_s*(const char* name, int size)> R_RegisterFont{ 0x893D90, 0x612EB0 };
 
 	WEAK symbol<Material*(const char* material)> Material_RegisterHandle{ 0x8AC5F0, 0x62B0E0 };
@@ -60,6 +60,7 @@ namespace game
 
 	WEAK symbol<dvar_t*(const char* dvarName)> Dvar_FindMalleableVar{ 0xAF8E0, 0x4CDBE0 };
 	WEAK symbol<void (dvar_t* dvar, DvarFlags flags)> Dvar_SetFlags{ 0xAF370 };
+	WEAK symbol<int()> Dvar_Command{ 0x664880 };
 
 	WEAK symbol<bool(const char* dvarName)> Dvar_GetBool{ 0xAFA70 };
 	WEAK symbol<float(const char* dvarName)> Dvar_GetFloat{ 0xAFBC0 };
@@ -130,6 +131,8 @@ namespace game
 	WEAK symbol<void(const char* mapName)> CL_PreloadMap2{ 0x837E0 };
 	WEAK symbol<void(unsigned int localClientNum)> CL_CheckForResend{ 0x6AF20 };
 	WEAK symbol<bool(int localClientNum)> CL_IsLocalClientInGame{ 0x7E110 };
+	// MP only. Use call_safe: this getter decrypts the client pointer and checks its caller.
+	WEAK symbol<const std::byte*(int localClientNum)> CL_GetLocalClientActive{ 0x795D0 };
 	WEAK symbol<void(int a, int b)> CL_VirtualLobbyShutdown{ 0x8BB80 };
 	WEAK symbol<bool(int localClientNum, netadr_s* from, msg_t* msg, int time)> CL_DispatchConnectionlessPacket{ 0x6F7E0 };
 	WEAK symbol<void(int localClientNum, void* sessionInfo, netadr_s* to, const char* mapname, const char* gametype)> CL_ConnectAndPreloadMap{ 0x6CCA0 };
