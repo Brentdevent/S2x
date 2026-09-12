@@ -82,6 +82,11 @@ namespace game
 	WEAK symbol<void(dvar_t* dvar, const char* value)> Dvar_SetString{ 0xB2E30 };
 
 	WEAK symbol<bool(int* min, int* max)> CG_GetFovRange{ 0x45830, 0x23F6B0 };
+	// MP only. Both getters decrypt their pointers and check their callers; use call_safe.
+	WEAK symbol<const std::byte*(int localClientNum)> CG_GetLocalClient{ 0x15330 };
+	WEAK symbol<const std::byte*(int localClientNum)> CG_GetLocalClientStatic{ 0x461E0 };
+	WEAK symbol<void(int localClientNum)> CG_ProcessSnapshots{ 0x43ADA0 };
+	WEAK symbol<const std::byte*(int localClientNum)> CG_ReadNextSnapshot{ 0x43B580 };
 
 	WEAK symbol<const ScreenPlacement*(const LocalClientNum_t localClientNum)> ScrPlace_GetViewPlacement{ 0x4A01B0, 0x272660 };
 
