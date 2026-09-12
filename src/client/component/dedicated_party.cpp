@@ -87,6 +87,28 @@ namespace dedicated_party
 			return game::Party_IsRunning(party_data) && game::Party_AreWeHost(party_data);
 		}
 
+		bool party_join_is_blocked_by_match_limit_stub(const void* join_restrictions, const int reason)
+		{
+			const auto blocked = utils::hook::invoke<bool>(0x2A6C20_g, join_restrictions, reason);
+			auto* game_lobby = dedicated_party_state.game_lobby;
+
+			// PartyHost's admission checks pass PartyData + 0x20 to the native
+			// restriction reader: index 0 is the score limit, index 1 the time limit.
+			// These flags are set while the match is still running, before endMatch.
+			// Party_IsRunning is cleared during gameplay; the admission path already
+			// checks that the party is active and we are its host.
+			if (blocked && (reason == 0 || reason == 1)
+				&& dedicated_party_state.stage != dedicated_party_stage::inactive
+				&& game_lobby
+				&& join_restrictions == reinterpret_cast<const std::byte*>(game_lobby) + 0x20
+				&& game::Party_AreWeHost(game_lobby))
+			{
+				return false;
+			}
+
+			return blocked;
+		}
+
 		bool is_party_host_ready(game::PartyData* party_data)
 		{
 			return is_active_party_host(party_data) && !game::Party_IsWaitingForMembers(party_data);
@@ -1179,6 +1201,12 @@ namespace dedicated_party
 			party_match_start_delay = game::Dvar_RegisterInt(
 				"party_matchStartDelay", 60, 0, 120, game::DVAR_FLAG_NONE);
 			map_rotate_requested = utils::flags::has_flag("+map_rotate");
+
+			// Only relax the score/time-limit checks for our persistent hosted lobby.
+			// Stock emits pa_joinfailed 46/47 here (XBOXLIVE_CANTJOINSESSION_GAMELIMIT).
+			// Capacity, migration, paused-game and Zombies-wave checks remain native.
+			utils::hook::call(0x486A7F_g, party_join_is_blocked_by_match_limit_stub);
+			utils::hook::call(0x486A9C_g, party_join_is_blocked_by_match_limit_stub);
 
 			scheduler::once([]
 			{
