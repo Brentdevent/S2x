@@ -119,6 +119,7 @@ namespace syscon
 				return false;
 			}
 
+			console::notify_input(text);
 			game::Cbuf_AddText(0, text);
 			return true;
 		}

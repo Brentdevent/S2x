@@ -1,11 +1,15 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
 namespace filesystem
 {
+	// Observers of config files read by the exec command (packaged or loose).
+	void on_exec_file_read(const std::function<void(const std::string& name, const std::string& data)>& callback);
+
 	std::string read_file(const std::string& path);
 
 	bool read_file(

@@ -3,6 +3,7 @@
 
 #include "dedicated_party.hpp"
 #include "dedicated_party_client.hpp"
+#include "dedicated_settings.hpp"
 #include "party.hpp"
 #include "command.hpp"
 #include "scheduler.hpp"
@@ -677,15 +678,6 @@ namespace dedicated_party
 				party_match_start_delay->current.integer);
 		}
 
-		void queue_server_config()
-		{
-			const auto config = utils::flags::get_plus_value("exec");
-			if (config)
-			{
-				game::Cbuf_AddText(0, utils::string::va("exec %s\n", config->data()));
-			}
-		}
-
 		void prepare_match_settings(const dedicated_match_t& match)
 		{
 			if (game::environment::is_zombies())
@@ -700,10 +692,13 @@ namespace dedicated_party
 			}
 
 			// Stock lobby setup restores its gameplay defaults asynchronously. Reapply
-			// the dedicated config afterward so its gameplay values remain authoritative.
-			// The selected map and gametype are applied on the following main frame.
+			// the recorded admin settings afterward so the lobby shows the intended
+			// values; they are applied again synchronously when the match scripts load.
+			// Re-executing the startup config here would also re-run any map_rotate
+			// it ends with. The selected map and gametype are applied on the following
+			// main frame.
 			game::Cbuf_AddText(0, "exec default_xboxlive.cfg\n");
-			queue_server_config();
+			game::Cbuf_AddText(0, "dedicatedSettings restore\n");
 		}
 
 		void prepare_postmatch_lobby()
@@ -999,6 +994,7 @@ namespace dedicated_party
 					}
 
 					console::info("Dedicated party: match started.\n");
+					dedicated_settings::log_gametype_values(dedicated_party_state.current_match.gametype);
 					set_stage(dedicated_party_stage::match_running);
 				}
 				else if (stage_timed_out(60s))

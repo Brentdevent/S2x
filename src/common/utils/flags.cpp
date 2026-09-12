@@ -15,7 +15,7 @@ namespace utils::flags
 		std::mutex additional_flags_mutex{};
 		std::unordered_set<std::string> additional_flags{};
 
-		std::vector<std::string> parse_arguments()
+		std::vector<std::string> parse_arguments(const bool lowercase = true)
 		{
 			int num_args{};
 			auto* const argv = CommandLineToArgvW(GetCommandLineW(), &num_args);
@@ -35,7 +35,8 @@ namespace utils::flags
 
 				if (!wide_arg.empty())
 				{
-					arguments.emplace_back(string::to_lower(string::convert(wide_arg)));
+					auto argument = string::convert(wide_arg);
+					arguments.emplace_back(lowercase ? string::to_lower(argument) : std::move(argument));
 				}
 			}
 
@@ -156,5 +157,31 @@ namespace utils::flags
 		}
 
 		return std::nullopt;
+	}
+
+	std::vector<std::pair<std::string, std::string>> get_set_values()
+	{
+		static const auto arguments = parse_arguments(false);
+
+		std::vector<std::pair<std::string, std::string>> values{};
+
+		for (auto i = 0ull; i + 2 < arguments.size(); ++i)
+		{
+			if (string::to_lower(arguments[i]) != "+set")
+			{
+				continue;
+			}
+
+			const auto& value = arguments[i + 2];
+			if (!value.empty() && (value[0] == '-' || value[0] == '+'))
+			{
+				continue;
+			}
+
+			values.emplace_back(string::to_lower(arguments[i + 1]), value);
+			i += 2;
+		}
+
+		return values;
 	}
 }

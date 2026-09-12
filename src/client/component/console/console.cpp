@@ -30,6 +30,32 @@ namespace console
 
 	game::dvar_t* console_log = nullptr;
 
+	namespace
+	{
+		std::mutex input_callback_mutex{};
+		std::vector<std::function<void(const std::string&)>> input_callbacks{};
+	}
+
+	void on_input(const std::function<void(const std::string& text)>& callback)
+	{
+		std::lock_guard lock{input_callback_mutex};
+		input_callbacks.push_back(callback);
+	}
+
+	void notify_input(const std::string& text)
+	{
+		std::vector<std::function<void(const std::string&)>> callbacks{};
+		{
+			std::lock_guard lock{input_callback_mutex};
+			callbacks = input_callbacks;
+		}
+
+		for (const auto& callback : callbacks)
+		{
+			callback(text);
+		}
+	}
+
 	void init_console_type()
 	{
 		con_type = con_type_default;

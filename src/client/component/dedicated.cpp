@@ -4,6 +4,7 @@
 #include "console/console.hpp"
 #include "command.hpp"
 #include "dedicated_party.hpp"
+#include "dedicated_settings.hpp"
 #include "scheduler.hpp"
 
 #include "game/game.hpp"
@@ -464,6 +465,11 @@ namespace dedicated
 			// that is intentionally absent once a headless server starts a map.
 			utils::hook::set<game::BuiltinFunction>(0xAC9D310_g, dedicated_gsc_noop);
 			utils::hook::set<game::BuiltinFunction>(0xAC9DB38_g, dedicated_gsc_noop);
+
+			// The scripts loaded next read the gameplay dvars (scr_<gametype>_*).
+			// Re-apply the admin settings that the stock lobby defaults or
+			// playlist rules may have reset since the previous match.
+			dedicated_settings::restore("script load");
 		}
 
 		void ensure_dedicated_render_command_pool()
@@ -784,6 +790,7 @@ namespace dedicated
 			if (config)
 			{
 				console::info("Queueing dedicated startup config '%s'.\n", config->data());
+				dedicated_settings::register_exec_file(*config);
 				game::Cbuf_AddText(local_client, utils::string::va("exec %s\n", config->data()));
 			}
 		}

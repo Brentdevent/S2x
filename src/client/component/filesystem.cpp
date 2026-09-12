@@ -19,6 +19,16 @@ namespace filesystem
 		bool initialized = false;
 		bool custom_path_registered = false;
 
+		std::vector<std::function<void(const std::string&, const std::string&)>> exec_file_callbacks{};
+
+		void notify_exec_file_read(const char* filename, const char* data)
+		{
+			for (const auto& callback : exec_file_callbacks)
+			{
+				callback(filename, data);
+			}
+		}
+
 		void register_custom_path()
 		{
 			if (custom_path_registered)
@@ -56,6 +66,7 @@ namespace filesystem
 
 			if (auto* result = game::DB_ReadRawFile(filename, buffer, size))
 			{
+				notify_exec_file_read(filename, result);
 				return result;
 			}
 
@@ -76,6 +87,7 @@ namespace filesystem
 			std::memcpy(buffer, loose_buffer, static_cast<std::size_t>(length));
 			buffer[length] = '\0';
 			game::FS_FreeFile(loose_buffer);
+			notify_exec_file_read(filename, buffer);
 			return buffer;
 		}
 
@@ -193,6 +205,11 @@ namespace filesystem
 	{
 		std::string real_path{};
 		return find_file(path, &real_path);
+	}
+
+	void on_exec_file_read(const std::function<void(const std::string& name, const std::string& data)>& callback)
+	{
+		exec_file_callbacks.push_back(callback);
 	}
 
 	void register_path(const std::filesystem::path& path)
