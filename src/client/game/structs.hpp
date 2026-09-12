@@ -954,12 +954,15 @@ namespace game
 			playerState_s ps;
 			char __pad0[0x5AB8 - sizeof(playerState_s)];
 			int team;
-			char __pad5ABC[0x5DFC - 0x5ABC];
+			char __pad5ABC[0x5BFC - 0x5ABC];
+			int score;
+			char __pad5C00[0x5DFC - 0x5C00];
 			int flags;
 
 			// ... incomplete
 		};
 		static_assert(offsetof(gclient_s, team) == 0x5AB8);
+		static_assert(offsetof(gclient_s, score) == 0x5BFC);
 		static_assert(offsetof(gclient_s, flags) == 0x5DFC);
 
 		struct gentity_s
@@ -985,9 +988,17 @@ namespace game
 			int qport;
 			char __pad1[0x41DF0 - 0x48];
 			gentity_s* gentity;
-			char __pad2[0x41E44 - 0x41DF8];
+			char name[36];
+			char __pad41E1C[0x41E20 - 0x41E1C];
+			int lastPacketTime;
+			char __pad41E24[0x41E30 - 0x41E24];
+			int ping;
+			char __pad41E34[0x41E40 - 0x41E34];
+			int rate;
 			int pureAuthentic;
-			char __pad3[0x42158 - 0x41E48];
+			char __pad3[0x4213C - 0x41E48];
+			char guid[17];
+			char __pad4214D[0x42158 - 0x4214D];
 			int testClient;
 			char __pad4[0x11E870 - 0x4215C];
 		};
@@ -996,7 +1007,12 @@ namespace game
 		static_assert(offsetof(client_t, remoteAddress) == 0x00030);
 		static_assert(offsetof(client_t, qport) == 0x00044);
 		static_assert(offsetof(client_t, gentity) == 0x41DF0);
+		static_assert(offsetof(client_t, name) == 0x41DF8);
+		static_assert(offsetof(client_t, lastPacketTime) == 0x41E20);
+		static_assert(offsetof(client_t, ping) == 0x41E30);
+		static_assert(offsetof(client_t, rate) == 0x41E40);
 		static_assert(offsetof(client_t, pureAuthentic) == 0x41E44);
+		static_assert(offsetof(client_t, guid) == 0x4213C);
 		static_assert(offsetof(client_t, testClient) == 0x42158);
 
 		struct XZone

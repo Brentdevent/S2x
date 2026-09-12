@@ -353,6 +353,7 @@ namespace game
 		WEAK symbol<bool(char clientNum)> SV_HasAssignedTeam_Internal{ 0x6DF9D0 };
 		WEAK symbol<void(char clientNum, int team)> SV_SetAssignedTeam{ 0x6E1410 };
 
+		WEAK symbol<int> svs_time{ 0xC5FBA44 };
 		WEAK symbol<mp::client_t*> svs_clients{ 0xC5FBA58 };
 		WEAK symbol<mp::gentity_s> g_entities{ 0x9ED4430 };
 	}
