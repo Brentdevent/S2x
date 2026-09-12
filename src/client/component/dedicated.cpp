@@ -866,6 +866,13 @@ namespace dedicated
 			}
 
 			register_dedicated_net_port();
+
+			// MP and Zombies share this Com_Frame gate on an encoded CRT-pointer
+			// reference that remains unset under Wine in headless mode. Skipping
+			// CL_Frame strands deferred hub creation and the frontend's loopback
+			// connection. Keep the native client frame and its initialization/active
+			// checks; cl_check_for_resend_stub still prevents gameplay reconnects.
+			utils::hook::nop(0x92944_g, 2);
 			
 			game::Dvar_RegisterBool("dedicated", true, game::DVAR_FLAG_READ);
 			game::Dvar_RegisterBool("sv_lanOnly", false, game::DVAR_FLAG_NONE);
