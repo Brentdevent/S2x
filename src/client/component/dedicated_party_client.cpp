@@ -62,11 +62,32 @@ namespace dedicated_party_client
 		utils::hook::detour session_modify_hook;
 		bool hosted_dedicated_go_in_progress{};
 
+		bool has_hosted_dedicated_session(game::PartyData* party_data)
+		{
+			if (!party_data || party_data != game::Lobby_GetPartyData(0)
+				|| hosted_dedicated_party_state.session_id.empty()
+				|| game::Party_AreWeHost(party_data))
+			{
+				return false;
+			}
+
+			// Lobby_GetSessionData: the PartyData address is reused when the client
+			// leaves a server and creates a local lobby. Match the session itself.
+			const auto* session = utils::hook::invoke<game::SessionData*>(0x470F50_g, party_data);
+			if (!session)
+			{
+				return false;
+			}
+
+			std::array<char, 17> session_id{};
+			game::Session_IdToString(session->sessionId, session_id.data());
+			return hosted_dedicated_party_state.session_id == session_id.data();
+		}
+
 		void party_atomic_activate_lobby_stub(game::PartyData* party_data,
 			const unsigned int controller_index, const int joining)
 		{
-			const auto hosted_join = !hosted_dedicated_party_state.session_id.empty()
-				&& party_data == game::Lobby_GetPartyData(0);
+			const auto hosted_join = has_hosted_dedicated_session(party_data);
 			
 			if (hosted_join)
 			{
@@ -95,9 +116,8 @@ namespace dedicated_party_client
 						|| game::Party_AreWeHost(party_data));
 			}
 
-			return !hosted_dedicated_party_state.session_id.empty()
-				&& (party_data == hosted_dedicated_party_state.game_lobby
-					|| party_data == game::Lobby_GetPartyData(0));
+			return has_hosted_dedicated_session(party_data)
+				&& utils::hook::invoke<bool>(0x471200_g, party_data); // Lobby_IsInLobby
 		}
 
 		int get_hosted_dedicated_party_max_players()
@@ -107,9 +127,28 @@ namespace dedicated_party_client
 				return dedicated_party::get_max_players();
 			}
 
-			return hosted_dedicated_party_state.session_id.empty()
-				? -1
-				: hosted_dedicated_party_state.max_players;
+			return is_hosted_dedicated_game_lobby(game::Lobby_GetPartyData(0))
+				? hosted_dedicated_party_state.max_players
+				: -1;
+		}
+
+		int session_get_gameplay_member_xuids_stub(game::SessionData* session, std::uint64_t* xuids)
+		{
+			const auto count = utils::hook::invoke<int>(0x7B1E50_g, session, xuids);
+			auto* party_data = utils::hook::invoke<game::PartyData*>(0x6FDE30_g, session);
+			if (count <= 0 || !is_hosted_dedicated_game_lobby(party_data))
+			{
+				return count;
+			}
+
+			// CG's player-configstring reconciliation removes session members that
+			// have no gameplay client. The dedicated owner now lives outside that
+			// range and must survive this scan so the party still has its host when
+			// the match ends. Filter only this gameplay roster, not the session.
+			const auto host_xuid = utils::hook::invoke<std::uint64_t>(
+				0x6FDE70_g, session, party_data->hostIndex);
+			const auto* end = std::remove(xuids, xuids + count, host_xuid);
+			return static_cast<int>(end - xuids);
 		}
 
 		bool is_dedicated_host_member(game::PartyData* party_data, const int member_index)
@@ -197,8 +236,13 @@ namespace dedicated_party_client
 				&& result != 0;
 		}
 
-		void apply_hosted_party_capacity(game::PartyData* party_data = nullptr)
+		void apply_hosted_party_capacity(game::PartyData* party_data, const bool joining = false)
 		{
+			if (!joining && !is_hosted_dedicated_game_lobby(party_data))
+			{
+				return;
+			}
+
 			const auto max_players = hosted_dedicated_party_state.max_players;
 			if (max_players < 1
 				|| max_players > game::environment::get_online_mode_info().max_players)
@@ -232,7 +276,10 @@ namespace dedicated_party_client
 			const int flags, int public_slots, const int private_slots, const int spectator_slots)
 		{
 			auto* party_data = utils::hook::invoke<game::PartyData*>(0x6FDE30_g, session);
-			if (party_data == game::Lobby_GetPartyData(0) && is_hosted_dedicated_game_lobby(party_data))
+			if (party_data == game::Lobby_GetPartyData(0)
+				&& (game::environment::is_dedicated()
+					? is_hosted_dedicated_game_lobby(party_data)
+					: has_hosted_dedicated_session(party_data)))
 			{
 				// Native lobby updates resize sessions again after map transitions.
 				// Retain the owner's fixed index even when the human limit is smaller.
@@ -359,7 +406,8 @@ namespace dedicated_party_client
 			party_client_process_party_state_hook.invoke<void>(
 				party_data, active_client, from);
 
-			if (!is_hosted_dedicated_party_address(from))
+			if (!is_hosted_dedicated_party_address(from)
+				|| !is_hosted_dedicated_game_lobby(party_data))
 			{
 				return;
 			}
@@ -524,7 +572,7 @@ namespace dedicated_party_client
 			hosted_dedicated_party_state.game_lobby = game::Lobby_GetPartyData(0);
 			hosted_dedicated_party_state.max_players = hosted_max_players;
 			hosted_dedicated_party_state.sync_after_next_go = true;
-			apply_hosted_party_capacity(hosted_dedicated_party_state.game_lobby);
+			apply_hosted_party_capacity(hosted_dedicated_party_state.game_lobby, true);
 			refresh_presentation();
 
 			console::info("Hosted dedicated lobby: joining through %s.\n",
@@ -700,7 +748,8 @@ namespace dedicated_party_client
 
 		hosted_dedicated_party_state.sync_challenge.clear();
 		if (info.get("party_session") == "1"
-			&& info.get("session_id") == hosted_dedicated_party_state.session_id)
+			&& info.get("session_id") == hosted_dedicated_party_state.session_id
+			&& is_hosted_dedicated_game_lobby(game::Lobby_GetPartyData(0)))
 		{
 			hosted_dedicated_party_state.max_players = max_players;
 			apply_hosted_party_capacity(hosted_dedicated_party_state.game_lobby);
@@ -726,7 +775,8 @@ namespace dedicated_party_client
 			return party::loaded_map_name();
 		}
 
-		return hosted_dedicated_party_state.map_name;
+		return is_hosted_dedicated_game_lobby(game::Lobby_GetPartyData(0))
+			? hosted_dedicated_party_state.map_name : std::string{};
 	}
 
 	std::string get_gametype()
@@ -736,7 +786,8 @@ namespace dedicated_party_client
 			return dedicated_party::get_current_gametype();
 		}
 
-		return hosted_dedicated_party_state.gametype;
+		return is_hosted_dedicated_game_lobby(game::Lobby_GetPartyData(0))
+			? hosted_dedicated_party_state.gametype : std::string{};
 	}
 
 	void refresh_presentation()
@@ -814,6 +865,8 @@ namespace dedicated_party_client
 				return;
 			}
 
+			// Preserve the dedicated owner when CG reconciles gameplay configstrings.
+			utils::hook::call(0x436608_g, session_get_gameplay_member_xuids_stub);
 			cl_connect_and_preload_map_hook.create(
 				game::CL_ConnectAndPreloadMap, cl_connect_and_preload_map_stub);
 			party_atomic_setup_potential_host_hook.create(
