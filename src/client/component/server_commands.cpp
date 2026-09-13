@@ -195,9 +195,11 @@ namespace server_commands
 				return;
 			}
 
+			constexpr auto row_format = "{:>3} {:>5} {:>4} {:16} {:36} {:>7} {:21} {:>6} {:>5}\n";
 			auto output = std::format("map: {}\n", party::loaded_map_name());
-			output += "num score ping guid                             name                                 lastmsg address               qport rate\n";
-			output += "--- ----- ---- -------------------------------- ------------------------------------ ------- --------------------- ----- -----\n";
+			output += std::format(row_format, "num", "score", "ping", "guid", "name", "lastmsg", "address", "qport", "rate");
+			output += std::format(row_format, "---", "-----", "----", "----------------", "------------------------------------",
+				"-------", "---------------------", "------", "-----");
 
 			const auto* clients = *game::mp::svs_clients;
 			const auto max_clients = *game::sv_maxclients;
@@ -219,7 +221,7 @@ namespace server_commands
 					? client.gentity->client->score : 0;
 				const auto last_message = std::max<std::int64_t>(0, server_time - client.lastPacketTime);
 
-				output += std::format("{:3} {:5} {} {:>32} {:36} {:7} {:21} {:5} {:5}\n",
+				output += std::format(row_format,
 					i, score, ping, status_string(client.guid), status_string(client.name), last_message,
 					network::net_adr_to_string(client.remoteAddress), client.qport, client.rate);
 			}

@@ -4,6 +4,7 @@
 
 #include "resource.hpp"
 #include "console.hpp"
+#include "scrollbars.hpp"
 
 #include "game/game.hpp"
 
@@ -434,7 +435,8 @@ namespace syscon
 			0,
 			"edit",
 			0,
-			WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_BORDER | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | WS_BORDER |
+			ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
 			6,
 			70,
 			608,
@@ -451,6 +453,7 @@ namespace syscon
 		SendMessageA(s_wcd.hwndInputLine, WM_SETFONT, reinterpret_cast<WPARAM>(s_wcd.hfBufferFont), 0);
 		SetFocus(s_wcd.hwndInputLine);
 		SetWindowTextA(s_wcd.hwndBuffer, s_wcd.cleanBuffer);
+		console_scrollbars::attach(s_wcd.hwndBuffer, darkmode);
 		InitializeCriticalSection(&s_wcd.critSect);
 	}
 
