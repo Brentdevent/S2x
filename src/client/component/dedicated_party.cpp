@@ -24,6 +24,7 @@ namespace dedicated_party
 		constexpr std::uint32_t party_host_state_mask = 0xFC;
 		constexpr auto party_member_limit = 48;
 		constexpr auto private_party_creation_timeout = 90s;
+		utils::hook::detour party_host_start_party_hook;
 
 		enum class dedicated_party_stage
 		{
@@ -47,6 +48,7 @@ namespace dedicated_party
 			dedicated_match_t current_match{};
 			std::uint64_t match_sequence{};
 			std::size_t next_rotation_index{};
+			int player_capacity{};
 			game::PartyData* private_party{};
 			game::PartyData* game_lobby{};
 			std::chrono::steady_clock::time_point stage_started{};
@@ -73,6 +75,78 @@ namespace dedicated_party
 		game::PartyData* get_private_party_data()
 		{
 			return game::Party_GetPrivatePartyData();
+		}
+
+		bool is_dedicated_game_lobby(game::PartyData* party_data)
+		{
+			return is_active() && party_data && party_data == game::Lobby_GetPartyData(0);
+		}
+
+		bool is_dedicated_game_session(game::SessionData* session)
+		{
+			return session && is_dedicated_game_lobby(
+				utils::hook::invoke<game::PartyData*>(0x6FDE30_g, session));
+		}
+
+		char party_host_start_party_stub(game::PartyData* party_data,
+			const unsigned int local_client_num, const unsigned int controller_index,
+			const char flags, const int private_slots, int public_slots)
+		{
+			if (is_dedicated_game_lobby(party_data))
+			{
+				// These counts are also serialized in partystate. Keep the full index
+				// range on both peers; admission and member allocation are bounded below.
+				public_slots = get_session_capacity() - private_slots;
+			}
+
+			return party_host_start_party_hook.invoke<char>(party_data, local_client_num,
+				controller_index, flags, private_slots, public_slots);
+		}
+
+		void party_host_initialize_stub(game::PartyData* party_data, const int controller_index)
+		{
+			if (is_dedicated_game_lobby(party_data))
+			{
+				// Set this before Session_StartHost registers the local member. Moving
+				// only the gameplay scan would leave the owner's XUID in human slot 0.
+				party_data->hostIndex = static_cast<std::uint8_t>(get_host_member_index());
+			}
+
+			utils::hook::invoke<void>(0x490E70_g, party_data, controller_index);
+		}
+
+		int party_join_capacity_stub(game::SessionData* session)
+		{
+			return is_dedicated_game_session(session)
+				? get_member_capacity(dedicated_party_state.player_capacity)
+				: utils::hook::invoke<int>(0x6FD030_g, session);
+		}
+
+		int party_member_allocation_limit_stub(game::SessionData* session)
+		{
+			// Free and expired reservations must always use playable indices. In
+			// particular, do not fill the gap below the owner on a smaller server.
+			return is_dedicated_game_session(session)
+				? dedicated_party_state.player_capacity
+				: utils::hook::invoke<int>(0x6FD030_g, session);
+		}
+
+		int gscr_get_party_max_players_stub(game::PartyData* party_data)
+		{
+			return is_dedicated_game_lobby(party_data)
+				? dedicated_party_state.player_capacity
+				: utils::hook::invoke<int>(0x197110_g, party_data);
+		}
+
+		void sv_register_max_clients_stub(const int minimum)
+		{
+			utils::hook::invoke<void>(0x6DA7A0_g, minimum);
+			if (is_active())
+			{
+				// SV_Startup re-registers the dvar before reading it for allocations.
+				// Reapply the human limit after that registration as well as at handoff.
+				game::Dvar_SetIntByName("sv_maxclients", dedicated_party_state.player_capacity);
+			}
 		}
 
 		bool is_active_party_host(game::PartyData* party_data)
@@ -155,35 +229,25 @@ namespace dedicated_party
 
 			const auto max_players = party_maxplayers->current.integer;
 			const auto min_players = std::min(party_minplayers->current.integer, max_players);
+			const auto member_capacity = get_member_capacity(max_players);
+			dedicated_party_state.player_capacity = max_players;
 
 			game::Dvar_SetIntByName("sv_maxclients", max_players);
 
-			// The stock MP and Zombies private-party starters both read 5321 when
-			// creating their native hosted session.
-			game::Dvar_SetIntByName("5321", max_players);
+			// The stock MP and Zombies private-party starters use this dvar to size
+			// their hosted session, including the dedicated frontend owner.
+			game::Dvar_SetIntByName("party_maxPrivatePartyPlayers", member_capacity);
 
 			if (dedicated_party_state.private_party)
 			{
-				game::Party_SetMaxClients(dedicated_party_state.private_party, max_players);
+				game::Party_SetMaxClients(dedicated_party_state.private_party, member_capacity);
 			}
 
 			if (dedicated_party_state.game_lobby)
 			{
-				game::Party_SetMaxClients(dedicated_party_state.game_lobby, max_players);
+				game::Party_SetMaxClients(dedicated_party_state.game_lobby, member_capacity);
 				game::Party_SetMinClients(dedicated_party_state.game_lobby, min_players);
 			}
-		}
-
-		int get_configured_party_max_players()
-		{
-			if (!party_maxplayers)
-			{
-				return game::environment::get_online_mode_info().max_players;
-			}
-
-			return std::clamp(
-				party_maxplayers->current.integer, 1,
-				game::environment::get_online_mode_info().max_players);
 		}
 
 		void set_game_is_private_match(const int local_client_num, const bool private_match)
@@ -993,6 +1057,21 @@ namespace dedicated_party
 		}
 	}
 
+	int get_host_member_index()
+	{
+		return game::environment::get_online_mode_info().max_players;
+	}
+
+	int get_session_capacity()
+	{
+		return get_member_capacity(get_host_member_index());
+	}
+
+	int get_max_players()
+	{
+		return is_active() ? dedicated_party_state.player_capacity : -1;
+	}
+
 	void start()
 	{
 		if (!game::environment::is_dedicated() || is_active()
@@ -1171,7 +1250,7 @@ namespace dedicated_party
 			? dedicated_party_state.game_lobby
 			: game_lobby;
 		info.member_count = get_remote_party_member_count(hosted_game_lobby);
-		info.max_members = get_configured_party_max_players();
+		info.max_members = dedicated_party_state.player_capacity;
 		info.match_running = party::server_running();
 
 		return is_session_hex_string(info.host_address, 80)
@@ -1201,6 +1280,23 @@ namespace dedicated_party
 			party_match_start_delay = game::Dvar_RegisterInt(
 				"party_matchStartDelay", 60, 0, 120, game::DVAR_FLAG_NONE);
 			map_rotate_requested = utils::flags::has_flag("+map_rotate");
+
+			party_host_start_party_hook.create(0x491DE0_g, party_host_start_party_stub);
+			utils::hook::call(0x4924A9_g, party_host_initialize_stub);
+
+			// Native counts include the owner. Check the configured human limit plus
+			// that member for join probes, individual joins, and atomic party joins.
+			utils::hook::call(0x486A62_g, party_join_capacity_stub);
+			utils::hook::call(0x487037_g, party_join_capacity_stub);
+			utils::hook::call(0x488AFA_g, party_join_capacity_stub);
+
+			utils::hook::call(0x48AB77_g, party_member_allocation_limit_stub);
+			utils::hook::call(0x48AC47_g, party_member_allocation_limit_stub);
+
+			// Scripts use this value for gameplay (including bot population), where
+			// the dedicated owner must never count as an additional player slot.
+			utils::hook::call(0x5795DB_g, gscr_get_party_max_players_stub);
+			utils::hook::call(0x6DCDE4_g, sv_register_max_clients_stub);
 
 			// Only relax the score/time-limit checks for our persistent hosted lobby.
 			// Stock emits pa_joinfailed 46/47 here (XBOXLIVE_CANTJOINSESSION_GAMELIMIT).

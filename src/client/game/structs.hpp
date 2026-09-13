@@ -456,7 +456,9 @@ namespace game
 		PartySettings settings;
 		char __pad1[0x3F8 - 0x250 - sizeof(PartySettings)];
 		PartyMember members[48];
-		char __pad2[0x186400 - 0x3F8 - sizeof(PartyMember) * 48];
+		char __pad2[0x1863BC - 0x3F8 - sizeof(PartyMember) * 48];
+		std::uint8_t hostIndex;
+		char __padHostIndex[0x186400 - 0x1863BC - sizeof(std::uint8_t)];
 		PartyActiveClient activeClient;
 		char __pad3[0x186430 - 0x186400 - sizeof(PartyActiveClient)];
 		std::uint32_t launchDeadline;
@@ -465,6 +467,7 @@ namespace game
 	};
 	static_assert(offsetof(PartyData, settings) == 0x250);
 	static_assert(offsetof(PartyData, members) == 0x3F8);
+	static_assert(offsetof(PartyData, hostIndex) == 0x1863BC);
 	static_assert(offsetof(PartyData, activeClient) == 0x186400);
 	static_assert(offsetof(PartyData, launchDeadline) == 0x186430);
 	static_assert(offsetof(PartyData, hostState) == 0x186490);

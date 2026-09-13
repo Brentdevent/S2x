@@ -59,6 +59,7 @@ namespace dedicated_party_client
 
 		hosted_party_join_state_t hosted_party_join_state{};
 		hosted_dedicated_party_state_t hosted_dedicated_party_state{};
+		utils::hook::detour session_modify_hook;
 		bool hosted_dedicated_go_in_progress{};
 
 		void party_atomic_activate_lobby_stub(game::PartyData* party_data,
@@ -103,13 +104,7 @@ namespace dedicated_party_client
 		{
 			if (game::environment::is_dedicated())
 			{
-				if (!dedicated_party::is_active())
-				{
-					return -1;
-				}
-
-				const auto* dvar = game::Dvar_FindMalleableVar("party_maxplayers");
-				return dvar ? dvar->current.integer : -1;
+				return dedicated_party::get_max_players();
 			}
 
 			return hosted_dedicated_party_state.session_id.empty()
@@ -211,11 +206,12 @@ namespace dedicated_party_client
 				return;
 			}
 
-			auto apply = [max_players](game::PartyData* target)
+			const auto member_capacity = dedicated_party::get_member_capacity(max_players);
+			auto apply = [member_capacity](game::PartyData* target)
 			{
 				if (target)
 				{
-					game::Party_SetMaxClients(target, max_players);
+					game::Party_SetMaxClients(target, member_capacity);
 				}
 			};
 
@@ -230,6 +226,29 @@ namespace dedicated_party_client
 			{
 				apply(private_party);
 			}
+		}
+
+		void session_modify_stub(const int controller_index, game::SessionData* session,
+			const int flags, int public_slots, const int private_slots, const int spectator_slots)
+		{
+			auto* party_data = utils::hook::invoke<game::PartyData*>(0x6FDE30_g, session);
+			if (party_data == game::Lobby_GetPartyData(0) && is_hosted_dedicated_game_lobby(party_data))
+			{
+				// Native lobby updates resize sessions again after map transitions.
+				// Retain the owner's fixed index even when the human limit is smaller.
+				public_slots = dedicated_party::get_session_capacity() - private_slots;
+			}
+
+			session_modify_hook.invoke<void>(controller_index, session, flags,
+				public_slots, private_slots, spectator_slots);
+		}
+
+		void party_set_gameplay_max_clients_stub(game::dvar_t* dvar, const int value)
+		{
+			const auto max_players = get_hosted_dedicated_party_max_players();
+			// Party settings and partystate include the owner. Both the host and
+			// receiving clients must allocate gameplay state for human players only.
+			game::Dvar_SetInt(dvar, max_players > 0 ? max_players : value);
 		}
 
 		bool is_session_hex_string(const std::string& value, const std::size_t expected_size)
@@ -440,12 +459,12 @@ namespace dedicated_party_client
 		{
 			const auto is_hosted_party_join = pending_hosted_party_join_matches(session_info);
 			const auto pending_join = hosted_party_join_state;
-			const auto setup_max_players = is_hosted_party_join
-				? pending_join.max_players
+			const auto setup_member_capacity = is_hosted_party_join
+				? dedicated_party::get_session_capacity()
 				: max_players;
 
 			const auto result = party_atomic_setup_potential_host_hook.invoke<int>(
-				controller_index, session_info, party_type, setup_max_players, a5, a6, join_info);
+				controller_index, session_info, party_type, setup_member_capacity, a5, a6, join_info);
 
 			if (!is_hosted_party_join)
 			{
@@ -462,7 +481,7 @@ namespace dedicated_party_client
 			const auto match_sequence = pending_join.match_sequence;
 			const auto map_name = pending_join.map_name;
 			const auto gametype = pending_join.gametype;
-			const auto hosted_max_players = setup_max_players;
+			const auto hosted_max_players = pending_join.max_players;
 			if (hosted_party_join_state.attempt_id == pending_join.attempt_id
 				&& hosted_party_join_state.session_id == pending_join.session_id)
 			{
@@ -493,7 +512,7 @@ namespace dedicated_party_client
 				utils::hook::invoke<void>(0x6FC830_g, session);
 				if (!utils::hook::invoke<bool>(
 					0x6FFD70_g, session, controller_index, online_connection_type,
-					session_info, 0, hosted_max_players, a5))
+					session_info, 0, setup_member_capacity, a5))
 				{
 					console::error("Hosted dedicated lobby: native party session setup failed.\n");
 					return false;
@@ -782,6 +801,14 @@ namespace dedicated_party_client
 			// its native host member; the character scene is filtered separately in LUI.
 			party_is_member_ui_visible_hook.create(
 				game::Party_IsMemberUIVisible, party_is_member_ui_visible_stub);
+
+			// Party-to-game handoff, partystate receipt, and memory reconfiguration
+			// each copy a party capacity into sv_maxClients independently.
+			utils::hook::call(0x475139_g, party_set_gameplay_max_clients_stub);
+			utils::hook::call(0x47772C_g, party_set_gameplay_max_clients_stub);
+			utils::hook::call(0x62538_g, party_set_gameplay_max_clients_stub);
+			utils::hook::call(0x625FE_g, party_set_gameplay_max_clients_stub);
+			session_modify_hook.create(0x6FE6A0_g, session_modify_stub);
 
 			if (game::environment::is_dedicated())
 			{

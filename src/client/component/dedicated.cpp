@@ -742,18 +742,6 @@ namespace dedicated
 			utils::hook::nop(0x486E91_g, 1);
 		}
 
-		std::uint8_t is_direct_connect_slot_reserved_stub(game::PartyData* party_data, const char client_num)
-		{
-			// The persistent frontend owner remains party member 0, but it never creates
-			// a gameplay client. Do not let that party entry reserve svs_clients[0].
-			if (client_num == 0)
-			{
-				return 0;
-			}
-
-			return utils::hook::invoke<std::uint8_t>(0x6FE240_g, party_data, client_num);
-		}
-
 		void cl_check_for_resend_stub(const unsigned int local_client_num)
 		{
 			if (game::virtual_lobby_loaded())
@@ -1221,19 +1209,18 @@ namespace dedicated
 			
 			disable_p2p_auth_ticket_validation();
 
-			// The memory reconfiguration performed before SV_Startup replaces the
-			// configured sv_maxClients value with the frontend party capacity. Keep
-			// the dedicated limit so the following allocations use the intended size.
-			utils::hook::nop(0x62538_g, 5);
-
 			// The persistent frontend leaves S2's virtual-lobby allocation flag set.
 			// Force SV_Startup to use sv_maxClients instead of its 48-client frontend
 			// allocation; gameplay client sidecars only contain 18 valid entries.
 			utils::hook::set<std::uint8_t>(0x6DCE04_g, 0xEB);
 
-			// SV_DirectConnect uses this party-member test while selecting a free
-			// gameplay client. Preserve every reservation except the frontend owner.
-			utils::hook::call(0xF3AA2_g, is_direct_connect_slot_reserved_stub);
+			// SV_DirectConnect reserves a minimum of one local gameplay slot on listen
+			// servers. Dedicated hosts live outside the gameplay range. Start invited
+			// peers at 0 and other peers at private_slots, including the bot replacement
+			// scan which shares r14d. Keep native session reservation checks intact.
+			utils::hook::nop(0xF3A43_g, 4); // remove setz r14b (r14d is already zero)
+			utils::hook::set<std::uint8_t>(0xF3A5F_g, 0); // cmp eax, 0
+			utils::hook::set<std::uint32_t>(0xF3A61_g, 0); // mov eax, 0
 
 			if (game::environment::is_multiplayer())
 			{

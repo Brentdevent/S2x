@@ -6,6 +6,20 @@
 
 namespace dedicated_party
 {
+	// A hosted dedicated lobby retains its frontend owner as a party/session
+	// member, but that owner never becomes a gameplay client.
+	constexpr int get_member_capacity(const int player_capacity)
+	{
+		return player_capacity + 1;
+	}
+
+	// Keep the owner beyond every gameplay index, including when a server changes
+	// its configured limit between maps. Native sessions must include this index.
+	int get_host_member_index();
+	int get_session_capacity();
+	// Applied human limit, or -1 before the dedicated lobby exists.
+	int get_max_players();
+
 	struct dedicated_match_t
 	{
 		std::string map_name{};
