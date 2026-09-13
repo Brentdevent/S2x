@@ -394,8 +394,7 @@ namespace dedicated_party_client
 		std::int64_t party_client_handle_go_stub(game::PartyData* party_data, void* command_data,
 			game::netadr_s* from, game::msg_t* message)
 		{
-			std::string map_name_value{};
-			std::string gametype_value{};
+			auto hosted_go = false;
 			if (is_hosted_dedicated_party_address(from) && game::Cmd_Argc() > 6)
 			{
 				// PartyClient_HandleGo passes argv[5] and argv[6] to
@@ -405,13 +404,12 @@ namespace dedicated_party_client
 				if (map_name && gametype
 					&& update_hosted_dedicated_party_match(map_name, gametype, false))
 				{
-					map_name_value = map_name;
-					gametype_value = gametype;
+					hosted_go = true;
 					hosted_dedicated_party_state.sync_after_next_go = true;
 				}
 			}
 
-			hosted_dedicated_go_in_progress = !map_name_value.empty();
+			hosted_dedicated_go_in_progress = hosted_go;
 			if (hosted_dedicated_go_in_progress
 				&& game::environment::is_zombies())
 			{
@@ -427,13 +425,9 @@ namespace dedicated_party_client
 				party_data, command_data, from, message);
 			hosted_dedicated_go_in_progress = false;
 
-			if (!map_name_value.empty())
-			{
-				update_hosted_dedicated_party_match(
-					map_name_value, gametype_value,
-					game::environment::is_multiplayer());
-			}
-
+			// HandleGo can ignore or defer a message while the virtual lobby loads.
+			// Only CL_ConnectAndPreloadMap may commit the accepted match's settings;
+			// writing mapname here can make lobby startup request the next map's BSP.
 			return result;
 		}
 
@@ -802,16 +796,21 @@ namespace dedicated_party_client
 			party_is_member_ui_visible_hook.create(
 				game::Party_IsMemberUIVisible, party_is_member_ui_visible_stub);
 
-			// Party-to-game handoff, partystate receipt, and memory reconfiguration
-			// each copy a party capacity into sv_maxClients independently.
+			// Party-to-game handoff and partystate receipt must exclude the owner
+			// when copying party capacity into the gameplay limit.
 			utils::hook::call(0x475139_g, party_set_gameplay_max_clients_stub);
 			utils::hook::call(0x47772C_g, party_set_gameplay_max_clients_stub);
-			utils::hook::call(0x62538_g, party_set_gameplay_max_clients_stub);
-			utils::hook::call(0x625FE_g, party_set_gameplay_max_clients_stub);
 			session_modify_hook.create(0x6FE6A0_g, session_modify_stub);
 
 			if (game::environment::is_dedicated())
 			{
+				// Only headless servers pin memory capacity to the human limit.
+				// Clients need the native 48-slot virtual-lobby allocation after a
+				// match. Clamping it leaves too little memory for lobby SV_Startup
+				// and triggers Memory Error: 6 161. Keep native capacity restoration
+				// for an existing client allocation intact as well.
+				utils::hook::call(0x62538_g, party_set_gameplay_max_clients_stub);
+				utils::hook::call(0x625FE_g, party_set_gameplay_max_clients_stub);
 				return;
 			}
 

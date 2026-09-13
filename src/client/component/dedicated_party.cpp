@@ -131,6 +131,19 @@ namespace dedicated_party
 				: utils::hook::invoke<int>(0x6FD030_g, session);
 		}
 
+		bool party_is_team_member_stub(game::PartyData* party_data, const int member_index)
+		{
+			// Keep the frontend owner registered for session/transport purposes, but
+			// exclude it from the groups used for team balancing and atomic joins.
+			// Otherwise the join check tries to divide 19 members into equal teams.
+			if (is_dedicated_game_lobby(party_data) && game::Party_IsHost(party_data, member_index))
+			{
+				return false;
+			}
+
+			return utils::hook::invoke<bool>(0x481980_g, party_data, member_index);
+		}
+
 		int gscr_get_party_max_players_stub(game::PartyData* party_data)
 		{
 			return is_dedicated_game_lobby(party_data)
@@ -1289,6 +1302,13 @@ namespace dedicated_party
 			utils::hook::call(0x486A62_g, party_join_capacity_stub);
 			utils::hook::call(0x487037_g, party_join_capacity_stub);
 			utils::hook::call(0x488AFA_g, party_join_capacity_stub);
+
+			// PartyHost's group builder seeds the host group, then appends present
+			// members. Filter both sites so there is no empty host group either.
+			// Admission still pads by session capacity minus the native member count;
+			// both include the owner, so that padding already counts only vacant slots.
+			utils::hook::call(0x4939F8_g, party_is_team_member_stub);
+			utils::hook::call(0x493A27_g, party_is_team_member_stub);
 
 			utils::hook::call(0x48AB77_g, party_member_allocation_limit_stub);
 			utils::hook::call(0x48AC47_g, party_member_allocation_limit_stub);
