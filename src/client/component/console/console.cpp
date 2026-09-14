@@ -33,18 +33,18 @@ namespace console
 	namespace
 	{
 		std::mutex input_callback_mutex{};
-		std::vector<std::function<void(const std::string&)>> input_callbacks{};
+		std::vector<std::function<void(std::string&)>> input_callbacks{};
 	}
 
-	void on_input(const std::function<void(const std::string& text)>& callback)
+	void on_input(const std::function<void(std::string& text)>& callback)
 	{
 		std::lock_guard lock{input_callback_mutex};
 		input_callbacks.push_back(callback);
 	}
 
-	void notify_input(const std::string& text)
+	std::string notify_input(std::string text)
 	{
-		std::vector<std::function<void(const std::string&)>> callbacks{};
+		std::vector<std::function<void(std::string&)>> callbacks{};
 		{
 			std::lock_guard lock{input_callback_mutex};
 			callbacks = input_callbacks;
@@ -54,6 +54,8 @@ namespace console
 		{
 			callback(text);
 		}
+
+		return text;
 	}
 
 	void init_console_type()

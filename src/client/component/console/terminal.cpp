@@ -254,8 +254,8 @@ namespace terminal
 
 				con.history_index = -1;
 
-				console::notify_input(con.buffer);
-				game::Cbuf_AddText(0, con.buffer);
+				const auto text = console::notify_input(con.buffer);
+				game::Cbuf_AddText(0, text.data());
 
 				con.cursor = 0;
 

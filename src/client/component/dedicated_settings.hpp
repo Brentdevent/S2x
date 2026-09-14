@@ -9,7 +9,7 @@ namespace dedicated_settings
 	void register_exec_file(const std::string& name);
 
 	// Re-applies every recorded admin dvar value. Returns how many were written.
-	int restore(const char* reason);
+	int restore(const char* reason, bool startup = false);
 
 	// Logs the live scr_<gametype>_* limit values for the given gametype.
 	void log_gametype_values(const std::string& gametype);

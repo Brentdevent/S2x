@@ -119,8 +119,8 @@ namespace syscon
 				return false;
 			}
 
-			console::notify_input(text);
-			game::Cbuf_AddText(0, text);
+			const auto queued = console::notify_input(text);
+			game::Cbuf_AddText(0, queued.data());
 			return true;
 		}
 

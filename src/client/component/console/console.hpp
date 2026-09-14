@@ -9,10 +9,11 @@ namespace console
 {
 	void set_title(const std::string& title);
 
-	// Observers of text entered into the server/system console, called before
-	// the text is queued for execution.
-	void on_input(const std::function<void(const std::string& text)>& callback);
-	void notify_input(const std::string& text);
+	// Transforms of text entered into the server/system console, applied in
+	// registration order before the text is queued for execution; a callback
+	// may rewrite the text it is given.
+	void on_input(const std::function<void(std::string& text)>& callback);
+	std::string notify_input(std::string text);
 
 	enum print_type
 	{

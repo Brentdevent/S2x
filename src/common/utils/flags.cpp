@@ -147,8 +147,11 @@ namespace utils::flags
 				continue;
 			}
 
+			// The engine splits the command line on tokens starting with '+', so a
+			// '+' value is really the next command; a '-' value is a legitimate
+			// signed number or dash-prefixed string (+set scr_x -1).
 			const auto& value = arguments[i + 2];
-			if (!value.empty() && (value[0] == '-' || value[0] == '+'))
+			if (!value.empty() && value[0] == '+')
 			{
 				return std::nullopt;
 			}
@@ -173,7 +176,7 @@ namespace utils::flags
 			}
 
 			const auto& value = arguments[i + 2];
-			if (!value.empty() && (value[0] == '-' || value[0] == '+'))
+			if (!value.empty() && value[0] == '+')
 			{
 				continue;
 			}

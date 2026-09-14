@@ -10,6 +10,14 @@ namespace filesystem
 	// Observers of config files read by the exec command (packaged or loose).
 	void on_exec_file_read(const std::function<void(const std::string& name, const std::string& data)>& callback);
 
+	// Lets a component rewrite a config's text before the engine executes it:
+	// loose files, and packaged rawfiles the engine copied into the exec
+	// buffer. `capacity` is the size of that buffer including the terminator;
+	// the callback returns true when it changed the text and must keep the
+	// result below that capacity (a longer result is discarded).
+	void on_exec_file_transform(
+		const std::function<bool(const std::string& name, std::string& data, std::size_t capacity)>& callback);
+
 	std::string read_file(const std::string& path);
 
 	bool read_file(

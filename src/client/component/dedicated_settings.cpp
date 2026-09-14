@@ -1,4 +1,5 @@
 #include <std_include.hpp>
+#include <map>
 #include "loader/component_loader.hpp"
 
 #include "dedicated_settings.hpp"
@@ -22,6 +23,16 @@
 // dvar value that came from the admin (+set launch arguments, the +exec
 // config and configs exec'd later, and text typed into the server console)
 // and re-applies them right before the game scripts read them.
+//
+// Config and console values are recorded when the engine executes them, not
+// when the text is read or typed. Tracked configs and console input are
+// rewritten on their way into the command buffer: commands are split the way
+// the engine splits them, and every dvar write is immediately followed by a
+// private "dedicatedSettings _act <id>" command whose payload (source, name,
+// value) is held by this component. The engine then runs the actions in its
+// own order - nested and repeated execs included - so a parent's later
+// command wins over a child's without reconstructing that order from file
+// reads, and nothing about a value has to fit the engine's tokenizer.
 namespace dedicated_settings
 {
 	namespace
@@ -33,10 +44,39 @@ namespace dedicated_settings
 			std::string value{};
 		};
 
+		// One deferred ledger write, executed by "dedicatedSettings _act <id>".
+		struct pending_action
+		{
+			std::string source{};
+			std::string name{};
+			std::string value{};
+			std::chrono::steady_clock::time_point committed{};
+			bool forget{};
+			// "<dvar> <value>" with no command of that name; whether the first
+			// token is a dvar is decided on the engine thread when it runs.
+			bool bare{};
+		};
+
+		// Never log while holding this: the terminal input path holds its own
+		// print lock while the console transform runs, and console output takes
+		// that same lock, so logging under the ledger lock would invert them.
 		std::mutex mutex;
 		std::vector<entry> ledger{};
 		std::unordered_set<std::string> admin_exec_files{};
+		std::map<std::uint64_t, pending_action> pending{};
+		std::atomic<std::uint64_t> next_action_id{1};
 		std::atomic_bool typed_fallback_reported{false};
+
+		// Queued command text executes within the frames that follow its
+		// submission, so an action still pending an hour after it was committed
+		// is taken to belong to text that never ran (a rejected console
+		// submission, a level change mid-buffer). That is a heuristic - the engine
+		// does not report a cancelled submission - chosen so that reclamation is
+		// by age only, never by count, and a hard ceiling only refuses new
+		// batches (which are then not executed either).
+		constexpr auto pending_action_lifetime = std::chrono::hours{1};
+		constexpr std::size_t max_pending_actions = 65536;
+		constexpr auto act_action = "_act";
 
 		std::string normalize_key(const std::string& name)
 		{
@@ -63,6 +103,35 @@ namespace dedicated_settings
 			}();
 
 			return managed.contains(key);
+		}
+
+		// Values of credential-style dvars (g_password, net_socksPassword, rcon
+		// secrets) never reach this component's console output or the log file.
+		// The engine's own names are numbers here (g_password is 5370), so both
+		// the name as typed and the display name that number resolves to are
+		// tested. The raw console echo of the typed line is outside this scope.
+		bool is_sensitive(const std::string& name)
+		{
+			const auto engine_name = game::lookup::dvars::resolve_engine_name(name);
+			const auto display_name = game::lookup::dvars::resolve_display_name(engine_name);
+			for (const auto candidate : {std::string_view{name}, display_name})
+			{
+				const auto lowered = utils::string::to_lower(std::string{candidate});
+				for (const auto* needle : {"password", "passwd", "secret", "token", "rcon"})
+				{
+					if (lowered.find(needle) != std::string::npos)
+					{
+						return true;
+					}
+				}
+			}
+
+			return false;
+		}
+
+		const char* display_value(const std::string& name, const std::string& value)
+		{
+			return is_sensitive(name) ? "<redacted>" : value.data();
 		}
 
 		std::string normalize_exec_name(std::string name)
@@ -94,9 +163,9 @@ namespace dedicated_settings
 			return joined;
 		}
 
-		// Splits console text into commands (newline or ';' separated) and
-		// tokens (whitespace separated, double quotes group, // comments end
-		// the command), mirroring the engine's command tokenizer.
+		// Splits command text into commands (newline, carriage return or ';'
+		// separated) and tokens (whitespace separated, double quotes group, //
+		// comments end the command), mirroring the engine's command tokenizer.
 		std::vector<std::vector<std::string>> tokenize(const std::string& text)
 		{
 			std::vector<std::vector<std::string>> commands{};
@@ -188,7 +257,8 @@ namespace dedicated_settings
 			return commands;
 		}
 
-		void record(const std::string& name, const std::string& value, const char* source)
+		// Ledger writes mutate under the lock and log after releasing it.
+		void record(const std::string& name, const std::string& value, const std::string& source)
 		{
 			const auto key = normalize_key(name);
 			if (key.empty() || is_lifecycle_managed(key))
@@ -196,63 +266,352 @@ namespace dedicated_settings
 				return;
 			}
 
-			std::lock_guard _(mutex);
-			std::erase_if(ledger, [&key](const entry& existing)
 			{
-				return existing.key == key;
-			});
+				std::lock_guard _(mutex);
+				std::erase_if(ledger, [&key](const entry& existing)
+				{
+					return existing.key == key;
+				});
 
-			ledger.push_back({key, name, value});
-			console::info("Dedicated settings: recorded %s \"%s\" (%s).\n", name.data(), value.data(), source);
+				ledger.push_back({key, name, value});
+			}
+
+			console::info("Dedicated settings: recorded %s \"%s\" (%s).\n", name.data(), display_value(name, value),
+				source.data());
 		}
 
-		void parse_commands(const std::string& text, const char* source)
+		// "reset <dvar>" returns the live dvar to its default; the ledger must
+		// forget the value too, or the next restore would bring it back.
+		void forget(const std::string& name, const std::string& source)
 		{
-			for (const auto& tokens : tokenize(text))
+			const auto key = normalize_key(name);
+			std::size_t removed{};
+			{
+				std::lock_guard _(mutex);
+				removed = std::erase_if(ledger, [&key](const entry& existing)
+				{
+					return existing.key == key;
+				});
+			}
+
+			if (removed != 0)
+			{
+				console::info("Dedicated settings: dropped %s after reset (%s).\n", name.data(), source.data());
+			}
+		}
+
+		bool is_set_command(const std::string& command)
+		{
+			return command == "set" || command == "seta" || command == "sets" || command == "setu";
+		}
+
+		// The result of rewriting one piece of command text. Building it touches
+		// neither the ledger nor the tracked-config set (only the id counter
+		// advances); the caller commits the actions and child registrations when
+		// it hands the text on for execution.
+		struct rewrite
+		{
+			std::string text{};
+			std::vector<std::pair<std::uint64_t, pending_action>> actions{};
+			std::vector<std::string> children{};
+		};
+
+		// The deferred action for one already-split command, if it writes a dvar.
+		void plan_command(const std::string& command_text, const std::string& source, rewrite& out)
+		{
+			for (const auto& tokens : tokenize(command_text))
 			{
 				const auto command = utils::string::to_lower(tokens[0]);
+				pending_action action{};
+				action.source = source;
 
-				if (command == "set" || command == "seta" || command == "sets" || command == "setu")
+				if (is_set_command(command) && tokens.size() >= 3)
 				{
-					if (tokens.size() >= 3)
-					{
-						record(tokens[1], join_tokens(tokens, 2), source);
-					}
-
-					continue;
+					action.name = tokens[1];
+					action.value = join_tokens(tokens, 2);
 				}
-
-				if (command == "exec")
+				else if (command == "reset" && tokens.size() >= 2)
+				{
+					action.name = tokens[1];
+					action.forget = true;
+				}
+				else if (command == "exec")
 				{
 					if (tokens.size() >= 2)
 					{
-						register_exec_file(tokens[1]);
+						out.children.push_back(tokens[1]);
 					}
 
 					continue;
 				}
-
-				// "<dvar> <value>" sets the dvar when no command has that name.
-				if (tokens.size() >= 2 && game::Dvar_FindMalleableVar(tokens[0].data()))
+				else if (command == "dedicatedsettings")
 				{
-					record(tokens[0], join_tokens(tokens, 1), source);
+					continue;
 				}
+				else if (tokens.size() >= 2)
+				{
+					// "<dvar> <value>" sets the dvar when no command has that name;
+					// the lookup happens on the engine thread when the action runs.
+					action.name = tokens[0];
+					action.value = join_tokens(tokens, 1);
+					action.bare = true;
+				}
+				else
+				{
+					continue;
+				}
+
+				const auto id = next_action_id.fetch_add(1);
+				out.text += utils::string::va("dedicatedSettings %s %llu\n", act_action,
+					static_cast<unsigned long long>(id));
+				out.actions.emplace_back(id, std::move(action));
 			}
 		}
 
-		void on_exec_file_read(const std::string& name, const std::string& data)
+		// Rewrites command text so that every dvar write is immediately followed
+		// by its action: commands are split the way the engine splits them
+		// (newline, carriage return or ';' outside quotes; // starts a comment
+		// that runs to the end of the line), each command is emitted on a line
+		// of its own with its action right after it, and comments keep their
+		// line. An exec in the middle of a line therefore runs after the actions
+		// of the commands before it. Every emitted command and comment is
+		// newline-terminated, so nothing can run into the next submission.
+		rewrite instrument_commands(const std::string& text, const std::string& source)
+		{
+			rewrite out{};
+			out.text.reserve(text.size() * 2);
+			std::string current{};
+			auto in_quotes = false;
+
+			const auto flush = [&](const bool keep_blank_line)
+			{
+				if (current.find_first_not_of(" \t") == std::string::npos)
+				{
+					if (keep_blank_line)
+					{
+						out.text += current;
+						out.text += '\n';
+					}
+
+					current.clear();
+					return;
+				}
+
+				out.text += current;
+				out.text += '\n';
+				plan_command(current, source, out);
+				current.clear();
+			};
+
+			for (std::size_t i = 0; i < text.size(); ++i)
+			{
+				const auto character = text[i];
+
+				if (in_quotes)
+				{
+					if (character == '"')
+					{
+						in_quotes = false;
+					}
+					else if (character == '\n')
+					{
+						in_quotes = false;
+						flush(true);
+						continue;
+					}
+
+					current += character;
+					continue;
+				}
+
+				if (character == '"')
+				{
+					in_quotes = true;
+					current += character;
+					continue;
+				}
+
+				if (character == '\n')
+				{
+					flush(true);
+					continue;
+				}
+
+				if (character == '\r' || character == ';')
+				{
+					flush(false);
+					continue;
+				}
+
+				if (character == '/' && i + 1 < text.size() && text[i + 1] == '/')
+				{
+					// The command before the comment, with its action, then the
+					// comment on a line of its own.
+					flush(false);
+					while (i < text.size() && text[i] != '\n')
+					{
+						out.text += text[i++];
+					}
+
+					out.text += '\n';
+					continue;
+				}
+
+				current += character;
+			}
+
+			flush(false);
+			if (!out.text.empty() && out.text.back() != '\n')
+			{
+				out.text += '\n';
+			}
+
+			return out;
+		}
+
+		void register_exec_file_locked(const std::string& name, std::vector<std::string>& newly_tracked)
 		{
 			const auto normalized = normalize_exec_name(name);
+			if (!normalized.empty() && admin_exec_files.emplace(normalized).second)
+			{
+				newly_tracked.push_back(normalized);
+			}
+		}
 
+		// Publishes a rewrite's actions and child registrations, then logs.
+		// Returns false, publishing nothing, when the pending set is at its
+		// ceiling even after reclaiming abandoned actions.
+		bool commit(rewrite& planned)
+		{
+			std::vector<std::string> newly_tracked{};
+			auto admitted = true;
 			{
 				std::lock_guard _(mutex);
-				if (!admin_exec_files.contains(normalized))
+				const auto now = std::chrono::steady_clock::now();
+				std::erase_if(pending, [now](const auto& item)
 				{
-					return;
+					return now - item.second.committed > pending_action_lifetime;
+				});
+
+				admitted = pending.size() + planned.actions.size() <= max_pending_actions;
+				if (admitted)
+				{
+					for (auto& [id, action] : planned.actions)
+					{
+						action.committed = now;
+						pending.emplace(id, std::move(action));
+					}
+
+					for (const auto& child : planned.children)
+					{
+						register_exec_file_locked(child, newly_tracked);
+					}
 				}
 			}
 
-			parse_commands(data, normalized.data());
+			if (!admitted)
+			{
+				console::warn("Dedicated settings: %zu deferred writes are already pending; this text is not tracked.\n",
+					max_pending_actions);
+				return false;
+			}
+
+			for (const auto& name : newly_tracked)
+			{
+				console::info("Dedicated settings: tracking config '%s'.\n", name.data());
+			}
+
+			return true;
+		}
+
+		// Tracked configs are rewritten on their way into the exec buffer. A
+		// tracked config that cannot be instrumented - its rewrite would not fit
+		// the buffer, or the deferred-write ceiling is reached - is not executed
+		// at all: running it untracked would leave the ledger holding whatever an
+		// earlier config wrote, which is the wrong-order bug this exists to
+		// prevent. The warning names the file and the reason so the admin can
+		// split it.
+		bool instrument_config(const std::string& name, std::string& data, const std::size_t capacity)
+		{
+			const auto source = normalize_exec_name(name);
+
+			{
+				std::lock_guard _(mutex);
+				if (!admin_exec_files.contains(source))
+				{
+					return false;
+				}
+			}
+
+			auto planned = instrument_commands(data, source);
+			if (planned.text.size() >= capacity)
+			{
+				console::error("Dedicated settings: '%s' was not executed: it is too large to track (%zu of %zu bytes "
+					"once instrumented). Split it into smaller configs.\n",
+					source.data(), planned.text.size(), capacity);
+				data.clear();
+				return true;
+			}
+
+			if (!commit(planned))
+			{
+				console::error("Dedicated settings: '%s' was not executed: its writes could not be tracked.\n",
+					source.data());
+				data.clear();
+				return true;
+			}
+
+			data = std::move(planned.text);
+			return true;
+		}
+
+		// Console text is queued for execution, not run at once, so it is
+		// rewritten the same way before it is queued. The actions are published
+		// before the console hands the text to the command buffer; if that buffer
+		// refuses the text, its actions age out unexecuted. Text whose writes
+		// cannot be tracked is not executed, the same as a config.
+		void instrument_console_input(std::string& text)
+		{
+			auto planned = instrument_commands(text, "console");
+			if (!commit(planned))
+			{
+				console::error("Dedicated settings: the console command was not executed: its writes could not be tracked.\n");
+				text.clear();
+				return;
+			}
+
+			text = std::move(planned.text);
+		}
+
+		// Runs one deferred action on the engine thread.
+		void run_action(const std::uint64_t id)
+		{
+			pending_action action{};
+			{
+				std::lock_guard _(mutex);
+				const auto found = pending.find(id);
+				if (found == pending.end())
+				{
+					return;
+				}
+
+				action = std::move(found->second);
+				pending.erase(found);
+			}
+
+			if (action.bare && !game::Dvar_FindMalleableVar(action.name.data()))
+			{
+				return;
+			}
+
+			if (action.forget)
+			{
+				forget(action.name, action.source);
+			}
+			else
+			{
+				record(action.name, action.value, action.source);
+			}
 		}
 
 		bool value_matches(game::dvar_t* dvar, const std::string& value)
@@ -297,7 +656,7 @@ namespace dedicated_settings
 			if (!typed_fallback_reported.exchange(true))
 			{
 				console::warn("Dedicated settings: Dvar_SetCommand did not apply %s \"%s\"; using typed setters.\n",
-					name.data(), value.data());
+					name.data(), display_value(name, value));
 			}
 
 			apply_typed(dvar, value);
@@ -306,20 +665,19 @@ namespace dedicated_settings
 
 	void register_exec_file(const std::string& name)
 	{
-		const auto normalized = normalize_exec_name(name);
-		if (normalized.empty())
+		std::vector<std::string> newly_tracked{};
 		{
-			return;
+			std::lock_guard _(mutex);
+			register_exec_file_locked(name, newly_tracked);
 		}
 
-		std::lock_guard _(mutex);
-		if (admin_exec_files.emplace(normalized).second)
+		for (const auto& tracked : newly_tracked)
 		{
-			console::info("Dedicated settings: tracking config '%s'.\n", normalized.data());
+			console::info("Dedicated settings: tracking config '%s'.\n", tracked.data());
 		}
 	}
 
-	int restore(const char* reason)
+	int restore(const char* reason, const bool startup)
 	{
 		std::vector<entry> snapshot{};
 		{
@@ -333,13 +691,35 @@ namespace dedicated_settings
 			auto* dvar = game::Dvar_FindMalleableVar(item.name.data());
 			if (dvar)
 			{
-				if (dvar->flags & (game::DVAR_FLAG_READ | game::DVAR_FLAG_WRITE))
+				// DVAR_FLAG_WRITE is the engine's DVAR_ROM: never written.
+				// DVAR_FLAG_READ is DVAR_INIT: settable from the command line only,
+				// which is exactly the startup pass and nothing later.
+				if (dvar->flags & game::DVAR_FLAG_WRITE)
+				{
+					continue;
+				}
+
+				if ((dvar->flags & game::DVAR_FLAG_READ) && !startup)
 				{
 					continue;
 				}
 
 				if (value_matches(dvar, item.value))
 				{
+					continue;
+				}
+
+				if (dvar->flags & game::DVAR_FLAG_READ)
+				{
+					// The engine only takes DVAR_INIT values before registration and
+					// fail-fasts on a later typed write. Lift the bit for this single
+					// startup write - the value the command line would have latched -
+					// and put it back so the dvar stays startup-only afterwards.
+					const auto flags = dvar->flags;
+					dvar->flags = flags & ~static_cast<unsigned int>(game::DVAR_FLAG_READ);
+					apply_value(item.name, item.value);
+					dvar->flags = flags;
+					++written;
 					continue;
 				}
 			}
@@ -395,40 +775,59 @@ namespace dedicated_settings
 			// limits such as party_maxplayers are right before the lobby exists.
 			scheduler::once([]
 			{
-				restore("command line");
+				restore("command line", true);
 			}, scheduler::pipeline::main);
 
-			filesystem::on_exec_file_read(on_exec_file_read);
-
-			console::on_input([](const std::string& text)
-			{
-				parse_commands(text, "console");
-			});
+			filesystem::on_exec_file_transform(instrument_config);
+			console::on_input(instrument_console_input);
 
 			command::add("dedicatedSettings", [](const command::params& params)
 			{
 				const std::string action = params.size() > 1 ? params[1] : "list";
 
+				if (action == act_action)
+				{
+					// dedicatedSettings _act <id>: the deferred write behind an
+					// instrumented command. Typing it by hand runs whatever is pending
+					// under that id, or nothing.
+					if (params.size() >= 3)
+					{
+						run_action(std::strtoull(params[2], nullptr, 10));
+					}
+
+					return;
+				}
+
 				if (action == "restore")
 				{
-					restore("manual");
+					restore("manual", false);
 					return;
 				}
 
 				if (action == "clear")
 				{
-					std::lock_guard _(mutex);
-					ledger.clear();
+					{
+						std::lock_guard _(mutex);
+						ledger.clear();
+					}
+
 					console::info("Dedicated settings: cleared.\n");
 					return;
 				}
 
-				std::lock_guard _(mutex);
-				console::info("Dedicated settings: %zu recorded value(s), %zu tracked config(s).\n",
-					ledger.size(), admin_exec_files.size());
-				for (const auto& item : ledger)
+				std::vector<entry> snapshot{};
+				std::size_t tracked{};
 				{
-					console::info("  %s \"%s\"\n", item.name.data(), item.value.data());
+					std::lock_guard _(mutex);
+					snapshot = ledger;
+					tracked = admin_exec_files.size();
+				}
+
+				console::info("Dedicated settings: %zu recorded value(s), %zu tracked config(s).\n",
+					snapshot.size(), tracked);
+				for (const auto& item : snapshot)
+				{
+					console::info("  %s \"%s\"\n", item.name.data(), display_value(item.name, item.value));
 				}
 			});
 		}

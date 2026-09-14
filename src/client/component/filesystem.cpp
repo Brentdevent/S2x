@@ -20,6 +20,7 @@ namespace filesystem
 		bool custom_path_registered = false;
 
 		std::vector<std::function<void(const std::string&, const std::string&)>> exec_file_callbacks{};
+		std::vector<std::function<bool(const std::string&, std::string&, std::size_t)>> exec_file_transforms{};
 
 		void notify_exec_file_read(const char* filename, const char* data)
 		{
@@ -57,6 +58,39 @@ namespace filesystem
 			game::FS_AddLocalizedGameDirectory(path, dir);
 		}
 
+		// Applies the registered exec transforms to config text that is about to
+		// enter the engine's exec buffer of `size` bytes. A rewrite that would not
+		// fit is the transform's own problem to refuse; this only guards the copy.
+		bool rewrite_exec_text(const char* filename, std::string& text, const int size)
+		{
+			if (exec_file_transforms.empty())
+			{
+				return false;
+			}
+
+			auto rewritten = text;
+			auto changed = false;
+			for (const auto& transform : exec_file_transforms)
+			{
+				changed = transform(filename, rewritten, static_cast<std::size_t>(size)) || changed;
+			}
+
+			if (!changed)
+			{
+				return false;
+			}
+
+			if (rewritten.size() >= static_cast<std::size_t>(size))
+			{
+				console::warn("Config file '%s' was rewritten past the exec buffer size (%zu of %d bytes); executing it as written.\n",
+					filename, rewritten.size(), size);
+				return false;
+			}
+
+			text = std::move(rewritten);
+			return true;
+		}
+
 		char* read_raw_file_for_exec_stub(const char* filename, char* buffer, const int size)
 		{
 			if (!filename || !buffer || size <= 0)
@@ -66,6 +100,18 @@ namespace filesystem
 
 			if (auto* result = game::DB_ReadRawFile(filename, buffer, size))
 			{
+				// A packaged config the engine copied into our buffer can be rewritten
+				// like a loose one; a pointer into asset memory is left alone.
+				if (result == buffer)
+				{
+					std::string text(buffer);
+					if (rewrite_exec_text(filename, text, size))
+					{
+						std::memcpy(buffer, text.data(), text.size());
+						buffer[text.size()] = '\0';
+					}
+				}
+
 				notify_exec_file_read(filename, result);
 				return result;
 			}
@@ -77,16 +123,19 @@ namespace filesystem
 				return nullptr;
 			}
 
-			if (length >= size)
+			std::string text(loose_buffer, static_cast<std::size_t>(length));
+			game::FS_FreeFile(loose_buffer);
+
+			if (text.size() >= static_cast<std::size_t>(size))
 			{
-				game::FS_FreeFile(loose_buffer);
 				console::error("Config file '%s' exceeds the exec buffer size.\n", filename);
 				return nullptr;
 			}
 
-			std::memcpy(buffer, loose_buffer, static_cast<std::size_t>(length));
-			buffer[length] = '\0';
-			game::FS_FreeFile(loose_buffer);
+			rewrite_exec_text(filename, text, size);
+
+			std::memcpy(buffer, text.data(), text.size());
+			buffer[text.size()] = '\0';
 			notify_exec_file_read(filename, buffer);
 			return buffer;
 		}
@@ -210,6 +259,12 @@ namespace filesystem
 	void on_exec_file_read(const std::function<void(const std::string& name, const std::string& data)>& callback)
 	{
 		exec_file_callbacks.push_back(callback);
+	}
+
+	void on_exec_file_transform(
+		const std::function<bool(const std::string& name, std::string& data, std::size_t capacity)>& callback)
+	{
+		exec_file_transforms.push_back(callback);
 	}
 
 	void register_path(const std::filesystem::path& path)
