@@ -44,3 +44,14 @@ rotate twice, and check both the ledger and live value remain 250.
 A tracked config is refused in full if adding its ledger actions exceeds the
 engine's exec buffer or the pending-action limit. It does **not** run untracked;
 split such a config into smaller files. This refusal is reported in the console.
+
+Diagnostic fields (names, values and config paths) show at most 256 bytes each;
+the combined live-limits line shows at most 3000 bytes. This bounds the existing
+console formatter without truncating stored settings. Log tests use the actual
+format constants with the same CRT formatting API and 4096-byte buffer, including
+4055-byte and 1-MiB inputs. Sensitive-value redaction still happens before formatting.
+
+Toggle tests exercise the production deferred-capture helper with simulated
+dvars. Native `toggle` and `togglep` still perform the actual value cycling;
+capture reads their resulting current or latched value, using the appropriate
+native formatting mode. Unsupported no-list types and missing targets are skipped.

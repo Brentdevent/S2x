@@ -17,5 +17,9 @@ call "%~dp0run-dedicated-settings-copy-tests.cmd"
 if errorlevel 1 exit /b 1
 call "%~dp0dedicated_settings_command_tests.cmd"
 if errorlevel 1 exit /b 1
+call "%~dp0run-dedicated-settings-log-tests.cmd"
+if errorlevel 1 exit /b 1
+call "%~dp0dedicated_settings_toggle_tests.cmd"
+if errorlevel 1 exit /b 1
 call "%~dp0flags_tests.cmd"
 exit /b %errorlevel%

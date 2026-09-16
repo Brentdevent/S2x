@@ -7,6 +7,8 @@
 #include "dedicated_settings_config.hpp"
 #include "dedicated_settings_value.hpp"
 #include "dedicated_settings_copy.hpp"
+#include "dedicated_settings_toggle.hpp"
+#include "dedicated_settings_log.hpp"
 
 #include "command.hpp"
 #include "filesystem.hpp"
@@ -60,6 +62,7 @@ namespace dedicated_settings
 			// token is a dvar is decided on the engine thread when it runs.
 			bool bare{};
 			std::optional<detail::copied_assignment> copied{};
+			std::optional<detail::toggled_assignment> toggled{};
 		};
 
 		// Never log while holding this: the terminal input path holds its own
@@ -188,7 +191,7 @@ namespace dedicated_settings
 				ledger.push_back({key, name, value});
 			}
 
-			console::info("Dedicated settings: recorded %s \"%s\" (%s).\n", name.data(), display_value(name, value),
+			console::info(detail::recorded_format, name.data(), display_value(name, value),
 				source.data());
 		}
 
@@ -208,7 +211,7 @@ namespace dedicated_settings
 
 			if (removed != 0)
 			{
-				console::info("Dedicated settings: dropped %s after reset (%s).\n", name.data(), source.data());
+				console::info(detail::dropped_format, name.data(), source.data());
 			}
 		}
 
@@ -252,6 +255,12 @@ namespace dedicated_settings
 					action.copied = detail::plan_copy(tokens);
 					if (!action.copied) continue;
 					action.name = action.copied->destination;
+				}
+				else if (command == "toggle" || command == "togglep")
+				{
+					action.toggled = detail::plan_toggle(tokens);
+					if (!action.toggled) continue;
+					action.name = action.toggled->target;
 				}
 				else if (command == "exec")
 				{
@@ -348,7 +357,7 @@ namespace dedicated_settings
 
 			for (const auto& name : newly_tracked)
 			{
-				console::info("Dedicated settings: tracking config '%s'.\n", name.data());
+				console::info(detail::tracking_format, name.data());
 			}
 
 			return true;
@@ -376,8 +385,7 @@ namespace dedicated_settings
 			auto planned = instrument_commands(data, source);
 			if (planned.text.size() >= capacity)
 			{
-				console::error("Dedicated settings: '%s' was not executed: it is too large to track (%zu of %zu bytes "
-					"once instrumented). Split it into smaller configs.\n",
+				console::error(detail::capacity_format,
 					source.data(), planned.text.size(), capacity);
 				data.clear();
 				return true;
@@ -385,7 +393,7 @@ namespace dedicated_settings
 
 			if (!commit(planned))
 			{
-				console::error("Dedicated settings: '%s' was not executed: its writes could not be tracked.\n",
+				console::error(detail::refused_format,
 					source.data());
 				data.clear();
 				return true;
@@ -438,6 +446,19 @@ namespace dedicated_settings
 					const auto* current = game::Dvar_ValueToString(dvar, true, &dvar->current);
 					if (!current) return std::nullopt;
 					return std::string{current};
+				});
+				if (value) record(action.name, *value, action.source);
+				return;
+			}
+
+			if (action.toggled)
+			{
+				const auto value = action.toggled->read_result([](const std::string& name)
+				{
+					return game::Dvar_FindMalleableVar(name.data());
+				}, [](game::dvar_t* dvar, const bool current, game::DvarValue* value)
+				{
+					return game::Dvar_ValueToString(dvar, current, value);
 				});
 				if (value) record(action.name, *value, action.source);
 				return;
@@ -508,7 +529,7 @@ namespace dedicated_settings
 
 			if (!typed_fallback_reported.exchange(true))
 			{
-				console::warn("Dedicated settings: Dvar_SetCommand did not apply %s \"%s\"; using typed setters.\n",
+				console::warn(detail::fallback_format,
 					name.data(), display_value(name, value));
 			}
 
@@ -526,7 +547,7 @@ namespace dedicated_settings
 
 		for (const auto& tracked : newly_tracked)
 		{
-			console::info("Dedicated settings: tracking config '%s'.\n", tracked.data());
+			console::info(detail::tracking_format, tracked.data());
 		}
 	}
 
@@ -583,7 +604,7 @@ namespace dedicated_settings
 
 		if (!snapshot.empty())
 		{
-			console::info("Dedicated settings: restored %d of %zu value(s) (%s).\n",
+			console::info(detail::restored_format,
 				written, snapshot.size(), reason);
 		}
 
@@ -605,7 +626,7 @@ namespace dedicated_settings
 			line += utils::string::va(" %s=%s", name, game::Dvar_ValueToString(dvar, true, &dvar->current));
 		}
 
-		console::info("Dedicated settings: live%s\n", line.empty() ? " (no scr_ limits registered)" : line.data());
+		console::info(detail::live_format, line.empty() ? " (no scr_ limits registered)" : line.data());
 	}
 
 	class component final : public multiplayer_component
@@ -680,7 +701,7 @@ namespace dedicated_settings
 					snapshot.size(), tracked);
 				for (const auto& item : snapshot)
 				{
-					console::info("  %s \"%s\"\n", item.name.data(), display_value(item.name, item.value));
+					console::info(detail::listed_format, item.name.data(), display_value(item.name, item.value));
 				}
 			});
 		}
