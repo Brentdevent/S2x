@@ -15,6 +15,18 @@ Boolean restoration follows the native numeric conversion rather than treating
 only the literal `1` as true. See `dedicated_settings_value_notes.md` for the
 reverse-engineering evidence and its limits.
 
+The copy tests exercise the deferred `setfromdvar` action with simulated dvar
+lookups. They cover late source creation, missing sources, empty values and
+latched destinations. Like ordinary `set`, the ledger records the requested
+value, not a claim that the engine accepted it; domain rejection remains the
+engine's responsibility. These tests do not execute the native `setfromdvar` command.
+
+Command tests cover native-style line splitting separately from token decoding,
+including escaped quotes, block and line comments, and deferred-action ordering.
+Raw command segments are preserved. Native command splitting counts every quote
+and does not skip comments; tokenization then decodes quotes and skips comments.
+See `dedicated_settings_command_notes.md` for the evidence and limits.
+
 The config tests use the production admin-config registry. They verify that
 startup and nested admin configs remain tracked, while `default_xboxlive.cfg`
 never enters the registry, including extensionless and case variants. They also

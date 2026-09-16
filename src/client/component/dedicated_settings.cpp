@@ -3,8 +3,10 @@
 #include "loader/component_loader.hpp"
 
 #include "dedicated_settings.hpp"
+#include "dedicated_settings_command.hpp"
 #include "dedicated_settings_config.hpp"
 #include "dedicated_settings_value.hpp"
+#include "dedicated_settings_copy.hpp"
 
 #include "command.hpp"
 #include "filesystem.hpp"
@@ -57,6 +59,7 @@ namespace dedicated_settings
 			// "<dvar> <value>" with no command of that name; whether the first
 			// token is a dvar is decided on the engine thread when it runs.
 			bool bare{};
+			std::optional<detail::copied_assignment> copied{};
 		};
 
 		// Never log while holding this: the terminal input path holds its own
@@ -154,98 +157,16 @@ namespace dedicated_settings
 			return joined;
 		}
 
-		// Splits command text into commands (newline, carriage return or ';'
-		// separated) and tokens (whitespace separated, double quotes group, //
-		// comments end the command), mirroring the engine's command tokenizer.
+		// Tokenize one command already separated by the native Cbuf rules.
 		std::vector<std::vector<std::string>> tokenize(const std::string& text)
 		{
-			std::vector<std::vector<std::string>> commands{};
-			std::vector<std::string> tokens{};
-			std::string token{};
-			auto in_token = false;
-			auto in_quotes = false;
-
-			const auto end_token = [&]
+			auto tokens = detail::tokenize_settings_command(text);
+			if (tokens.empty())
 			{
-				if (in_token)
-				{
-					tokens.push_back(token);
-					token.clear();
-					in_token = false;
-				}
-			};
-
-			const auto end_command = [&]
-			{
-				end_token();
-				if (!tokens.empty())
-				{
-					commands.push_back(tokens);
-					tokens.clear();
-				}
-			};
-
-			for (std::size_t i = 0; i < text.size(); ++i)
-			{
-				const auto character = text[i];
-
-				if (in_quotes)
-				{
-					if (character == '"')
-					{
-						in_quotes = false;
-						end_token();
-					}
-					else if (character == '\n')
-					{
-						in_quotes = false;
-						end_command();
-					}
-					else if (character != '\r')
-					{
-						token += character;
-					}
-
-					continue;
-				}
-
-				if (character == '"')
-				{
-					end_token();
-					in_quotes = true;
-					in_token = true;
-					continue;
-				}
-
-				if (character == '\n' || character == '\r' || character == ';')
-				{
-					end_command();
-					continue;
-				}
-
-				if (character == '/' && i + 1 < text.size() && text[i + 1] == '/')
-				{
-					end_command();
-					while (i < text.size() && text[i] != '\n')
-					{
-						++i;
-					}
-
-					continue;
-				}
-
-				if (std::isspace(static_cast<unsigned char>(character)))
-				{
-					end_token();
-					continue;
-				}
-
-				token += character;
-				in_token = true;
+				return {};
 			}
 
-			end_command();
-			return commands;
+			return {std::move(tokens)};
 		}
 
 		// Ledger writes mutate under the lock and log after releasing it.
@@ -326,6 +247,12 @@ namespace dedicated_settings
 					action.name = tokens[1];
 					action.forget = true;
 				}
+				else if (command == "setfromdvar")
+				{
+					action.copied = detail::plan_copy(tokens);
+					if (!action.copied) continue;
+					action.name = action.copied->destination;
+				}
 				else if (command == "exec")
 				{
 					if (tokens.size() >= 2)
@@ -359,104 +286,16 @@ namespace dedicated_settings
 			}
 		}
 
-		// Rewrites command text so that every dvar write is immediately followed
-		// by its action: commands are split the way the engine splits them
-		// (newline, carriage return or ';' outside quotes; // starts a comment
-		// that runs to the end of the line), each command is emitted on a line
-		// of its own with its action right after it, and comments keep their
-		// line. An exec in the middle of a line therefore runs after the actions
-		// of the commands before it. Every emitted command and comment is
-		// newline-terminated, so nothing can run into the next submission.
+		// Keep native command text intact; token comments and Cbuf boundaries
+		// are separate stages (even an escaped quote counts for Cbuf).
 		rewrite instrument_commands(const std::string& text, const std::string& source)
 		{
 			rewrite out{};
 			out.text.reserve(text.size() * 2);
-			std::string current{};
-			auto in_quotes = false;
-
-			const auto flush = [&](const bool keep_blank_line)
+			detail::append_instrumented_settings_commands(text, out.text, [&](const std::string& command)
 			{
-				if (current.find_first_not_of(" \t") == std::string::npos)
-				{
-					if (keep_blank_line)
-					{
-						out.text += current;
-						out.text += '\n';
-					}
-
-					current.clear();
-					return;
-				}
-
-				out.text += current;
-				out.text += '\n';
-				plan_command(current, source, out);
-				current.clear();
-			};
-
-			for (std::size_t i = 0; i < text.size(); ++i)
-			{
-				const auto character = text[i];
-
-				if (in_quotes)
-				{
-					if (character == '"')
-					{
-						in_quotes = false;
-					}
-					else if (character == '\n')
-					{
-						in_quotes = false;
-						flush(true);
-						continue;
-					}
-
-					current += character;
-					continue;
-				}
-
-				if (character == '"')
-				{
-					in_quotes = true;
-					current += character;
-					continue;
-				}
-
-				if (character == '\n')
-				{
-					flush(true);
-					continue;
-				}
-
-				if (character == '\r' || character == ';')
-				{
-					flush(false);
-					continue;
-				}
-
-				if (character == '/' && i + 1 < text.size() && text[i + 1] == '/')
-				{
-					// The command before the comment, with its action, then the
-					// comment on a line of its own.
-					flush(false);
-					while (i < text.size() && text[i] != '\n')
-					{
-						out.text += text[i++];
-					}
-
-					out.text += '\n';
-					continue;
-				}
-
-				current += character;
-			}
-
-			flush(false);
-			if (!out.text.empty() && out.text.back() != '\n')
-			{
-				out.text += '\n';
-			}
-
+				plan_command(command, source, out);
+			});
 			return out;
 		}
 
@@ -588,6 +427,20 @@ namespace dedicated_settings
 
 				action = std::move(found->second);
 				pending.erase(found);
+			}
+
+			if (action.copied)
+			{
+				const auto value = action.copied->read_requested_value([](const std::string& name) -> std::optional<std::string>
+				{
+					auto* dvar = game::Dvar_FindMalleableVar(name.data());
+					if (!dvar) return std::nullopt;
+					const auto* current = game::Dvar_ValueToString(dvar, true, &dvar->current);
+					if (!current) return std::nullopt;
+					return std::string{current};
+				});
+				if (value) record(action.name, *value, action.source);
+				return;
 			}
 
 			if (action.bare && !game::Dvar_FindMalleableVar(action.name.data()))
