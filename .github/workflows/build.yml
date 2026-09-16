@@ -41,6 +41,10 @@ jobs:
       - name: Generate project files
         run: tools/premake5 vs2022
 
+      - name: Run dedicated settings regression tests
+        shell: cmd
+        run: tests\run-tests.cmd
+
       - name: Set up problem matching
         uses: ammaraskar/msvc-problem-matcher@master
 

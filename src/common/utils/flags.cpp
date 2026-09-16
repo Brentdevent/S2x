@@ -15,7 +15,7 @@ namespace utils::flags
 		std::mutex additional_flags_mutex{};
 		std::unordered_set<std::string> additional_flags{};
 
-		std::vector<std::string> parse_arguments(const bool lowercase = true)
+		std::vector<std::string> parse_arguments(const bool lowercase = true, const bool preserve_empty = false)
 		{
 			int num_args{};
 			auto* const argv = CommandLineToArgvW(GetCommandLineW(), &num_args);
@@ -33,7 +33,7 @@ namespace utils::flags
 			{
 				std::wstring wide_arg(argv[i]);
 
-				if (!wide_arg.empty())
+				if (preserve_empty || !wide_arg.empty())
 				{
 					auto argument = string::convert(wide_arg);
 					arguments.emplace_back(lowercase ? string::to_lower(argument) : std::move(argument));
@@ -136,7 +136,7 @@ namespace utils::flags
 
 	std::optional<std::string> get_set_value(const std::string& dvar)
 	{
-		static const auto arguments = parse_arguments();
+		static const auto arguments = parse_arguments(true, true);
 
 		const auto wanted_dvar = string::to_lower(dvar);
 
@@ -164,7 +164,8 @@ namespace utils::flags
 
 	std::vector<std::pair<std::string, std::string>> get_set_values()
 	{
-		static const auto arguments = parse_arguments(false);
+		// An explicit empty override must not disappear or consume the next flag.
+		static const auto arguments = parse_arguments(false, true);
 
 		std::vector<std::pair<std::string, std::string>> values{};
 

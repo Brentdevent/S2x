@@ -3,6 +3,7 @@
 #include "loader/component_loader.hpp"
 
 #include "dedicated_settings.hpp"
+#include "dedicated_settings_config.hpp"
 
 #include "command.hpp"
 #include "filesystem.hpp"
@@ -62,7 +63,7 @@ namespace dedicated_settings
 		// that same lock, so logging under the ledger lock would invert them.
 		std::mutex mutex;
 		std::vector<entry> ledger{};
-		std::unordered_set<std::string> admin_exec_files{};
+		detail::admin_config_files admin_exec_files{};
 		std::map<std::uint64_t, pending_action> pending{};
 		std::atomic<std::uint64_t> next_action_id{1};
 		std::atomic_bool typed_fallback_reported{false};
@@ -134,18 +135,7 @@ namespace dedicated_settings
 			return is_sensitive(name) ? "<redacted>" : value.data();
 		}
 
-		std::string normalize_exec_name(std::string name)
-		{
-			std::ranges::replace(name, '\\', '/');
-			name = utils::string::to_lower(name);
-
-			if (name.find('.') == std::string::npos)
-			{
-				name += ".cfg";
-			}
-
-			return name;
-		}
+		using detail::normalize_exec_name;
 
 		std::string join_tokens(const std::vector<std::string>& tokens, const std::size_t first)
 		{
@@ -472,7 +462,7 @@ namespace dedicated_settings
 		void register_exec_file_locked(const std::string& name, std::vector<std::string>& newly_tracked)
 		{
 			const auto normalized = normalize_exec_name(name);
-			if (!normalized.empty() && admin_exec_files.emplace(normalized).second)
+			if (admin_exec_files.insert(normalized))
 			{
 				newly_tracked.push_back(normalized);
 			}
