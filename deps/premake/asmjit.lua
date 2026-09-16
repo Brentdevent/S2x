@@ -26,7 +26,7 @@ end
 function asmjit.project()
 	project "asmjit"
 		language "C++"
-		cppdialect "C++17"
+		cppdialect "C++20"
 		kind "StaticLib"
 
 		asmjit.includes()
