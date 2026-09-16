@@ -64,7 +64,16 @@ function curl.project()
 		
 		filter "toolset:msc*"
 
+		includedirs {
+			path.join(dependencies.basePath, "extra/curl"),
+		}
+
+		files {
+			path.join(dependencies.basePath, "extra/curl/curl_config.h"),
+		}
+
 		defines {
+			"HAVE_CONFIG_H",
 			"USE_SCHANNEL",
 			"USE_WINDOWS_SSPI",
 			"USE_THREADS_WIN32",
