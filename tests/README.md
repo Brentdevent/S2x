@@ -9,9 +9,17 @@ They exercise explicit empty values, a following dash flag or another assignment
 signed values, repeated overrides, case preservation, missing values, and the
 unchanged ordinary flag lookup behavior.
 
+The value tests exercise the production boolean parser, including numeric
+spellings such as `01`, signed values, decimal prefixes and overflow handling.
+Boolean restoration follows the native numeric conversion rather than treating
+only the literal `1` as true. See `dedicated_settings_value_notes.md` for the
+reverse-engineering evidence and its limits.
+
 The config tests use the production admin-config registry. They verify that
 startup and nested admin configs remain tracked, while `default_xboxlive.cfg`
-never enters the registry, including extensionless and case variants. The game
+never enters the registry, including extensionless and case variants. They also
+cover extensionless configs inside dotted directories, explicit extensions and
+similarly named ordinary admin configs. The game
 also executes that file automatically on each MP rotation, so its writes cannot
 be treated as persistent admin overrides. To persist a custom default, put the
 explicit assignment in your own server config after executing the stock defaults.

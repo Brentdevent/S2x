@@ -14,7 +14,9 @@ namespace dedicated_settings::detail
 		{
 			return static_cast<char>(std::tolower(character));
 		});
-		if (!name.empty() && name.find('.') == std::string::npos) name += ".cfg";
+		const auto separator = name.find_last_of('/');
+		const auto filename = separator == std::string::npos ? 0 : separator + 1;
+		if (!name.empty() && name.find('.', filename) == std::string::npos) name += ".cfg";
 		return name;
 	}
 

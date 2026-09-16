@@ -11,5 +11,7 @@ if errorlevel 1 exit /b 1
 :run
 call "%~dp0run-dedicated-settings-config-tests.cmd"
 if errorlevel 1 exit /b 1
+call "%~dp0run-dedicated-settings-value-tests.cmd"
+if errorlevel 1 exit /b 1
 call "%~dp0flags_tests.cmd"
 exit /b %errorlevel%

@@ -4,6 +4,7 @@
 
 #include "dedicated_settings.hpp"
 #include "dedicated_settings_config.hpp"
+#include "dedicated_settings_value.hpp"
 
 #include "command.hpp"
 #include "filesystem.hpp"
@@ -606,6 +607,12 @@ namespace dedicated_settings
 
 		bool value_matches(game::dvar_t* dvar, const std::string& value)
 		{
+			if (dvar->type == game::DVAR_TYPE_BOOL)
+			{
+				const auto parsed = detail::parse_bool_value(value);
+				return parsed && dvar->current.enabled == *parsed;
+			}
+
 			const auto* current = game::Dvar_ValueToString(dvar, true, &dvar->current);
 			return current && value == current;
 		}
@@ -615,7 +622,10 @@ namespace dedicated_settings
 			switch (dvar->type)
 			{
 			case game::DVAR_TYPE_BOOL:
-				game::Dvar_SetBool(dvar, value == "1" || utils::string::to_lower(value) == "true");
+				if (const auto parsed = detail::parse_bool_value(value))
+				{
+					game::Dvar_SetBool(dvar, *parsed);
+				}
 				break;
 			case game::DVAR_TYPE_INT:
 				game::Dvar_SetInt(dvar, std::atoi(value.data()));

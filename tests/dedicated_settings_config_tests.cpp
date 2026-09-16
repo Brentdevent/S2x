@@ -31,6 +31,15 @@ int main()
 		require(files.contains("server.cfg"), "default exclusion must preserve parent tracking");
 		require(files.contains("nested/limits.cfg"), "default exclusion must preserve child tracking");
 		require(files.size() == 2, "only admin configs should be counted");
+		require(files.insert("configs/v1.2/limits"), "dotted directory config must register");
+		require(files.contains("configs/v1.2/limits.cfg"), "directory dots are not filename extensions");
+		require(files.insert("configs\\v2.0\\custom.cfg"), "explicit extension must register");
+		require(files.contains("configs/v2.0/custom.cfg"), "existing filename extension must not be duplicated");
+		require(dedicated_settings::detail::normalize_exec_name("configs/v2.0/custom.cfg") == "configs/v2.0/custom.cfg",
+			"explicit filename extension must remain unchanged");
+		require(files.contains("configs\\v1.2\\limits"), "extensionless backslash paths must match");
+		require(!files.insert("configs/v1.2/limits.cfg"), "expanded filename must not create another registration");
+		require(files.insert("default_xboxlive_custom.cfg"), "similarly named admin config must remain tracked");
 		require(!files.insert(""), "empty config names must not be registered");
 		std::cout << "dedicated settings config tests passed\n";
 		return 0;
