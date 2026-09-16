@@ -1,8 +1,11 @@
 #pragma once
 #include "signature.hpp"
 
-#include <asmjit/core/jitruntime.h>
-#include <asmjit/x86/x86assembler.h>
+#include <type_traits>
+#include <utility>
+
+#include <asmjit/core/jit_runtime.h>
+#include <asmjit/x86/x86_assembler.h>
 
 using namespace asmjit::x86;
 
@@ -57,12 +60,161 @@ namespace utils::hook
 		return &obj_v_table[index];
 	}
 
-	class assembler : public Assembler
+	class assembler
 	{
 	public:
-		using Assembler::Assembler;
-		using Assembler::call;
-		using Assembler::jmp;
+		explicit assembler(asmjit::CodeHolder* code = nullptr) noexcept : assembler_(code)
+		{
+		}
+
+		// Keep the hook API independent of AsmJit's final assembler implementation.
+		template <typename... Args>
+		asmjit::Error add(Args&&... args)
+		{
+			return this->assembler_.add(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error and_(Args&&... args)
+		{
+			return this->assembler_.and_(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error cmp(Args&&... args)
+		{
+			return this->assembler_.cmp(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error je(Args&&... args)
+		{
+			return this->assembler_.je(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error jne(Args&&... args)
+		{
+			return this->assembler_.jne(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error jnz(Args&&... args)
+		{
+			return this->assembler_.jnz(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error jz(Args&&... args)
+		{
+			return this->assembler_.jz(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error lea(Args&&... args)
+		{
+			return this->assembler_.lea(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error mov(Args&&... args)
+		{
+			return this->assembler_.mov(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error movdqu(Args&&... args)
+		{
+			return this->assembler_.movdqu(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error or_(Args&&... args)
+		{
+			return this->assembler_.or_(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error pop(Args&&... args)
+		{
+			return this->assembler_.pop(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error push(Args&&... args)
+		{
+			return this->assembler_.push(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error sub(Args&&... args)
+		{
+			return this->assembler_.sub(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error test(Args&&... args)
+		{
+			return this->assembler_.test(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error xchg(Args&&... args)
+		{
+			return this->assembler_.xchg(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
+		asmjit::Error xor_(Args&&... args)
+		{
+			return this->assembler_.xor_(std::forward<Args>(args)...);
+		}
+
+		asmjit::Label new_label()
+		{
+			return this->assembler_.new_label();
+		}
+
+		asmjit::Error bind(const asmjit::Label& label)
+		{
+			return this->assembler_.bind(label);
+		}
+
+		asmjit::Error ret()
+		{
+			return this->assembler_.ret();
+		}
+
+		void set_error_handler(asmjit::ErrorHandler* handler)
+		{
+			this->assembler_.set_error_handler(handler);
+		}
+
+		template <typename T>
+		asmjit::Error call(T&& target)
+		{
+			if constexpr (std::is_pointer_v<std::decay_t<T>>)
+			{
+				return this->assembler_.call(reinterpret_cast<size_t>(target));
+			}
+			else
+			{
+				return this->assembler_.call(std::forward<T>(target));
+			}
+		}
+
+		template <typename T>
+		asmjit::Error jmp(T&& target)
+		{
+			if constexpr (std::is_pointer_v<std::decay_t<T>>)
+			{
+				return this->assembler_.jmp(reinterpret_cast<size_t>(target));
+			}
+			else
+			{
+				return this->assembler_.jmp(std::forward<T>(target));
+			}
+		}
 
 		void pushad64();
 		void popad64();
@@ -78,8 +230,8 @@ namespace utils::hook
 			this->restore_stack_after_call();
 		}
 
-		asmjit::Error call(void* target);
-		asmjit::Error jmp(void* target);
+	private:
+		Assembler assembler_;
 	};
 
 	class detour

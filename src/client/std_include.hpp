@@ -91,8 +91,8 @@
 
 #include <udis86.h>
 #include <MinHook.h>
-#include <asmjit/core/jitruntime.h>
-#include <asmjit/x86/x86assembler.h>
+#include <asmjit/core/jit_runtime.h>
+#include <asmjit/x86/x86_assembler.h>
 
 #define RAPIDJSON_NOEXCEPT
 #define RAPIDJSON_ASSERT(cond) if (cond); else throw std::runtime_error("rapidjson assert fail");

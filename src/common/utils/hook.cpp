@@ -251,16 +251,6 @@ namespace utils::hook
 		this->pop(rsp);
 	}
 
-	asmjit::Error assembler::call(void* target)
-	{
-		return Assembler::call(reinterpret_cast<size_t>(target));
-	}
-
-	asmjit::Error assembler::jmp(void* target)
-	{
-		return Assembler::jmp(reinterpret_cast<size_t>(target));
-	}
-
 	detour::detour()
 	{
 		(void)initialize_min_hook();
