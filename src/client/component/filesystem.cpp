@@ -54,6 +54,24 @@ namespace filesystem
 				return nullptr;
 			}
 
+			// A dedicated server takes its gameplay values from the admin config, not from a
+			// playlist. The stock lobby flow re-executes default_mp_allmodes.cfg (through
+			// default_xboxlive.cfg) when the party is created, when a match ends and when the
+			// lobby returns; each run put every gameplay dvar back to its stock value, which is
+			// what reset admin settings on every rotation. Execute it once, at startup, ahead
+			// of the admin config, and leave the admin values alone afterwards.
+			if (game::environment::is_dedicated() && game::environment::is_multiplayer()
+				&& std::string_view{filename} == "default_mp_allmodes.cfg")
+			{
+				static bool defaults_applied = false;
+				if (defaults_applied)
+				{
+					buffer[0] = 0;
+					return buffer;
+				}
+				defaults_applied = true;
+			}
+
 			if (auto* result = game::DB_ReadRawFile(filename, buffer, size))
 			{
 				return result;

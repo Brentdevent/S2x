@@ -677,15 +677,6 @@ namespace dedicated_party
 				party_match_start_delay->current.integer);
 		}
 
-		void queue_server_config()
-		{
-			const auto config = utils::flags::get_plus_value("exec");
-			if (config)
-			{
-				game::Cbuf_AddText(0, utils::string::va("exec %s\n", config->data()));
-			}
-		}
-
 		void prepare_match_settings(const dedicated_match_t& match)
 		{
 			if (game::environment::is_zombies())
@@ -698,12 +689,6 @@ namespace dedicated_party
 				console::error("Dedicated party: failed to select match-rules gametype '%s'.\n",
 					match.gametype.data());
 			}
-
-			// Stock lobby setup restores its gameplay defaults asynchronously. Reapply
-			// the dedicated config afterward so its gameplay values remain authoritative.
-			// The selected map and gametype are applied on the following main frame.
-			game::Cbuf_AddText(0, "exec default_xboxlive.cfg\n");
-			queue_server_config();
 		}
 
 		void prepare_postmatch_lobby()
