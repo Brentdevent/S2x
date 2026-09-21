@@ -22,7 +22,9 @@
 #include <utils/cryptography.hpp>
 #include <utils/info_string.hpp>
 
+#include <algorithm>
 #include <charconv>
+#include <cstddef>
 
 namespace party
 {
@@ -1051,6 +1053,54 @@ namespace party
 			return count;
 		}
 
+		bool get_custom_lobby_connect_info(dedicated_party::connect_info& info)
+		{
+			// Multiplayer and Zombies Custom Match use the same native private session.
+			// This only exposes its join descriptor; progression remains mode-specific.
+			if (!game::environment::uses_multiplayer_binary() || game::environment::is_dedicated()
+				|| game::is_local_play())
+			{
+				return false;
+			}
+
+			auto* lobby = game::Lobby_GetPartyData(0);
+			// Party_IsRunning is cleared during gameplay. The session remains
+			// joinable then too; use in-party plus host ownership, as stock does.
+			if (!lobby || !utils::hook::invoke<bool>(0x471200_g, lobby)
+				|| !game::Party_AreWeHost(lobby) || !is_unranked_private_match(lobby))
+			{
+				return false;
+			}
+			const auto* session = utils::hook::invoke<game::SessionData*>(0x470F50_g, lobby);
+			if (!session || !session->sessionId)
+			{
+				return false; // Host creation/teardown has not produced a usable session.
+			}
+
+			std::array<char, 81> address{};
+			std::array<char, 33> key{};
+			std::array<char, 17> id{};
+			game::Session_HostAddressToString(&session->hostAddress, address.data());
+			game::Session_KeyToString(&session->sessionKey, key.data());
+			game::Session_IdToString(session->sessionId, id.data());
+			info.host_address = address.data();
+			info.key = key.data();
+			info.session_id = id.data();
+			info.map_name = game::Party_GetMapName(lobby);
+			info.gametype = game::Party_GetGameType(lobby);
+			info.max_members = utils::hook::invoke<int>(0x197110_g, lobby);
+			info.member_count = 0;
+			for (int member = 0; member < 48; ++member)
+			{
+				info.member_count += game::Party_IsMemberUIVisible(lobby, member) != 0;
+			}
+			info.match_running = game::is_server_running();
+			return party::session::valid_descriptor(info.host_address, info.key, info.session_id)
+				&& !info.map_name.empty() && !info.gametype.empty()
+				&& info.max_members > 0
+				&& info.max_members <= game::environment::get_online_mode_info().max_players;
+		}
+
 		void send_info_response(const game::netadr_s& from, const std::string_view& data, const std::string& response_command)
 		{
 			if (data.empty() || data.size() > 128)
@@ -1072,7 +1122,10 @@ namespace party
 			auto match_running = game::is_server_running();
 
 			dedicated_party::connect_info party_connect_info{};
-			const auto has_party_session = dedicated_party::get_connect_info(party_connect_info);
+			const auto has_dedicated_session = dedicated_party::get_connect_info(party_connect_info);
+			const auto has_custom_session = !has_dedicated_session
+				&& get_custom_lobby_connect_info(party_connect_info);
+			const auto has_party_session = has_dedicated_session || has_custom_session;
 			if (has_party_session)
 			{
 				mapname = party_connect_info.map_name;
@@ -1081,6 +1134,10 @@ namespace party
 				clients = std::clamp(party_connect_info.member_count, 0, max_clients);
 				bots = std::clamp(bots, 0, clients);
 				match_running = party_connect_info.match_running;
+				if (has_custom_session && !match_running)
+				{
+					bots = 0; // Frontend actors are not match bots/party members.
+				}
 			}
 
 			info.set("challenge", std::string{ data });
@@ -1099,17 +1156,58 @@ namespace party
 
 			if (has_party_session && response_command == "s2x_infoResponse")
 			{
-				info.set("party_session", "1");
+				info.set("party_session", has_custom_session ? "2" : "1");
 				info.set("session_host", party_connect_info.host_address);
 				info.set("session_key", party_connect_info.key);
 				info.set("session_id", party_connect_info.session_id);
 				info.set("party_mapname", party_connect_info.map_name);
 				info.set("party_gametype", party_connect_info.gametype);
-				info.set("party_match_sequence",
-					std::to_string(party_connect_info.match_sequence));
+				if (has_dedicated_session)
+				{
+					info.set("party_match_sequence",
+						std::to_string(party_connect_info.match_sequence));
+				}
 			}
 
 			network::send(from, response_command, info.build(), '\n');
+		}
+	}
+
+	namespace session
+	{
+		namespace
+		{
+			bool is_hex(const std::string_view value, const std::size_t size)
+			{
+				return value.size() == size && std::all_of(value.begin(), value.end(), [](const char c)
+				{
+					return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+				});
+			}
+		}
+
+		// party_session: absent/0 = direct game, 1 = dedicated lobby, 2 = custom lobby.
+		kind classify(const std::string_view value)
+		{
+			if (value.empty() || value == "0")
+			{
+				return kind::none;
+			}
+			if (value == "1")
+			{
+				return kind::dedicated;
+			}
+			if (value == "2")
+			{
+				return kind::custom;
+			}
+			return kind::invalid;
+		}
+
+		bool valid_descriptor(const std::string_view host, const std::string_view key,
+			const std::string_view id)
+		{
+			return is_hex(host, 80) && is_hex(key, 32) && is_hex(id, 16);
 		}
 	}
 
@@ -1389,9 +1487,9 @@ namespace party
 				console::info("[party] validated server response from %s.\n",
 					network::net_adr_to_string(from));
 
-				// A hosted dedicated lobby remains joinable between gameplay servers. Hand
-				// its stock session descriptor to CL_Connect before applying direct-game
-				// connection requirements such as sv_running.
+				// Dedicated and custom lobbies can be joined before gameplay starts.
+				// Hand the stock session descriptor to CL_Connect before applying
+				// direct-game connection requirements such as sv_running.
 				if (dedicated_party_client::try_handle_join(from, info, max_clients, attempt_id))
 				{
 					return;

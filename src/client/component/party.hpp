@@ -4,9 +4,24 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace party
 {
+	namespace session
+	{
+		enum class kind
+		{
+			none,
+			dedicated,
+			custom,
+			invalid,
+		};
+
+		kind classify(std::string_view value);
+		bool valid_descriptor(std::string_view host, std::string_view key, std::string_view id);
+	}
+
 	struct internal_connect_request
 	{
 		std::uint64_t attempt_id{};

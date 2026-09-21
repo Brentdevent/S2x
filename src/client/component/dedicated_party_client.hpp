@@ -13,6 +13,8 @@ namespace utils
 
 namespace dedicated_party_client
 {
+	// Shared IP-to-native-session join transport. Custom listen lobbies skip
+	// all dedicated-owner/capacity/rotation presentation once the join is set up.
 	bool try_handle_join(const game::netadr_s& from, const utils::info_string& info,
 		int max_players, std::uint64_t attempt_id);
 	bool try_handle_sync_response(const game::netadr_s& from, const utils::info_string& info,
