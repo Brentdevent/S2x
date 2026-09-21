@@ -104,6 +104,10 @@ local function configure_multiplayer_buttons( menu, controller, labels )
 	if not public_match or not custom_match or not campaign or not zombies then
 		return
 	end
+	if Lobby.GetCustomMatchProgression then
+		custom_match.desc = "Create a custom game with friends or bots. " ..
+			"Multiplayer progression is optional in Game Rules."
+	end
 
 	local server_browser = create_server_browser_button(
 		public_match,
