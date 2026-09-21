@@ -476,16 +476,9 @@ namespace server_list
 				return;
 			}
 
-			auto party_session = 0;
-			const auto party_session_value = info.get("party_session");
-			if (!party_session_value.empty()
-				&& !parse_info_int(party_session_value, 0, 1, party_session))
-			{
-				drop_server(address);
-				return;
-			}
-
-			if (!server_running && !party_session)
+			const auto session_kind = party::session::classify(info.get("party_session"));
+			if (session_kind == party::session::kind::invalid
+				|| (!server_running && session_kind == party::session::kind::none))
 			{
 				drop_server(address);
 				return;
