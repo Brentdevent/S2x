@@ -2,6 +2,7 @@
 #include "loader/component_loader.hpp"
 
 #include "party.hpp"
+#include "custom_match.hpp"
 #include "dedicated_party.hpp"
 #include "dedicated_party_client.hpp"
 #include "command.hpp"
@@ -303,7 +304,7 @@ namespace party
 				&& game::PartySettings_GetRankedMatch(&party_data->settings) == 0;
 		}
 
-		bool is_s2x_map_match(game::PartyData* party_data)
+		bool is_client_map_match(game::PartyData* party_data)
 		{
 			return client_map_session_active && party_data
 				&& game::Party_GetPublicMatch(party_data) == 0
@@ -333,6 +334,11 @@ namespace party
 
 		int get_private_match_player_limit()
 		{
+			if (game::environment::is_multiplayer())
+			{
+				return custom_match::get_player_limit();
+			}
+
 			const auto& mode = game::environment::get_online_mode_info();
 			const auto* party_maxplayers = game::Dvar_FindMalleableVar("5321");
 			const auto configured_max = party_maxplayers
@@ -385,7 +391,7 @@ namespace party
 			if (game_lobby && game::Party_IsRunning(game_lobby)
 				&& (!game::Party_AreWeHost(game_lobby)
 					|| (!is_unranked_private_match(game_lobby)
-						&& !is_s2x_map_match(game_lobby))))
+						&& !is_client_map_match(game_lobby))))
 			{
 				console::error(
 					"Cannot use map from a public, ranked, or joined lobby. Leave it and start an online private match.\n");
@@ -452,7 +458,7 @@ namespace party
 				lua["Lobby"] = lobby;
 			}
 
-			lobby["GetS2xMapGameType"] = []
+			lobby["GetMapSessionGameType"] = []
 			{
 				return get_map_session_gametype();
 			};
@@ -516,13 +522,20 @@ namespace party
 		bool is_valid_gametype(const std::string& gametype)
 		{
 			const auto& mode = game::environment::get_online_mode_info();
+			
 			if (game::environment::is_zombies())
 			{
 				return utils::string::to_lower(gametype) == mode.default_gametype;
 			}
 
-			// The stock helper returns its input pointer when the gametype is absent
-			// from maps/mp/gametypes/_gametypes.txt.
+			// The legacy UI cache truncates refs to 11 characters. Keep its fast
+			// validation for ordinary refs, but consult the same stock definitions
+			// for longer names (notably dogfight_ffa), including client-hosted joins.
+			if (gametype.size() > 11)
+			{
+				return custom_match::is_valid_gametype(gametype);
+			}
+
 			return utils::hook::invoke<const char*>(0x6500E0_g, gametype.data()) != gametype.data();
 		}
 

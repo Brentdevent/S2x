@@ -107,6 +107,11 @@ namespace game
 		unsigned int statsGroup)> LiveStorage_PlayerDataSetIntByNameArray{ 0x18E8B0 };
 	WEAK symbol<void(int controllerIndex)> LiveStorage_StatsWriteNeeded{ 0xD4DB0 };
 	WEAK symbol<char*(const char* filename, char* buffer, int size)> DB_ReadRawFile{ 0xA7330, 0x2AED30 };
+	WEAK symbol<void(const char* name)> Com_BeginParseSession{ 0x76A490 };
+	WEAK symbol<void()> Com_EndParseSession{ 0x76A590 };
+	WEAK symbol<const char*(const char** cursor)> Com_Parse{ 0x76A950 };
+	WEAK symbol<bool(const char* name, int fileType)> DB_FastfileExists{ 0xA0E50 };
+	WEAK symbol<bool(int pack)> Content_IsPackAvailable{ 0x766160 };
 	WEAK symbol<std::int64_t(const char* filename, char** buffer)> FS_ReadFile{ 0x7583C0, 0x4C0E60 };
 	WEAK symbol<void(void* buffer)> FS_FreeFile{ 0x7583B0, 0x4C0E50 };
 	WEAK symbol<void(const char* gameName)> FS_Startup{ 0x757330, 0x4BFDF0 };
@@ -302,6 +307,7 @@ namespace game
 	WEAK symbol<char> databaseCompletedEvent2{ 0x27CEC67 };
 
 	WEAK symbol<char> virtualLobby_Loaded{ 0x1BD36F8 };
+	WEAK symbol<char> virtualLobby_Requested{ 0x1BD36F9 }; // SV_Startup's frontend allocation gate
 
 	WEAK symbol<SOCKET> ip_socket{ 0xD8B0540 };
 

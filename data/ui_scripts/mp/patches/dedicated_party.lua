@@ -9,8 +9,8 @@ function dedicatedParty.GetMapName()
 end
 
 function dedicatedParty.GetGameType()
-	if Lobby.GetS2xMapGameType then
-		local gametype = Lobby.GetS2xMapGameType()
+	if Lobby.GetMapSessionGameType then
+		local gametype = Lobby.GetMapSessionGameType()
 		if gametype and gametype ~= "" then
 			return gametype
 		end

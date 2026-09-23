@@ -1,9 +1,3 @@
--- This patch is needed in both the frontend lobby and the in-game scoreboard.
-if game:issingleplayer() or Engine.IsZombiesMode() then
-	return
-end
-
-CustomMatch = CustomMatch or {}
 if CustomMatch.RanksInstalled then
 	return
 end

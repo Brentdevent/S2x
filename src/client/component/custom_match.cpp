@@ -1,12 +1,14 @@
 #include <std_include.hpp>
 #include "loader/component_loader.hpp"
 
+#include "custom_match.hpp"
 #include "game/game.hpp"
 #include "game/ui_scripting/execution.hpp"
 #include "console/console.hpp"
 #include "scheduler.hpp"
 #include "ui_scripting.hpp"
 
+#include <utils/finally.hpp>
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
 
@@ -18,6 +20,11 @@
 
 namespace custom_match
 {
+	int get_player_limit()
+	{
+		return game::environment::get_online_mode_info().max_players;
+	}
+
 	namespace
 	{
 		namespace protocol
@@ -34,15 +41,18 @@ namespace custom_match
 			std::optional<std::size_t> marker_offset(const std::span<const std::uint8_t> data)
 			{
 				std::size_t start = 0;
+				
 				if (data.size() >= 4 && data[0] == 0xFF && data[1] == 0xFF
 					&& data[2] == 0xFF && data[3] == 0xFF)
 				{
 					start = 4; // Receiving messages include the connectionless prefix.
 				}
+
 				if (data.size() < start + 18)
 				{
 					return {};
 				}
+
 				for (std::size_t i = 0; i < command.size(); ++i)
 				{
 					if (data[start + i] != static_cast<std::uint8_t>(command[i]))
@@ -50,35 +60,43 @@ namespace custom_match
 						return {};
 					}
 				}
+
 				const auto bits = data[start + 16] | (data[start + 17] << 8);
 				const auto index = bits & 31;
 				const auto count = (bits >> 5) & 31;
+
 				if (!(bits & 0x400) || !count || index >= count)
 				{
 					return {}; // Only the byte-aligned, compressed fragment format.
 				}
+
 				return start + 17;
 			}
 
 			bool write(const std::span<std::uint8_t> data, const bool enabled)
 			{
 				const auto offset = marker_offset(data);
+
 				if (!offset)
 				{
 					return false;
 				}
+
 				data[*offset] = (data[*offset] & ~marker_mask)
 					| (enabled ? enabled_marker : disabled_marker);
+				
 				return true;
 			}
 
 			std::optional<bool> read(const std::span<const std::uint8_t> data)
 			{
 				const auto offset = marker_offset(data);
+
 				if (!offset)
 				{
 					return {};
 				}
+
 				switch (data[*offset] & marker_mask)
 				{
 				case enabled_marker: return true;
@@ -111,10 +129,12 @@ namespace custom_match
 				{
 					return false;
 				}
+
 				party = identity;
 				session_id = session;
 				progression = enabled;
 				++revision;
+
 				return true;
 			}
 
@@ -124,6 +144,7 @@ namespace custom_match
 				{
 					set(identity, session, preference);
 				}
+
 				return matches(identity, session) && progression;
 			}
 		};
@@ -131,6 +152,7 @@ namespace custom_match
 		game::dvar_t* progression_preference{};
 		std::mutex mode_mutex;
 		session_selection current_mode{};
+		utils::hook::detour start_private_match_hook;
 
 		std::uint64_t get_session_id(game::PartyData* party)
 		{
@@ -148,6 +170,82 @@ namespace custom_match
 				&& !game::PartySettings_GetRankedMatch(&party->settings);
 		}
 
+		bool is_custom_match_host()
+		{
+			auto* party = game::Lobby_GetPartyData(0);
+			return is_custom_match(party) && game::Party_AreWeHost(party);
+		}
+
+		void rotation_set_map_stub(game::PartyData* party, const char* map)
+		{
+			// Stock rotation resolves the current frontend mode's party (HQ in
+			// the virtual lobby). The hosted Custom Match belongs to game party 0.
+			game::Party_SetMapName(is_custom_match_host() ? game::Lobby_GetPartyData(0) : party, map);
+		}
+
+		void rotation_set_settings_map_stub(game::PartySettings* settings, const char* map)
+		{
+			if (is_custom_match_host())
+			{
+				settings = &game::Lobby_GetPartyData(0)->settings;
+			}
+
+			utils::hook::invoke<void>(0x1973B0_g, settings, map);
+		}
+
+		void set_player_limit(game::PartyData* party)
+		{
+			const auto limit = get_player_limit();
+			game::Dvar_SetIntByName("party_maxPrivatePartyPlayers", limit); // stock 5321
+			game::Party_SetMaxClients(party, limit);
+			auto* private_party = game::Party_GetPrivatePartyData();
+
+			if (private_party && game::Party_AreWeHost(private_party))
+			{
+				game::Party_SetMaxClients(private_party, limit);
+			}
+		}
+
+		void apply_player_limit()
+		{
+			if (is_custom_match_host())
+			{
+				set_player_limit(game::Lobby_GetPartyData(0));
+			}
+		}
+
+		void start_private_match_stub()
+		{
+			// The host session is not active yet. This local host command consumes
+			// PartyData's capacity before creating its public/private session slots.
+			auto* party = game::Lobby_GetPartyDataFromLocalClient(game::Lobby_GetLocalClientData(0));
+			if (party && !game::is_local_play()
+				&& game::PartySettings_GetPrivateMatch(&party->settings)
+				&& !game::PartySettings_GetRankedMatch(&party->settings))
+			{
+				set_player_limit(party);
+			}
+
+			start_private_match_hook.invoke<void>();
+		}
+
+		void sv_register_max_clients_stub(const int minimum)
+		{
+			utils::hook::invoke<void>(0x6DA7A0_g, minimum);
+
+			// Reapply after registration, before SV_Startup allocates its clients.
+			// Dedicated servers own this call site in their separate component.
+			if (is_custom_match_host())
+			{
+				auto* max_clients = game::Dvar_FindMalleableVar("sv_maxclients");
+				// SV_Startup reserves the stock 48 slots for the virtual lobby's
+				// actors. G_InitGame reads this dvar too; leaving it at 18 crashes
+				// ClientConnect when the HQ scene reconnects an actor above slot 17.
+				game::Dvar_SetInt(max_clients, *game::virtualLobby_Requested
+					? max_clients->reset.integer : get_player_limit());
+			}
+		}
+
 		void refresh_guest_loadouts(game::PartyData* party, const std::uint64_t revision)
 		{
 			scheduler::once([party, revision]
@@ -159,11 +257,14 @@ namespace custom_match
 						return;
 					}
 				}
+
 				if (!game::virtual_lobby_loaded() || !is_custom_match(party) || !*game::hks::lui_lua_state)
 				{
 					return;
 				}
+
 				game::LUI_EnterCriticalSection();
+
 				try
 				{
 					const auto custom_match_ui = ui_scripting::get_globals().get("CustomMatch");
@@ -180,6 +281,7 @@ namespace custom_match
 				{
 					console::error("Custom match: loadout refresh failed: %s\n", e.what());
 				}
+
 				game::LUI_LeaveCriticalSection();
 			}, scheduler::pipeline::main);
 		}
@@ -188,6 +290,7 @@ namespace custom_match
 		{
 			const auto session_id = get_session_id(party);
 			const std::lock_guard lock{mode_mutex};
+
 			if (current_mode.set(party, session_id, enabled) && notify_guest)
 			{
 				refresh_guest_loadouts(party, current_mode.revision);
@@ -233,12 +336,14 @@ namespace custom_match
 			{
 				return 0;
 			}
+
 			return game::PartySettings_GetPrivateMatch(settings);
 		}
 
 		bool set_progression(const bool enabled)
 		{
 			auto* party = game::Lobby_GetPartyData(0);
+
 			if (!is_custom_match(party) || !game::Party_AreWeHost(party)
 				|| !game::virtual_lobby_loaded() || (party->hostState & 0xFC) != 4)
 			{
@@ -256,12 +361,14 @@ namespace custom_match
 		{
 			auto* result = utils::hook::invoke<void*>(0xDDAF0_g, message, data, size);
 			auto* party = game::Lobby_GetPartyData(0);
+
 			if (!message->overflowed && message->data && message->cursize > 0
 				&& is_custom_match(party) && game::Party_AreWeHost(party))
 			{
 				protocol::write({reinterpret_cast<std::uint8_t*>(message->data),
 					static_cast<std::size_t>(message->cursize)}, has_progression(party));
 			}
+
 			return result;
 		}
 
@@ -270,10 +377,12 @@ namespace custom_match
 			const auto* bytes = reinterpret_cast<const std::uint8_t*>(party);
 			const auto count = *reinterpret_cast<const int*>(bytes + 0x186498);
 			const auto* fragments = reinterpret_cast<const game::msg_t*>(bytes + 0x186518);
+
 			if (count < 1 || count > 31)
 			{
 				return false;
 			}
+
 			for (int i = 0; i < count; ++i)
 			{
 				const auto& fragment = fragments[i];
@@ -285,6 +394,7 @@ namespace custom_match
 					return false; // Legacy, disabled, malformed or mixed fragments fail closed.
 				}
 			}
+
 			return true;
 		}
 
@@ -298,6 +408,7 @@ namespace custom_match
 			{
 				set_session_mode(party, read_party_state(party), true);
 			}
+
 			return utils::hook::invoke<char>(0x4749B0_g, party, client, from);
 		}
 
@@ -308,10 +419,12 @@ namespace custom_match
 			const auto* original = utils::string::va(format, party_id, playlist, slots,
 				private_match, flags, map, gametype, value);
 			auto* party = game::Lobby_GetPartyData(0);
+
 			if (party_id != 0 || !is_custom_match(party) || !game::Party_AreWeHost(party))
 			{
 				return original;
 			}
+
 			// Go can arrive before the last acknowledged PartyState update. Carry the
 			// same selection here, before clients choose their in-game stats packets.
 			return utils::string::va("%s s2x_progression=%i", original, has_progression(party) ? 1 : 0);
@@ -320,21 +433,148 @@ namespace custom_match
 		int validate_go_host_stub(game::PartyData* party, game::netadr_s* from)
 		{
 			const auto valid = utils::hook::invoke<int>(0x479490_g, party, from);
+
 			if (valid && is_custom_match(party) && !game::Party_AreWeHost(party)
 				&& std::string_view(game::Cmd_Argv(3)) == "1")
 			{
 				set_session_mode(party, game::Cmd_Argc() > 8 && protocol::read_go(game::Cmd_Argv(8)));
 			}
+
 			return valid;
+		}
+
+		std::vector<std::string> read_tokens(const char* name)
+		{
+			std::vector<char> buffer(98304);
+			const char* cursor = game::DB_ReadRawFile(name, buffer.data(), static_cast<int>(buffer.size()));
+			std::vector<std::string> tokens;
+
+			if (!cursor)
+			{
+				return tokens;
+			}
+
+			game::Com_BeginParseSession(name);
+			const auto end_parse = utils::finally([] { game::Com_EndParseSession(); });
+
+			while (cursor)
+			{
+				const std::string token{game::Com_Parse(&cursor)};
+				if (!token.empty())
+				{
+					tokens.push_back(token);
+				}
+			}
+
+			return tokens;
+		}
+
+		ui_scripting::table get_catalog()
+		{
+			ui_scripting::table catalog, gametypes, maps;
+
+			catalog["gametypes"] = gametypes;
+			catalog["maps"] = maps;
+			catalog["playerLimit"] = get_player_limit();
+
+			if (!game::environment::is_multiplayer())
+			{
+				return catalog;
+			}
+
+			int index = 0;
+
+			for (auto ref : read_tokens("maps/mp/gametypes/_gametypes.txt"))
+			{
+				// Same token format as Scr_ParseGameTypeList_FastFile. Unlike the
+				// legacy UI cache, do not truncate refs (e.g. dogfight_ffa) to 11 chars.
+				ref = ref.substr(0, ref.find(','));
+				const auto recipe = "mp/recipes/" + ref + ".recipe";
+				const auto* asset = game::DB_FindXAssetHeader(
+					game::ASSET_TYPE_RAWFILE, recipe.data(), false).rawfile;
+				if (asset && asset->len > 0)
+				{
+					gametypes[++index] = ref;
+				}
+			}
+
+			const auto tokens = read_tokens("mp/basemaps.arena");
+			index = 0;
+
+			for (std::size_t i = 0; i < tokens.size();)
+			{
+				if (tokens[i++] != "{")
+				{
+					break;
+				}
+				ui_scripting::table map;
+				std::string name;
+				int pack = -1;
+				while (i + 1 < tokens.size() && tokens[i] != "}")
+				{
+					const auto key = tokens[i++];
+					const auto value = tokens[i++];
+					map[key] = value;
+					if (key == "map") name = value;
+					if (key == "mappack") pack = std::atoi(value.data());
+				}
+				if (i >= tokens.size() || tokens[i++] != "}")
+				{
+					break;
+				}
+				// Use the same file/content checks as SV_StartMap and the stock
+				// feeder. StreamingInstallIsMapInstalled is a no-op in the PC binary.
+				map["available"] = !name.empty() && pack >= 0
+					&& game::DB_FastfileExists(name.data(), 0)
+					&& (pack == 0 || game::Content_IsPackAvailable(pack + 1));
+				maps[++index] = map;
+			}
+
+			return catalog;
 		}
 
 		void install_lui_functions()
 		{
 			const auto lobby = ui_scripting::get_globals()["Lobby"].as<ui_scripting::table>();
+
 			lobby["IsCustomMatch"] = [] { return is_custom_match(game::Lobby_GetPartyData(0)); };
 			lobby["GetCustomMatchProgression"] = [] { return has_progression(game::Lobby_GetPartyData(0)); };
 			lobby["SetCustomMatchProgression"] = set_progression;
+			lobby["GetCustomMatchCatalog"] = get_catalog;
+			lobby["GetCustomMatchPlayerLimit"] = get_player_limit;
+			lobby["ApplyCustomMatchPlayerLimit"] = apply_player_limit;
+
+			// Bind progression and catalog together, then initialize the shared UI
+			// before private_lobby validates a saved or newly selected gametype.
+			const auto custom = ui_scripting::get_globals().get("CustomMatch");
+
+			if (custom.is<ui_scripting::table>())
+			{
+				const auto refresh = custom.as<ui_scripting::table>().get("RefreshCatalog");
+
+				if (refresh.is<ui_scripting::function>())
+				{
+					refresh();
+				}
+			}
 		}
+	}
+
+	bool is_valid_gametype(const std::string_view gametype)
+	{
+		const auto name = utils::string::to_lower(std::string{gametype});
+
+		for (auto ref : read_tokens("maps/mp/gametypes/_gametypes.txt"))
+		{
+			ref = ref.substr(0, ref.find(','));
+
+			if (utils::string::to_lower(ref) == name)
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	class component final : public multiplayer_component
@@ -380,6 +620,17 @@ namespace custom_match
 			utils::hook::call(0x477AAA_g, finish_party_state_stub);
 			utils::hook::call(0x48F92E_g, format_go_stub);
 			utils::hook::call(0x472AE5_g, validate_go_host_stub);
+			utils::hook::call(0x6DCDE4_g, sv_register_max_clients_stub);
+
+			start_private_match_hook.create(game::CL_Live_StartPrivateMatchHost, start_private_match_stub);
+
+			// Keep the stock rotation cursor, weights and match-end timing. Correct
+			// only its map destination, including checkbox add/select/remove paths.
+			utils::hook::call(0x924AB6_g, rotation_set_settings_map_stub);
+			utils::hook::call(0x924E46_g, rotation_set_settings_map_stub);
+			utils::hook::call(0x924C55_g, rotation_set_map_stub);
+			utils::hook::call(0x924DE3_g, rotation_set_map_stub);
+
 			ui_scripting::on_start(install_lui_functions);
 		}
 	};
