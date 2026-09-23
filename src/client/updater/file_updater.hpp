@@ -43,6 +43,7 @@ namespace updater
 		[[nodiscard]] bool file_matches(const file_info& file, const std::filesystem::path& path) const;
 		[[nodiscard]] std::filesystem::path get_drive_filename(const file_info& file) const;
 		void validate_file_path(const file_info& file) const;
+		void remove_obsolete_data(const std::vector<file_info>& files) const;
 
 		void move_current_process_file() const;
 		[[nodiscard]] bool restore_current_process_file() const;

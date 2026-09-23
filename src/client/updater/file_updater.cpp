@@ -244,7 +244,19 @@ namespace updater
 
 	void file_updater::run() const
 	{
-		this->run(get_file_infos());
+		const auto files = get_file_infos();
+		if (!find_host_file_info(files) || std::ranges::none_of(files, [](const file_info& file)
+		{
+			return file.name.starts_with("data/");
+		}))
+		{
+			throw std::runtime_error("The update manifest is incomplete.");
+		}
+
+		this->run(files);
+		// AppData/data is updater-owned. Only the complete client manifest may
+		// prune it, after every download succeeds (including no-download runs).
+		this->remove_obsolete_data(files);
 	}
 
 	void file_updater::run(const std::vector<file_info>& files) const
@@ -505,6 +517,47 @@ namespace updater
 			if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
 			{
 				throw std::runtime_error("The update path contains a reparse point: " + file.name);
+			}
+		}
+	}
+
+	void file_updater::remove_obsolete_data(const std::vector<file_info>& files) const
+	{
+		file_info local_file{};
+		local_file.name = "data";
+		this->validate_file_path(local_file);
+		const auto data_path = this->base_ / "data";
+		if (!std::filesystem::exists(data_path))
+		{
+			return;
+		}
+
+		std::unordered_set<std::string> current_files{};
+		for (const auto& file : files)
+		{
+			current_files.emplace(utils::string::to_lower(file.name));
+		}
+
+		std::vector<std::filesystem::path> entries{};
+		for (const auto& entry : std::filesystem::recursive_directory_iterator(data_path))
+		{
+			local_file.name = entry.path().lexically_relative(this->base_).generic_string();
+			// Check before descending into directories. Never follow junctions or
+			// symlinks out of the managed tree, and validate it all before deleting.
+			this->validate_file_path(local_file);
+			entries.push_back(entry.path());
+		}
+
+		// Children precede their parents so obsolete folders become removable.
+		for (auto entry = entries.rbegin(); entry != entries.rend(); ++entry)
+		{
+			local_file.name = entry->lexically_relative(this->base_).generic_string();
+			this->validate_file_path(local_file);
+			if (std::filesystem::is_directory(*entry)
+				? std::filesystem::is_empty(*entry)
+				: !current_files.contains(utils::string::to_lower(local_file.name)))
+			{
+				std::filesystem::remove(*entry);
 			}
 		}
 	}
