@@ -29,6 +29,7 @@ namespace arxan::code_healing
 			patch_list al_healing;
 			patch_list eax_healing;
 			patch_list eax_split_healing;
+			patch_list eax_obfuscated_healing;
 			patch_list int2d_breakpoint;
 		};
 
@@ -43,6 +44,7 @@ namespace arxan::code_healing
 			mp::al_healing_offsets,
 			mp::eax_healing_offsets,
 			mp::eax_split_healing_offsets,
+			mp::eax_obfuscated_healing_offsets,
 			mp::int2d_breakpoint_offsets,
 		};
 
@@ -55,6 +57,7 @@ namespace arxan::code_healing
 			sp::al_healing_offsets,
 			sp::eax_healing_offsets,
 			sp::eax_split_healing_offsets,
+			empty_offsets,
 			sp::int2d_breakpoint_offsets,
 		};
 
@@ -82,6 +85,7 @@ namespace arxan::code_healing
 				patch_region{mp::al_healing_offsets, 0x6},
 				patch_region{mp::eax_healing_offsets, 0x5},
 				patch_region{mp::eax_split_healing_offsets, 0x5},
+				patch_region{mp::eax_obfuscated_healing_offsets, 0x7},
 				patch_region{mp::int2d_breakpoint_offsets, 0x7},
 			};
 
@@ -94,6 +98,7 @@ namespace arxan::code_healing
 				patch_region{sp::al_healing_offsets, 0x6},
 				patch_region{sp::eax_healing_offsets, 0x5},
 				patch_region{sp::eax_split_healing_offsets, 0x5},
+				patch_region{empty_offsets, 0x7},
 				patch_region{sp::int2d_breakpoint_offsets, 0x7},
 			};
 
@@ -286,6 +291,49 @@ namespace arxan::code_healing
 			utils::hook::call(game_address, stub);
 		}
 
+		void patch_healing_code_sections_function_eax_obfuscated(void* address)
+		{
+			const auto game_address = reinterpret_cast<uint64_t>(address);
+			const auto jump_target = find_lea_target(reinterpret_cast<void*>(game_address + 2));
+
+			if (!jump_target)
+			{
+				throw std::runtime_error(utils::string::va("Failed to find jump target for obfuscated eax healing function: %llX", game::derelocate(game_address)));
+			}
+
+			const auto stub = utils::hook::assemble([jump_target](utils::hook::assembler& a)
+			{
+				a.pushad64();
+
+				const auto skip_update = a.new_label();
+
+				a.mov(rcx, rdx); // rdx = destination pointer
+				a.mov(edx, 4); // length = 4 bytes (size of eax)
+				a.call_aligned(allow_code_healing);
+
+				a.test(al, al);
+				a.jz(skip_update);
+
+				a.popad64();
+
+				// Original instruction we overwrite:
+				// mov [rdx], eax
+				a.mov(dword_ptr(rdx), eax);
+				a.add(rsp, 8); // Remove return address from stack
+				a.jmp(jump_target);
+
+				a.bind(skip_update);
+				a.popad64();
+				a.add(rsp, 8); // Remove return address from stack
+				a.jmp(jump_target);
+			});
+
+			// The store is followed by a stack-obfuscated jump to the lea target;
+			// the call replaces the store and the first instruction of that jump.
+			utils::hook::nop(game_address, 7);
+			utils::hook::call(game_address, stub);
+		}
+
 		void patch_code_healing_precomputed()
 		{
 			const auto& patches = current_patches();
@@ -303,6 +351,11 @@ namespace arxan::code_healing
 			for (const auto offset : patches.eax_split_healing)
 			{
 				patch_healing_code_sections_function_eax_split(reinterpret_cast<void*>(game::relocate(offset)));
+			}
+
+			for (const auto offset : patches.eax_obfuscated_healing)
+			{
+				patch_healing_code_sections_function_eax_obfuscated(reinterpret_cast<void*>(game::relocate(offset)));
 			}
 		}
 
@@ -324,6 +377,12 @@ namespace arxan::code_healing
 			for (auto* i : eax_split_healing_results)
 			{
 				patch_healing_code_sections_function_eax_split(i);
+			}
+
+			const auto eax_obfuscated_healing_results = "89 02 48 8D 64 24 F8 48 89 04 24 48 8D 05"_sig;
+			for (auto* i : eax_obfuscated_healing_results)
+			{
+				patch_healing_code_sections_function_eax_obfuscated(i);
 			}
 		}
 

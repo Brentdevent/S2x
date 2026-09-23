@@ -315,6 +315,12 @@ namespace mp
 		0x11D46864,
 		0x11F00126,
 	};
+
+	// 89 02 48 8D 64 24 F8 48 89 04 24 48 8D 05
+	constexpr uint64_t eax_obfuscated_healing_offsets[] =
+	{
+		0x11C4EB49,
+	};
 }
 
 namespace sp
