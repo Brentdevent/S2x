@@ -514,4 +514,10 @@ namespace sp
 		0xF28CE54,
 		0xF528FD2,
 	};
+
+	// 89 02 48 8D 64 24 F8 48 89 04 24 48 8D 05
+	constexpr uint64_t eax_obfuscated_healing_offsets[] =
+	{
+		0xEF563BD,
+	};
 }

@@ -57,7 +57,7 @@ namespace arxan::code_healing
 			sp::al_healing_offsets,
 			sp::eax_healing_offsets,
 			sp::eax_split_healing_offsets,
-			empty_offsets,
+			sp::eax_obfuscated_healing_offsets,
 			sp::int2d_breakpoint_offsets,
 		};
 
@@ -98,7 +98,7 @@ namespace arxan::code_healing
 				patch_region{sp::al_healing_offsets, 0x6},
 				patch_region{sp::eax_healing_offsets, 0x5},
 				patch_region{sp::eax_split_healing_offsets, 0x5},
-				patch_region{empty_offsets, 0x7},
+				patch_region{sp::eax_obfuscated_healing_offsets, 0x7},
 				patch_region{sp::int2d_breakpoint_offsets, 0x7},
 			};
 
