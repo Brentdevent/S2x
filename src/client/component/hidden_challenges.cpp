@@ -273,7 +273,7 @@ namespace hidden_challenges
 
 			if (definitions.size() != last_reported_definition_count)
 			{
-				console::debug("[hidden_challenges] loaded %zu of %zu character groups\n",
+				console::debug("[DW] hidden_challenges: loaded %zu of %zu character groups\n",
 					definitions.size(), hidden_groups.size());
 				last_reported_definition_count = definitions.size();
 			}
@@ -351,14 +351,14 @@ namespace hidden_challenges
 
 			if (result == demonware::achievement_store::mutation_result::save_failed)
 			{
-				console::error("[hidden_challenges] failed to persist %s\n",
+				console::error("[DW] hidden_challenges: failed to persist %s\n",
 					definition.achievement_name.data());
 				return result;
 			}
 
 			if (result == demonware::achievement_store::mutation_result::updated)
 			{
-				console::debug("[hidden_challenges] %s: 0x%02X -> 0x%02X\n",
+				console::debug("[DW] hidden_challenges: %s: 0x%02X -> 0x%02X\n",
 					definition.achievement_name.data(), previous_progress, updated_progress);
 			}
 			return result;

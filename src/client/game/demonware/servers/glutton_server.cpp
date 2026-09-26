@@ -39,7 +39,7 @@ namespace demonware
 		request.Parse(http_request.body.data(), http_request.body.size());
 		if (request.HasParseError() || !request.IsObject())
 		{
-			console::error("[DW]: [glutton]: received an invalid request.\n");
+			console::error("[DW] glutton: received an invalid request\n");
 			return;
 		}
 
@@ -106,12 +106,12 @@ namespace demonware
 			}
 
 			response.AddMember("NextPageToken", "", allocator);
-			console::demonware("[DW]: [glutton]: returned %zu user achievements.\n",
+			console::demonware("[DW] glutton: returned %zu user achievements\n",
 				achievements.size());
 		}
 		else
 		{
-			console::demonware("[DW]: [glutton]: unhandled action '%s'.\n", action);
+			console::demonware("[DW] glutton: unhandled action '%s'\n", action);
 		}
 
 		send_json(response);

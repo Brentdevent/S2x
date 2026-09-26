@@ -64,11 +64,11 @@ namespace hidden_challenge_relay
 			if (params.size() != 3 || !parse_unsigned(params[1], group) ||
 				!parse_unsigned(params[2], challenge))
 			{
-				console::debug("[hidden_challenges] ignored malformed server completion\n");
+				console::debug("[DW] hidden_challenge_relay: ignored malformed server completion\n");
 				return;
 			}
 
-			console::debug("[hidden_challenges] received server completion: group=%u slot=%u\n",
+			console::debug("[DW] hidden_challenge_relay: received server completion: group=%u slot=%u\n",
 				group, challenge);
 			hidden_challenges::submit_completion(group, challenge);
 		}
@@ -102,13 +102,13 @@ namespace hidden_challenge_relay
 				if (client_num == std::numeric_limits<std::uint8_t>::max() ||
 					client_num >= max_clients || clients[client_num].state < minimum_command_client_state)
 				{
-					console::debug("[hidden_challenges] discarded completion for disconnected XUID %llu\n",
+					console::debug("[DW] hidden_challenge_relay: discarded completion for disconnected XUID %llu\n",
 						static_cast<unsigned long long>(forward.user_id));
 					continue;
 				}
 
 				console::debug(
-					"[hidden_challenges] forwarding XUID %llu to client %u: group=%u slot=%u\n",
+					"[DW] hidden_challenge_relay: forwarding XUID %llu to client %u: group=%u slot=%u\n",
 					static_cast<unsigned long long>(forward.user_id), client_num,
 					forward.group, forward.challenge);
 				game::SV_SendServerCommand(&clients[client_num], game::SV_CMD_RELIABLE,
@@ -139,7 +139,7 @@ namespace hidden_challenge_relay
 
 		if (pending_forwards.size() >= maximum_pending_forwards)
 		{
-			console::debug("[hidden_challenges] pending forward queue is full\n");
+			console::debug("[DW] hidden_challenge_relay: pending forward queue is full\n");
 			return;
 		}
 

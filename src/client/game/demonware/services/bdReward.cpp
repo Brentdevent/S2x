@@ -136,7 +136,7 @@ namespace demonware
 
 			send_reward_response(server, steam::SteamUser()->GetSteamID().bits, context,
 				achievement_response::make_get_user_achievements_response(client_tx));
-			console::demonware("[DW]: [bdReward]: answered get_user_achievements (%.*s).\n",
+			console::demonware("[DW] bdReward: answered get_user_achievements (%.*s)\n",
 				static_cast<int>(client_tx.size()), client_tx.data());
 		}
 	}
@@ -165,7 +165,7 @@ namespace demonware
 					}
 
 					console::debug(
-						"[hidden_challenges] task11 XUID %llu: zombies [3=%u, 4=%u]\n",
+						"[DW] bdReward: task '11' XUID %llu: zombies [3=%u, 4=%u]\n",
 						static_cast<unsigned long long>(user.user_id), group, challenge);
 					if (!dedicated && user.user_id == local_user_id)
 					{
@@ -180,7 +180,7 @@ namespace demonware
 		}
 		else
 		{
-			console::debug("[hidden_challenges] ignored a malformed bdReward task 11 request\n");
+			console::debug("[DW] bdReward: ignored a malformed task '11' request\n");
 		}
 
 		auto reply = server->create_reply(this->task_id());
@@ -203,7 +203,7 @@ namespace demonware
 		}
 		else
 		{
-			console::debug("[hidden_challenges] ignored a malformed bdReward task 12 request\n");
+			console::debug("[DW] bdReward: ignored a malformed task '12' request\n");
 		}
 
 		auto reply = server->create_reply(this->task_id());
