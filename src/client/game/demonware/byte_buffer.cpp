@@ -76,6 +76,25 @@ namespace demonware
 		return false;
 	}
 
+	bool byte_buffer::read_string(std::string* output, const size_t maximum_size)
+	{
+		if (!output || !this->read_data_type(BD_BB_SIGNED_CHAR8_STRING_TYPE) ||
+			this->current_byte_ >= this->buffer_.size())
+		{
+			return false;
+		}
+
+		const auto end = this->buffer_.find('\0', this->current_byte_);
+		if (end == std::string::npos || end - this->current_byte_ > maximum_size)
+		{
+			return false;
+		}
+
+		output->assign(this->buffer_, this->current_byte_, end - this->current_byte_);
+		this->current_byte_ = end + 1;
+		return true;
+	}
+
 	bool byte_buffer::read_string(char** output)
 	{
 		if (!this->read_data_type(BD_BB_SIGNED_CHAR8_STRING_TYPE)) return false;

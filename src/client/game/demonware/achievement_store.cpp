@@ -3,6 +3,7 @@
 #include "achievement_store.hpp"
 
 #include <utils/io.hpp>
+#include <utils/finally.hpp>
 
 #include <map>
 #include <mutex>
@@ -163,8 +164,27 @@ namespace demonware::achievement_store
 			document.Accept(writer);
 			try
 			{
-				return utils::io::write_file(achievement_file,
-					std::string{buffer.GetString(), buffer.GetSize()});
+				const std::filesystem::path target{achievement_file};
+				// Saves are serialized by achievement_mutex. Use a process-specific
+				// sibling so a failed write never truncates the last successful save.
+				auto temporary = target;
+				temporary += "." + std::to_string(GetCurrentProcessId()) + ".tmp";
+				std::filesystem::create_directories(target.parent_path());
+				const auto cleanup = utils::finally([&temporary]
+				{
+					std::error_code error{};
+					std::filesystem::remove(temporary, error);
+				});
+				std::ofstream stream{temporary, std::ios::binary | std::ios::trunc};
+				stream.write(buffer.GetString(), static_cast<std::streamsize>(buffer.GetSize()));
+				stream.close();
+				if (!stream)
+				{
+					return false;
+				}
+
+				return MoveFileExW(temporary.c_str(), target.c_str(),
+					MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
 			}
 			catch (const std::filesystem::filesystem_error&)
 			{

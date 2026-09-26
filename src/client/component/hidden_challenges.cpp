@@ -8,11 +8,10 @@
 #include "component/scheduler.hpp"
 
 #include "game/game.hpp"
+#include "game/string_table.hpp"
 #include "game/demonware/achievement_store.hpp"
 #include "game/demonware/reward_game_event.hpp"
 
-#include <charconv>
-#include <deque>
 #include <mutex>
 #include <unordered_map>
 
@@ -22,10 +21,14 @@ namespace hidden_challenges
 
 	namespace
 	{
+		using game::string_table::get_cell;
+		using game::string_table::parse_integer;
+		using game::string_table::find_row;
+		using game::string_table::split_references;
+
 		constexpr auto hidden_challenge_event_id = 16;
 		constexpr std::string_view hidden_challenge_event_name = "zombies";
 		constexpr auto hidden_challenge_kind = 5;
-		constexpr auto maximum_pending_events = 128u;
 
 		constexpr auto reference_column = 0;
 		constexpr auto category_challenges_column = 4;
@@ -46,138 +49,67 @@ namespace hidden_challenges
 		{
 			int value;
 			int achievement_id;
-			std::string_view diagnostic_prefix;
 		};
 
 		// Selector 3 contains the stock hidden-character group value. The parent AE IDs
-		// join the shipped tables, while the prefixes are only used in diagnostics.
+		// join the shipped tables; the comments name the stock script groups.
 		// Group 22 is intentionally unused by the stock mapping; selector 4 is a
 		// zero-based challenge slot within the resolved group.
 		constexpr std::array hidden_groups
 		{
-			hidden_group{1, 363, "treasure_set"},
-			hidden_group{2, 365, "raven_set"},
-			hidden_group{3, 366, "assassin_set"},
-			hidden_group{4, 367, "survivalist_set"},
-			hidden_group{5, 368, "mountain_man_set"},
-			hidden_group{6, 369, "bat_elite_set"},
-			hidden_group{7, 64, "survivalist_origin_set"},
-			hidden_group{8, 65, "survivalist_bat_set"},
-			hidden_group{9, 66, "survivalist_blood_set"},
-			hidden_group{10, 67, "hunter_origin_set"},
-			hidden_group{11, 68, "hunter_bat_set"},
-			hidden_group{12, 69, "hunter_blood_set"},
-			hidden_group{13, 70, "mountain_man_origin_set"},
-			hidden_group{14, 71, "mountain_man_bat_set"},
-			hidden_group{15, 72, "mountain_man_blood_set"},
-			hidden_group{16, 73, "assassin_origin_set"},
-			hidden_group{17, 74, "assassin_bat_set"},
-			hidden_group{18, 75, "assassin_blood_set"},
-			hidden_group{19, 350, "surgeon_set"},
-			hidden_group{20, 351, "rebel_set"},
-			hidden_group{21, 568, "super_soldier_set"},
-			hidden_group{23, 1096, "arrow_set"},
-			hidden_group{24, 1097, "captain_set"},
-			hidden_group{25, 1098, "explorer_set"},
-			hidden_group{26, 1136, "african_set"},
-			hidden_group{27, 1137, "outlaw_set"},
-			hidden_group{28, 1138, "arabic_set"},
-			hidden_group{29, 1141, "wicht_set"},
+			hidden_group{1, 363}, // treasure_set
+			hidden_group{2, 365}, // raven_set
+			hidden_group{3, 366}, // assassin_set
+			hidden_group{4, 367}, // survivalist_set
+			hidden_group{5, 368}, // mountain_man_set
+			hidden_group{6, 369}, // bat_elite_set
+			hidden_group{7, 64}, // survivalist_origin_set
+			hidden_group{8, 65}, // survivalist_bat_set
+			hidden_group{9, 66}, // survivalist_blood_set
+			hidden_group{10, 67}, // hunter_origin_set
+			hidden_group{11, 68}, // hunter_bat_set
+			hidden_group{12, 69}, // hunter_blood_set
+			hidden_group{13, 70}, // mountain_man_origin_set
+			hidden_group{14, 71}, // mountain_man_bat_set
+			hidden_group{15, 72}, // mountain_man_blood_set
+			hidden_group{16, 73}, // assassin_origin_set
+			hidden_group{17, 74}, // assassin_bat_set
+			hidden_group{18, 75}, // assassin_blood_set
+			hidden_group{19, 350}, // surgeon_set
+			hidden_group{20, 351}, // rebel_set
+			hidden_group{21, 568}, // super_soldier_set
+			hidden_group{23, 1096}, // arrow_set
+			hidden_group{24, 1097}, // captain_set
+			hidden_group{25, 1098}, // explorer_set
+			hidden_group{26, 1136}, // african_set
+			hidden_group{27, 1137}, // outlaw_set
+			hidden_group{28, 1138}, // arabic_set
+			hidden_group{29, 1141}, // wicht_set
 		};
 
 		struct hidden_challenge_definition
 		{
-			std::string diagnostic_prefix{};
 			std::string achievement_name{};
-			std::string event_name{};
 			int achievement_kind{};
 			std::uint16_t full_mask{};
 		};
 
 		std::atomic_bool accepting_events{};
 		std::mutex pending_event_mutex{};
-		std::deque<reward_game_event> pending_events{};
+		// Completions are idempotent bits, not an unbounded stream of work. Keep
+		// one mask per known group, including events waiting for assets or a save retry.
+		using completion_masks = std::array<std::uint16_t, hidden_groups.size()>;
+		completion_masks pending_events{};
 		std::unordered_map<int, hidden_challenge_definition> definitions{};
-		bool definitions_complete{};
 		std::size_t last_reported_definition_count{std::numeric_limits<std::size_t>::max()};
 		std::chrono::steady_clock::time_point next_definition_load{};
+		std::chrono::steady_clock::time_point next_event_retry{};
 
-		const char* get_cell(const game::StringTable* table, const int row, const int column)
+		std::size_t get_group_index(const std::uint64_t value)
 		{
-			if (!table || !table->values || row < 0 || row >= table->rowCount || column < 0 ||
-				column >= table->columnCount)
-			{
-				return nullptr;
-			}
-
-			return table->values[row * table->columnCount + column].string;
-		}
-
-		bool parse_integer(const char* text, int& value)
-		{
-			if (!text || !*text)
-			{
-				return false;
-			}
-
-			const auto* end = text + std::strlen(text);
-			const auto result = std::from_chars(text, end, value);
-			return result.ec == std::errc{} && result.ptr == end;
-		}
-
-		std::string_view trim(std::string_view value)
-		{
-			const auto first = value.find_first_not_of(" \t");
-			if (first == std::string_view::npos)
-			{
-				return {};
-			}
-
-			const auto last = value.find_last_not_of(" \t");
-			return value.substr(first, last - first + 1);
-		}
-
-		std::vector<std::string_view> split_references(const char* list)
-		{
-			std::vector<std::string_view> result{};
-			if (!list || !*list)
-			{
-				return result;
-			}
-
-			std::string_view remaining{list};
-			while (!remaining.empty())
-			{
-				const auto separator = remaining.find(',');
-				const auto reference = trim(remaining.substr(0, separator));
-				if (!reference.empty())
-				{
-					result.push_back(reference);
-				}
-
-				if (separator == std::string_view::npos)
-				{
-					break;
-				}
-
-				remaining.remove_prefix(separator + 1);
-			}
-
-			return result;
-		}
-
-		int find_row(const game::StringTable* table, const int column, const std::string_view value)
-		{
-			for (auto row = 0; table && row < table->rowCount; ++row)
-			{
-				const auto* cell = get_cell(table, row, column);
-				if (cell && value == cell)
-				{
-					return row;
-				}
-			}
-
-			return -1;
+			const auto group = std::find_if(hidden_groups.begin(), hidden_groups.end(),
+				[value](const hidden_group& entry) { return entry.value == value; });
+			return static_cast<std::size_t>(group - hidden_groups.begin());
 		}
 
 		int find_category_row(const game::StringTable* table, const int achievement_id)
@@ -288,9 +220,7 @@ namespace hidden_challenges
 				return false;
 			}
 
-			result.diagnostic_prefix = group.diagnostic_prefix;
 			result.achievement_name = achievement_name;
-			result.event_name = event_name;
 			result.achievement_kind = kind;
 			result.full_mask = full_mask;
 			return true;
@@ -298,7 +228,7 @@ namespace hidden_challenges
 
 		void load_definitions()
 		{
-			if (definitions_complete)
+			if (definitions.size() == hidden_groups.size())
 			{
 				return;
 			}
@@ -327,22 +257,20 @@ namespace hidden_challenges
 				return;
 			}
 
-			std::unordered_map<int, hidden_challenge_definition> loaded{};
 			for (const auto& group : hidden_groups)
 			{
+				if (definitions.contains(group.value))
+				{
+					continue;
+				}
+
 				hidden_challenge_definition definition{};
 				if (build_definition(group, challenges, achievement_definitions, game_events, definition))
 				{
-					loaded.emplace(group.value, std::move(definition));
+					definitions.emplace(group.value, std::move(definition));
 				}
 			}
 
-			if (loaded.size() >= definitions.size())
-			{
-				definitions = std::move(loaded);
-			}
-
-			definitions_complete = definitions.size() == hidden_groups.size();
 			if (definitions.size() != last_reported_definition_count)
 			{
 				console::debug("[hidden_challenges] loaded %zu of %zu character groups\n",
@@ -380,13 +308,13 @@ namespace hidden_challenges
 			return event.name == hidden_challenge_event_name &&
 				get_parameter(event, "3", group_value) &&
 				get_parameter(event, "4", challenge_value) &&
-				group_value <= std::numeric_limits<int>::max() &&
+				get_group_index(group_value) != hidden_groups.size() &&
 				challenge_value < std::numeric_limits<std::uint16_t>::digits;
 		}
 
-		void update_progress(const hidden_challenge_definition& definition, const int challenge_index)
+		demonware::achievement_store::mutation_result update_progress(
+			const hidden_challenge_definition& definition, const std::uint16_t challenge_mask)
 		{
-			const auto challenge_mask = static_cast<std::uint16_t>(1u << challenge_index);
 			std::uint16_t previous_progress{};
 			std::uint16_t updated_progress{};
 			const auto result = demonware::achievement_store::mutate(definition.achievement_name,
@@ -425,72 +353,85 @@ namespace hidden_challenges
 			{
 				console::error("[hidden_challenges] failed to persist %s\n",
 					definition.achievement_name.data());
-				return;
+				return result;
 			}
 
 			if (result == demonware::achievement_store::mutation_result::updated)
 			{
 				console::debug("[hidden_challenges] %s: 0x%02X -> 0x%02X\n",
 					definition.achievement_name.data(), previous_progress, updated_progress);
-				achievement_sync::request_refresh();
 			}
-		}
-
-		void process_event(const reward_game_event& event)
-		{
-			std::uint64_t group_value{};
-			std::uint64_t challenge_value{};
-			if (!get_hidden_challenge_values(event, group_value, challenge_value))
-			{
-				return;
-			}
-
-			const auto group = static_cast<int>(group_value);
-			const auto definition = definitions.find(group);
-			if (definition == definitions.end())
-			{
-				return;
-			}
-
-			const auto challenge_index = static_cast<int>(challenge_value);
-			if (event.name != definition->second.event_name ||
-				(definition->second.full_mask & (1u << challenge_index)) == 0)
-			{
-				return;
-			}
-
-			console::debug("[hidden_challenges] matched %s%d -> %s\n",
-				definition->second.diagnostic_prefix.data(), challenge_index,
-				definition->second.achievement_name.data());
-			update_progress(definition->second, challenge_index);
+			return result;
 		}
 
 		void process_pending_events()
 		{
 			load_definitions();
-			if (!definitions_complete)
+			const auto now = std::chrono::steady_clock::now();
+			if (now < next_event_retry)
 			{
 				return;
 			}
 
-			std::deque<reward_game_event> events{};
+			completion_masks events{};
 			{
 				std::lock_guard lock{pending_event_mutex};
 				events.swap(pending_events);
 			}
 
-			while (!events.empty())
+			bool changed{};
+			bool retry{};
+			for (std::size_t index = 0; index < events.size(); ++index)
 			{
-				auto event = std::move(events.front());
-				events.pop_front();
-				process_event(event);
+				if (!events[index])
+				{
+					continue;
+				}
+
+				const auto definition = definitions.find(hidden_groups[index].value);
+				if (definition == definitions.end())
+				{
+					retry = true;
+					continue;
+				}
+
+				events[index] &= definition->second.full_mask;
+				if (!events[index])
+				{
+					continue;
+				}
+
+				const auto result = update_progress(definition->second, events[index]);
+				if (result == demonware::achievement_store::mutation_result::save_failed)
+				{
+					retry = true;
+					continue;
+				}
+
+				changed |= result == demonware::achievement_store::mutation_result::updated;
+				events[index] = 0;
+			}
+
+			if (retry)
+			{
+				next_event_retry = now + 1s;
+				std::lock_guard lock{pending_event_mutex};
+				for (std::size_t index = 0; index < events.size(); ++index)
+				{
+					pending_events[index] |= events[index];
+				}
+			}
+
+			if (changed)
+			{
+				achievement_sync::request_refresh();
 			}
 		}
 
 		void clear_pending_events()
 		{
 			std::lock_guard lock{pending_event_mutex};
-			pending_events.clear();
+			pending_events.fill(0);
 		}
 	}
 
@@ -511,18 +452,9 @@ namespace hidden_challenges
 
 	void submit_completion(const std::uint32_t group, const std::uint32_t challenge)
 	{
-		reward_game_event event{};
-		event.name = hidden_challenge_event_name;
-		event.parameters = {{"3", group}, {"4", challenge}};
-		submit_reward_game_event(std::move(event));
-	}
-
-	void submit_reward_game_event(reward_game_event event)
-	{
-		std::uint64_t group_value{};
-		std::uint64_t challenge_value{};
-		if (!accepting_events.load() ||
-			!get_hidden_challenge_values(event, group_value, challenge_value))
+		const auto index = get_group_index(group);
+		if (!accepting_events.load() || index == hidden_groups.size() ||
+			challenge >= std::numeric_limits<std::uint16_t>::digits)
 		{
 			return;
 		}
@@ -533,13 +465,17 @@ namespace hidden_challenges
 			return;
 		}
 
-		if (pending_events.size() >= maximum_pending_events)
-		{
-			console::debug("[hidden_challenges] pending event queue is full\n");
-			return;
-		}
+		pending_events[index] |= static_cast<std::uint16_t>(1u << challenge);
+	}
 
-		pending_events.push_back(std::move(event));
+	void submit_reward_game_event(reward_game_event event)
+	{
+		std::uint32_t group{};
+		std::uint32_t challenge{};
+		if (get_completion(event, group, challenge))
+		{
+			submit_completion(group, challenge);
+		}
 	}
 
 	class component final : public multiplayer_component

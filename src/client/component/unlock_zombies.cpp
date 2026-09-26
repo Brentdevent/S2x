@@ -4,9 +4,9 @@
 #include "component/achievement_sync.hpp"
 
 #include "game/game.hpp"
+#include "game/string_table.hpp"
 #include "game/demonware/achievement_store.hpp"
 
-#include <charconv>
 #include <unordered_set>
 #include <vector>
 
@@ -14,6 +14,11 @@ namespace unlock_zombies
 {
 	namespace
 	{
+		using game::string_table::get_cell;
+		using game::string_table::parse_integer;
+		using game::string_table::find_row;
+		using game::string_table::split_references;
+
 		constexpr std::array supplemental_zombie_achievements
 		{
 			std::pair{1112, std::uint16_t{1}}, // Tortured Path maps completed.
@@ -37,29 +42,6 @@ namespace unlock_zombies
 			int total{};
 		};
 
-		const char* get_cell(const game::StringTable* table, const int row, const int column)
-		{
-			if (!table || !table->values || row < 0 || row >= table->rowCount || column < 0 ||
-				column >= table->columnCount)
-			{
-				return nullptr;
-			}
-
-			return table->values[row * table->columnCount + column].string;
-		}
-
-		bool parse_integer(const char* text, int& value)
-		{
-			if (!text || !*text)
-			{
-				return false;
-			}
-
-			const auto* end = text + std::strlen(text);
-			const auto result = std::from_chars(text, end, value);
-			return result.ec == std::errc{} && result.ptr == end;
-		}
-
 		void append_unique_achievement(std::vector<std::pair<int, std::uint16_t>>& values,
 			const int id, const std::uint16_t progress)
 		{
@@ -73,78 +55,38 @@ namespace unlock_zombies
 			}
 		}
 
-		int find_row_by_reference(const game::StringTable* table, const std::string_view reference)
-		{
-			for (auto row = 0; table && row < table->rowCount; ++row)
-			{
-				const auto* value = get_cell(table, row, challenge_reference_column);
-				if (value && reference == value)
-				{
-					return row;
-				}
-			}
-
-			return -1;
-		}
-
 		bool find_achievement_definition(const game::StringTable* definitions, const int id,
 			const char*& name, int& kind)
 		{
-			const auto id_string = std::to_string(id);
-			for (auto row = 0; definitions && row < definitions->rowCount; ++row)
-			{
-				const auto* value = get_cell(definitions, row, achievement_definition_id_column);
-				if (value && id_string == value)
-				{
-					name = get_cell(definitions, row, achievement_definition_name_column);
-					return name && *name &&
-						parse_integer(get_cell(definitions, row, achievement_definition_kind_column), kind) &&
-						kind > 0;
-				}
-			}
-
-			return false;
+			const auto row = find_row(definitions, achievement_definition_id_column, std::to_string(id));
+			name = get_cell(definitions, row, achievement_definition_name_column);
+			return name && *name &&
+				parse_integer(get_cell(definitions, row, achievement_definition_kind_column), kind) && kind > 0;
 		}
 
 		bool get_category_progress(const game::StringTable* challenges, const int category_row,
 			std::uint16_t& progress)
 		{
-			const auto* challenge_list = get_cell(challenges, category_row, category_challenges_column);
-			if (!challenge_list || !*challenge_list)
+			const auto references = split_references(get_cell(challenges, category_row, category_challenges_column));
+			if (references.empty())
 			{
 				return false;
 			}
 
 			std::uint32_t mask{};
-			std::string_view references{challenge_list};
-			while (!references.empty())
+			for (const auto reference : references)
 			{
-				const auto separator = references.find(',');
-				auto reference = references.substr(0, separator);
-				const auto first = reference.find_first_not_of(" \t");
-				const auto last = reference.find_last_not_of(" \t");
-				if (first != std::string_view::npos)
+				const auto challenge_row = find_row(challenges, challenge_reference_column, reference);
+				int bit{};
+				if (challenge_row < 0 ||
+					!parse_integer(get_cell(challenges, challenge_row, challenge_bit_column), bit) ||
+					bit <= 0 || bit > std::numeric_limits<std::uint16_t>::digits)
 				{
-					reference = reference.substr(first, last - first + 1);
-					const auto challenge_row = find_row_by_reference(challenges, reference);
-					int bit{};
-					if (challenge_row < 0 ||
-						!parse_integer(get_cell(challenges, challenge_row, challenge_bit_column), bit) ||
-						bit <= 0 || bit > std::numeric_limits<std::uint16_t>::digits)
-					{
-						return false;
-					}
-
-					// Challenge positions in zombieCostumeChallenges.csv are one-based.
-					mask |= 1u << (bit - 1);
+					return false;
 				}
 
-				if (separator == std::string_view::npos)
-				{
-					break;
-				}
-
-				references.remove_prefix(separator + 1);
+				// Challenge positions in zombieCostumeChallenges.csv are one-based.
+				mask |= 1u << (bit - 1);
 			}
 
 			if (!mask)

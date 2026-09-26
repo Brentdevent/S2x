@@ -6,6 +6,7 @@
 #include "component/hidden_challenges.hpp"
 
 #include "game/game.hpp"
+#include "game/demonware/achievement_response.hpp"
 #include "game/demonware/reward_game_event.hpp"
 
 #include "steam/steam.hpp"
@@ -14,6 +15,53 @@ namespace demonware
 {
 	namespace
 	{
+		bool read_reward_events(byte_buffer* buffer, std::string& context,
+			std::vector<std::string>& events)
+		{
+			// bdReward::reportRewardEvents (0xA47B80): context, uint16 count,
+			// then bdJSONData objects (int32 representation 1 + string).
+			unsigned short count{};
+			if (buffer->size() > 0x1FFFF + 15 || !buffer->read_string(&context, 15) ||
+				!buffer->read_uint16(&count) || !count)
+			{
+				return false;
+			}
+
+			for (unsigned int i = 0; i < count; ++i)
+			{
+				int representation{};
+				std::string json{};
+				if (!buffer->read_int32(&representation) || representation != 1 ||
+					!buffer->read_string(&json, 0x1FFFF))
+				{
+					return false;
+				}
+				events.push_back(std::move(json));
+			}
+
+			const auto padding = buffer->get_remaining();
+			return padding.size() <= 15 && std::ranges::all_of(padding,
+				[](const char value) { return value == '\0'; });
+		}
+
+		void send_reward_response(service_server* server, const std::uint64_t user_id,
+			const std::string& context, const std::string& json)
+		{
+			// The native lobby push handler (0xA35FD0) dispatches this to
+			// AE_ProcessResponse. The task acknowledgement alone cannot do that.
+			byte_buffer message{};
+			message.write_uint32(BD_REWARD_EVENT_MESSAGE);
+			message.write_ubyte(1); // Protocol version.
+			message.write_uint64(user_id);
+			message.write_string("steam");
+			message.write_string(context);
+			message.write_int32(1); // JSON representation.
+			message.write_uint32(1); // One event.
+			message.write_int32(1); // bdJSONData representation.
+			message.write_string(json);
+			server->create_message(BD_LOBBY_SERVICE_PUSH_MESSAGE).send(&message, true);
+		}
+
 		void submit_hidden_challenge_events(std::vector<reward_game_events::event>& events)
 		{
 			for (auto& event : events)
@@ -56,11 +104,41 @@ namespace demonware
 		reply.send();
 	}
 
-	void bdReward::reportRewardEvents(service_server* server, byte_buffer* /*buffer*/) const
+	void bdReward::reportRewardEvents(service_server* server, byte_buffer* buffer) const
 	{
-		// TODO:
-		auto reply = server->create_reply(this->task_id());
-		reply.send();
+		std::string context{};
+		std::vector<std::string> events{};
+		if (!read_reward_events(buffer, context, events))
+		{
+			server->create_reply(this->task_id(), BD_PARAM_PARSE_ERROR).send();
+			return;
+		}
+
+		server->create_reply(this->task_id()).send();
+		for (const auto& json : events)
+		{
+			rapidjson::Document request{};
+			request.Parse(json.data(), json.size());
+			if (request.HasParseError() || !request.IsObject() ||
+				!request.HasMember("Action") || !request["Action"].IsString() ||
+				request["Action"] != "get_user_achievements" ||
+				!request.HasMember("ClientTx") || !request["ClientTx"].IsString())
+			{
+				continue;
+			}
+
+			const auto& transaction = request["ClientTx"];
+			const std::string_view client_tx{transaction.GetString(), transaction.GetStringLength()};
+			if (client_tx.empty() || client_tx.size() > 24 || client_tx.find('\0') != std::string_view::npos)
+			{
+				continue;
+			}
+
+			send_reward_response(server, steam::SteamUser()->GetSteamID().bits, context,
+				achievement_response::make_get_user_achievements_response(client_tx));
+			console::demonware("[DW]: [bdReward]: answered get_user_achievements (%.*s).\n",
+				static_cast<int>(client_tx.size()), client_tx.data());
+		}
 	}
 
 	void bdReward::reportRewardGameEventsForUsers(service_server* server, byte_buffer* buffer) const
@@ -70,14 +148,14 @@ namespace demonware
 		{
 			const auto dedicated = game::environment::is_dedicated();
 			const auto local_user_id = dedicated ? 0 : steam::SteamUser()->GetSteamID().bits;
-			for (auto& user : users)
+			for (const auto& user : users)
 			{
 				if (user.account_type != "steam")
 				{
 					continue;
 				}
 
-				for (auto& event : user.events)
+				for (const auto& event : user.events)
 				{
 					std::uint32_t group{};
 					std::uint32_t challenge{};
@@ -91,7 +169,7 @@ namespace demonware
 						static_cast<unsigned long long>(user.user_id), group, challenge);
 					if (!dedicated && user.user_id == local_user_id)
 					{
-						hidden_challenges::submit_reward_game_event(std::move(event));
+						hidden_challenges::submit_completion(group, challenge);
 					}
 					else
 					{

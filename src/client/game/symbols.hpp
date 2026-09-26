@@ -372,12 +372,6 @@ namespace game
 	WEAK symbol<void()> LUI_LeaveCriticalSection{ 0xC5F80, 0x191FB0 };
 	WEAK symbol<std::int64_t(void* transactionId)> AE_GenerateTransactionId{ 0x8390A0 };
 	WEAK symbol<bool(unsigned int controllerIndex, const void* transactionId)> AE_FetchUserAchievements{ 0x139350 };
-	WEAK symbol<bool(unsigned int controllerIndex, const char* pageToken, const void* transactionId,
-		unsigned int accountIndex)> AE_FetchUserAchievementsByPage{ 0x139400 };
-	WEAK symbol<std::byte> AE_UserAchievementTaskData{ 0x6039A60 };
-	WEAK symbol<bool(void* response, const char* value)> AE_SetResponseString{ 0xA3B8F0 };
-	WEAK symbol<void(unsigned int controllerIndex, const void* response,
-		unsigned int taskGroup)> AE_ProcessResponse{ 0x676A40 };
 	WEAK symbol<unsigned int(const char* reference)> BG_GetItemGUIDFromReference{ 0x6524C0 };
 	WEAK symbol<int(unsigned int controllerIndex, unsigned int itemGuid)> Inventory_GetItemQuantity{ 0x279480 };
 	WEAK symbol<bool(unsigned int itemGuid)> Inventory_IsItemGuidAZMConsumable{ 0x652490 };
