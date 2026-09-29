@@ -345,5 +345,15 @@ project "tlsdll"
 	resincludedirs {"$(ProjectDir)src"}
 
 
+group "Tests"
+	project "gsc-context-test"
+		kind "ConsoleApp"
+		language "C++"
+
+		files {"./tests/gsc_context.cpp"}
+
+		gsc_tool.import()
+		zlib.import()
+
 group "Dependencies"
 	dependencies.projects()

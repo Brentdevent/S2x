@@ -47,6 +47,9 @@ jobs:
       - name: Build ${{matrix.configuration}} binaries
         run: msbuild /m /v:minimal /p:Configuration=${{matrix.configuration}} /p:Platform=x64 build/s2x.sln
 
+      - name: Check S2 startup builtin lookups
+        run: ./build/bin/x64/${{matrix.configuration}}/gsc-context-test.exe
+
       - name: Upload ${{matrix.configuration}} binary
         uses: actions/upload-artifact@v7
         with:
