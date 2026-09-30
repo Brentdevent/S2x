@@ -352,11 +352,13 @@
 
         .about {
             padding: 0 20px;
-            text-align: center;
+            text-align: left;
         }
 
         .about-logo {
             margin-bottom: 4px;
+            text-align: center;
+            text-transform: none;
             font-size: 3.6vw;
             line-height: 100%;
             letter-spacing: 2px;
@@ -377,7 +379,8 @@
         }
 
         .about p.links {
-            margin-top: 10px;
+            margin: 0 0 10px 0;
+            text-align: center;
             font-family: "HModMix-Medium", "Segoe UI", Arial, sans-serif;
             font-size: 1.9vw;
             letter-spacing: 1px;
@@ -478,7 +481,12 @@
 
             <div class="_about">
                 <div class="about">
-                    <div class="about-logo">S<span>2</span>X</div>
+                    <div class="about-logo">S<span>2</span>x</div>
+
+                    <p class="links">
+                        <a onclick="window.external.openUrl('https://github.com/Brentdevent/S2x');">GitHub</a>
+                        <a onclick="window.external.openUrl('https://discord.gg/wdC8Jpc2cC');">Discord</a>
+                    </p>
 
                     <p>
                         S2x is a custom client for Call of Duty&reg;: WWII, created as an independent community project.
@@ -500,11 +508,6 @@
                         The name S2x is a homage to the former X Labs projects and their work in the Call of Duty
                         modding community. S2x is not affiliated with X Labs, and any references are made out of
                         respect for their influence on this project.
-                    </p>
-
-                    <p class="links">
-                        <a onclick="window.external.openUrl('https://github.com/Brentdevent/S2x');">GitHub</a>
-                        <a onclick="window.external.openUrl('https://discord.gg/wdC8Jpc2cC');">Discord</a>
                     </p>
                 </div>
             </div>
