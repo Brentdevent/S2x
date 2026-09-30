@@ -57,8 +57,10 @@ namespace dedicated_party
 
 		dedicated_party_state_t dedicated_party_state{};
 		game::dvar_t* party_match_start_delay{};
-		game::dvar_t* party_maxplayers{};
-		game::dvar_t* party_minplayers{};
+		// Stock game setters swallow party_maxplayers/party_minplayers before
+		// our registered dvars see them. Use dedicated names for configured limits.
+		game::dvar_t* sv_maxplayers{};
+		game::dvar_t* sv_minplayers{};
 		game::dvar_t* sv_maprotation{};
 		bool map_rotate_requested{};
 
@@ -235,13 +237,13 @@ namespace dedicated_party
 
 		void apply_configured_party_limits()
 		{
-			if (!party_maxplayers || !party_minplayers)
+			if (!sv_maxplayers || !sv_minplayers)
 			{
 				return;
 			}
 
-			const auto max_players = party_maxplayers->current.integer;
-			const auto min_players = std::min(party_minplayers->current.integer, max_players);
+			const auto max_players = sv_maxplayers->current.integer;
+			const auto min_players = std::min(sv_minplayers->current.integer, max_players);
 			const auto member_capacity = get_member_capacity(max_players);
 			dedicated_party_state.player_capacity = max_players;
 
@@ -1269,11 +1271,11 @@ namespace dedicated_party
 			}
 
 			const auto& mode = game::environment::get_online_mode_info();
-			party_maxplayers = game::Dvar_RegisterInt(
-				"party_maxplayers", mode.max_players, 1,
+			sv_maxplayers = game::Dvar_RegisterInt(
+				"sv_maxplayers", mode.max_players, 1,
 				mode.max_players, game::DVAR_FLAG_NONE);
-			party_minplayers = game::Dvar_RegisterInt(
-				"party_minplayers", 1, 1,
+			sv_minplayers = game::Dvar_RegisterInt(
+				"sv_minplayers", 1, 1,
 				mode.max_players, game::DVAR_FLAG_NONE);
 			party_match_start_delay = game::Dvar_RegisterInt(
 				"party_matchStartDelay", 60, 0, 120, game::DVAR_FLAG_NONE);
