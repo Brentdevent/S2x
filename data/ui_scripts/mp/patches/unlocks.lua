@@ -46,11 +46,208 @@ local function open_unlock_confirmation( element, controller, command, warning )
 	} )
 end
 
+local function get_rank_mode( is_zombies )
+	if is_zombies then
+		return {
+			play_mode = CoD.PlayMode.Zombies,
+			stats_group = CoD.StatsGroup.Coop,
+			prestige_key = "prestigeLevel",
+			xp_key = "totalXP",
+			rank_file = RankTable_ZM.File
+		}
+	end
+
+	return {
+		play_mode = CoD.PlayMode.Core,
+		stats_group = CoD.StatsGroup.Ranked,
+		prestige_key = "prestige",
+		xp_key = "experience",
+		rank_file = RankTable.File
+	}
+end
+
+local function get_prestige( mode, controller )
+	return tonumber( Engine.GetPlayerData( controller, mode.stats_group, mode.prestige_key ) ) or 0
+end
+
+local function get_max_prestige( mode )
+	return tonumber( Rank.GetMasterPrestigeLevel( mode.play_mode ) ) or 0
+end
+
+local function get_max_rank( mode, prestige )
+	return tonumber( Rank.GetMaxRank( prestige, mode.play_mode ) ) or 0
+end
+
+local function get_effective_xp( mode, controller )
+	return tonumber( Engine.GetPlayerDataMPXP( controller, mode.stats_group ) ) or 0
+end
+
+local function get_rank( mode, controller )
+	local prestige = get_prestige( mode, controller )
+	local rank = tonumber( Lobby.GetRankForXP( get_effective_xp( mode, controller ), prestige, mode.rank_file ) ) or 0
+	return math.max( 0, math.min( rank, get_max_rank( mode, prestige ) ) )
+end
+
+local function get_rank_display( mode, rank )
+	local display = Rank.GetRankDisplay( rank, mode.play_mode )
+	if display == nil or display == "" then
+		return tostring( rank + 1 )
+	end
+
+	return tostring( display )
+end
+
+local function write_rank_stat( mode, controller, key, value )
+	value = math.floor( value )
+	if mode.stats_group == CoD.StatsGroup.Ranked then
+		Engine.ExecNow( "setPlayerDataInt " .. key .. " " .. value )
+	else
+		Engine.SetPlayerData( controller, mode.stats_group, key, value )
+	end
+	Engine.ExecNow( "uploadStats", controller )
+end
+
+local function set_rank( mode, controller, rank )
+	rank = math.max( 0, math.min( rank, get_max_rank( mode, get_prestige( mode, controller ) ) ) )
+	local raw_xp = tonumber( Engine.GetPlayerData( controller, mode.stats_group, mode.xp_key ) ) or 0
+	local redeemed_xp = get_effective_xp( mode, controller ) - raw_xp
+	local min_xp = tonumber( Rank.GetRankMinXP( rank, mode.play_mode ) ) or 0
+	write_rank_stat( mode, controller, mode.xp_key, math.max( 0, min_xp - redeemed_xp ) )
+end
+
+local function set_prestige( mode, controller, prestige )
+	local rank = get_rank( mode, controller )
+	prestige = math.max( 0, math.min( prestige, get_max_prestige( mode ) ) )
+	write_rank_stat( mode, controller, mode.prestige_key, prestige )
+	set_rank( mode, controller, rank )
+end
+
+local function find_rank_for_display( mode, prestige, text )
+	local max_rank = get_max_rank( mode, prestige )
+	for rank = 0, max_rank do
+		if get_rank_display( mode, rank ) == text then
+			return rank
+		end
+	end
+
+	local level = tonumber( text )
+	if level then
+		return math.max( 0, math.min( level - 1, max_rank ) )
+	end
+end
+
+local function refresh_button( element )
+	element:processEvent( {
+		name = "content_refresh"
+	} )
+end
+
+local function is_arrow_hovered( element )
+	return element.ArrowLeft and element.ArrowLeft.m_mouseOver or
+		element.ArrowRight and element.ArrowRight.m_mouseOver
+end
+
+local function open_number_keyboard( element, event, controller, title )
+	if is_arrow_hovered( element ) then
+		return element:dispatchEventToChildren( event )
+	end
+
+	element.keyboardOpen = true
+	Engine.OpenScreenKeyboard( controller, title, "", 4,
+		LUI.VerificationLevel.NoInvalidNoSpacesNotEmptyOnlyNumbers, false, CoD.KeyboardInputTypes.Normal )
+end
+
+local function keyboard_handlers( on_text )
+	return {
+		text_input_complete = function ( element, event )
+			if not element.keyboardOpen then
+				return
+			end
+
+			element.keyboardOpen = false
+			if event.text and event.text ~= "" then
+				on_text( event.text )
+				refresh_button( element )
+			end
+		end,
+		text_input_canceled = function ( element )
+			element.keyboardOpen = false
+		end
+	}
+end
+
+local function rank_options( controller, is_zombies )
+	local mode = get_rank_mode( is_zombies )
+
+	local function step_prestige( delta )
+		return function ()
+			local count = get_max_prestige( mode ) + 1
+			set_prestige( mode, controller, ( get_prestige( mode, controller ) + delta ) % count )
+		end
+	end
+
+	local function step_rank( delta )
+		return function ()
+			local count = get_max_rank( mode, get_prestige( mode, controller ) ) + 1
+			set_rank( mode, controller, ( get_rank( mode, controller ) + delta ) % count )
+		end
+	end
+
+	return {
+		{
+			buttonType = "GenericButtonScrollable",
+			buttonText = Engine.Localize( "Prestige" ),
+			buttonDesc = Engine.Localize( "Edit prestige. Press select to enter a value." ),
+			buttonDisplayFunc = function ()
+				return tostring( get_prestige( mode, controller ) )
+			end,
+			buttonLeftFunc = step_prestige( -1 ),
+			buttonRightFunc = step_prestige( 1 ),
+			buttonActionFunc = function ( element, event )
+				return open_number_keyboard( element, event, controller, Engine.Localize( "Prestige" ) )
+			end,
+			handlers = keyboard_handlers( function ( text )
+				local prestige = tonumber( text )
+				if prestige then
+					set_prestige( mode, controller, prestige )
+				end
+			end )
+		},
+		{
+			buttonType = "GenericButtonScrollable",
+			buttonText = Engine.Localize( "Rank" ),
+			buttonDesc = Engine.Localize( "Edit rank. Press select to enter a value." ),
+			buttonDisplayFunc = function ()
+				return get_rank_display( mode, get_rank( mode, controller ) )
+			end,
+			buttonLeftFunc = step_rank( -1 ),
+			buttonRightFunc = step_rank( 1 ),
+			buttonActionFunc = function ( element, event )
+				return open_number_keyboard( element, event, controller, Engine.Localize( "Rank" ) )
+			end,
+			handlers = keyboard_handlers( function ( text )
+				local rank = find_rank_for_display( mode, get_prestige( mode, controller ), text )
+				if rank then
+					set_rank( mode, controller, rank )
+				end
+			end )
+		}
+	}
+end
+
+local function append_options( options, extra )
+	for _, option in ipairs( extra ) do
+		table.insert( options, option )
+	end
+
+	return options
+end
+
 local function multiplayer_options( controller )
 	local items_toggle = toggle_dvar( "cg_unlockall_items" )
 	local loot_toggle = toggle_dvar( "cg_unlockall_loot" )
 
-	return {
+	return append_options( {
 		{
 			buttonType = "GenericButton",
 			buttonText = Engine.Localize( "Unlock Multiplayer Progression" ),
@@ -78,14 +275,14 @@ local function multiplayer_options( controller )
 			buttonLeftFunc = loot_toggle,
 			buttonRightFunc = loot_toggle
 		}
-	}
+	}, rank_options( controller, false ) )
 end
 
 local function zombies_options( controller )
 	local loot_toggle = toggle_dvar( "cg_unlockall_loot" )
 	local consumables_toggle = toggle_dvar( "cg_unlimited_zm_consumables" )
 
-	return {
+	return append_options( {
 		{
 			buttonType = "GenericButton",
 			buttonText = Engine.Localize( "Unlock Zombies Progression" ),
@@ -113,7 +310,7 @@ local function zombies_options( controller )
 			buttonLeftFunc = consumables_toggle,
 			buttonRightFunc = consumables_toggle
 		}
-	}
+	}, rank_options( controller, true ) )
 end
 
 local function build_unlocks_menu( menu_name, properties, options_factory )
