@@ -75,6 +75,9 @@ if Character_Scene and Character_Scene.HandleUpdateVLLoadout and
 	Character_Scene.S2xStockHandleUpdateVLLoadout = Character_Scene.HandleUpdateVLLoadout
 end
 
+-- Members the visibility filter hid, whose loadout must be requested again.
+local filteredLoadoutXuids = {}
+
 if Character_Scene and Character_Scene.S2xStockHandleUpdateVLLoadout then
 	Character_Scene.HandleUpdateVLLoadout = function( element, event )
 		if event and event.loadouts and GetDedicatedPartyMaxPlayers() then
@@ -82,6 +85,8 @@ if Character_Scene and Character_Scene.S2xStockHandleUpdateVLLoadout then
 			for _, loadout in ipairs( event.loadouts ) do
 				if IsVisibleDedicatedPartyMember( loadout.xuid, event.controller ) then
 					table.insert( filteredLoadouts, loadout )
+				else
+					filteredLoadoutXuids[loadout.xuid] = true
 				end
 			end
 
@@ -129,6 +134,7 @@ function S2xRefreshDedicatedPartyPresentation()
 		if avatar and avatar.xuid and avatar.xuid ~= NoXuid and
 			not IsVisibleDedicatedPartyMember( avatar.xuid ) then
 			local leavingXuid = avatar.xuid
+			filteredLoadoutXuids[leavingXuid] = true
 			if avatar.avatarHandle then
 				CharacterScene.Show( avatar.avatarHandle, false )
 				avatar.showing = false
@@ -142,7 +148,15 @@ function S2xRefreshDedicatedPartyPresentation()
 		end
 	end
 
+	-- Resending every loadout on each partystate rebuilds the podium avatars and
+	-- cancels winners-circle emotes, so only resend once a hidden member is listed.
 	if CharacterScene.RequestUpdateVLLoadout then
-		CharacterScene.RequestUpdateVLLoadout( Engine.GetFirstActiveController() )
+		for xuid in pairs( filteredLoadoutXuids ) do
+			if IsVisibleDedicatedPartyMember( xuid ) then
+				filteredLoadoutXuids = {}
+				CharacterScene.RequestUpdateVLLoadout( Engine.GetFirstActiveController() )
+				break
+			end
+		end
 	end
 end
