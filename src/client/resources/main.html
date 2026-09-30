@@ -208,14 +208,93 @@
             font-size: 1.35vw;
         }
 
-        .option-select {
-            width: 210px;
-            padding: 6px 8px;
-            color: #ffffff;
-            border: 1px solid rgba(255, 255, 255, 0.42);
-            background: #2a2825;
+        .dropdown {
+            position: relative;
+            width: 220px;
+            -ms-flex-negative: 0;
+            flex-shrink: 0;
             font-family: "Segoe UI", "Lucida Sans", Arial, sans-serif;
-            font-size: 1.35vw;
+            font-size: 1.4vw;
+        }
+
+        .dropdown * {
+            cursor: pointer;
+        }
+
+        .dropdown-button {
+            position: relative;
+            padding: 7px 34px 7px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 6px;
+            background-color: rgba(255, 255, 255, 0.07);
+            color: #ffffff;
+            transition: all 0.2s ease;
+        }
+
+        .dropdown-button:hover,
+        .dropdown.open .dropdown-button {
+            border-color: rgba(255, 255, 255, 0.4);
+            background-color: rgba(255, 255, 255, 0.13);
+        }
+
+        .dropdown-button:after {
+            content: "";
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            width: 6px;
+            height: 6px;
+            margin-top: -5px;
+            border-right: 2px solid rgba(255, 255, 255, 0.75);
+            border-bottom: 2px solid rgba(255, 255, 255, 0.75);
+            transform: rotate(45deg);
+            transition: all 0.2s ease;
+        }
+
+        .dropdown.open .dropdown-button:after {
+            margin-top: -1px;
+            transform: rotate(225deg);
+        }
+
+        .dropdown-list {
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 100%;
+            z-index: 10;
+            margin-top: 6px;
+            padding: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            border-radius: 6px;
+            background-color: rgba(34, 32, 29, 0.92);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55);
+            visibility: hidden;
+            opacity: 0;
+            transform: translateY(-6px);
+            transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s linear 0.18s;
+        }
+
+        .dropdown.open .dropdown-list {
+            visibility: visible;
+            opacity: 1;
+            transform: translateY(0);
+            transition: opacity 0.18s ease, transform 0.18s ease, visibility 0s;
+        }
+
+        .dropdown-item {
+            padding: 6px 10px;
+            border-radius: 4px;
+            color: rgba(255, 255, 255, 0.8);
+            transition: all 0.15s ease;
+        }
+
+        .dropdown-item:hover {
+            color: #ffffff;
+            background-color: rgba(255, 255, 255, 0.12);
+        }
+
+        .dropdown-item.selected {
+            color: #e0b458;
         }
 
         .switch {
@@ -362,11 +441,14 @@
                             <div class="option-title">Console type</div>
                             <div class="option-desc">Console used for game output and commands.</div>
                         </div>
-                        <select id="console-mode" class="option-select" onchange="saveLaunchOptions()">
-                            <option value="syscon">S2x console (default)</option>
-                            <option value="terminal">Enhanced terminal</option>
-                            <option value="disabled">No console</option>
-                        </select>
+                        <div id="console-mode" class="dropdown" data-value="syscon">
+                            <div class="dropdown-button" onclick="toggleDropdown(event)">S2x console (default)</div>
+                            <div class="dropdown-list">
+                                <div class="dropdown-item" data-value="syscon" onclick="selectConsoleMode(this)">S2x console (default)</div>
+                                <div class="dropdown-item" data-value="terminal" onclick="selectConsoleMode(this)">Enhanced terminal</div>
+                                <div class="dropdown-item" data-value="disabled" onclick="selectConsoleMode(this)">No console</div>
+                            </div>
+                        </div>
                     </div>
 
                     <label class="option-row">
@@ -452,9 +534,52 @@
         }
 
         function showMenu(menu) {
+            document.getElementById('console-mode').classList.remove('open');
             activateElement(menu, document.querySelectorAll('.menus > div'));
             activateElement(menu, document.querySelectorAll('nav .nav-link'));
         }
+
+        function toggleDropdown(event) {
+            document.getElementById('console-mode').classList.toggle('open');
+            event.stopPropagation();
+        }
+
+        function setConsoleMode(value) {
+            var dropdown = document.getElementById('console-mode');
+            var items = dropdown.querySelectorAll('.dropdown-item');
+            var found = false;
+
+            for (var i = 0; i < items.length; ++i) {
+                if (items[i].getAttribute('data-value') == value) {
+                    items[i].classList.add('selected');
+                    dropdown.querySelector('.dropdown-button').innerText = items[i].innerText;
+                    found = true;
+                } else {
+                    items[i].classList.remove('selected');
+                }
+            }
+
+            if (found) {
+                dropdown.setAttribute('data-value', value);
+            }
+
+            return found;
+        }
+
+        function getConsoleMode() {
+            return document.getElementById('console-mode').getAttribute('data-value');
+        }
+
+        function selectConsoleMode(item) {
+            document.getElementById('console-mode').classList.remove('open');
+            if (setConsoleMode(item.getAttribute('data-value'))) {
+                saveLaunchOptions();
+            }
+        }
+
+        document.onclick = function () {
+            document.getElementById('console-mode').classList.remove('open');
+        };
 
         function loadLaunchOptions() {
             try {
@@ -468,7 +593,7 @@
                     return;
                 }
 
-                document.getElementById('console-mode').value = values[0];
+                setConsoleMode(values[0]);
                 document.getElementById('no-steam').checked = values[1] == '1';
                 document.getElementById('no-update').checked = values[2] == '1';
             } catch (e) {
@@ -478,7 +603,7 @@
         function saveLaunchOptions() {
             try {
                 window.external.setLaunchOptions(
-                    document.getElementById('console-mode').value,
+                    getConsoleMode(),
                     document.getElementById('no-steam').checked,
                     document.getElementById('no-update').checked
                 );
@@ -487,6 +612,7 @@
         }
 
         window.onload = function () {
+            setConsoleMode('syscon');
             loadLaunchOptions();
             showMenu('play');
         };
