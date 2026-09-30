@@ -10,7 +10,6 @@ namespace achievement_sync
 	namespace
 	{
 		std::atomic_bool accepting_refresh_requests{};
-		// Only main-thread callbacks access this counter. Zero means no retry is queued.
 		unsigned int refresh_attempts_remaining{};
 
 		bool refresh_user_achievements()
