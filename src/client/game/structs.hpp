@@ -645,6 +645,12 @@ namespace game
 		const char* buffer;
 	};
 
+	struct LocalizeEntry
+	{
+		const char* value;
+		const char* name;
+	}; static_assert(offsetof(LocalizeEntry, name) == 0x8);
+
 	union XAssetHeader
 	{
 		void* data;
@@ -654,6 +660,7 @@ namespace game
 		ScriptFile* scriptfile;
 		StringTable* stringTable;
 		LuaFile* luaFile;
+		LocalizeEntry* localize;
 	};
 
 	struct XAsset
