@@ -187,6 +187,7 @@ namespace microsoft_store
 			utils::hook::copy_string(0x140B55250_ms, "s2_steam");
 			utils::hook::copy_string(0x140BBAD10_ms, "bhs_s2_steam");
 			utils::hook::set(0x14022C026_ms, std::array<std::uint8_t, 5>{0x31, 0xC0, 0x90, 0x90, 0x90});
+			utils::hook::set(0x140AD893F_ms, std::array<std::uint8_t, 6>{0xE9, 0xCD, 0x01, 0x00, 0x00, 0x90});
 		}
 	};
 }

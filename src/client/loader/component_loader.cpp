@@ -1,6 +1,7 @@
 #include <std_include.hpp>
 #include "component_loader.hpp"
 
+#include <utils/hook.hpp>
 #include <utils/nt.hpp>
 
 #include "game/game.hpp"
@@ -102,6 +103,7 @@ namespace component_loader
 		{
 			try
 			{
+				utils::hook::detour_batch batch{};
 				for (const auto& component : get_components())
 				{
 					component->post_load();
@@ -129,6 +131,7 @@ namespace component_loader
 		{
 			try
 			{
+				utils::hook::detour_batch batch{};
 				for (const auto& component : get_components())
 				{
 					component->post_unpack();

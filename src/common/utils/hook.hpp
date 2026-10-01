@@ -234,6 +234,16 @@ namespace utils::hook
 		Assembler assembler_;
 	};
 
+	class detour_batch
+	{
+	public:
+		detour_batch();
+		~detour_batch();
+
+		detour_batch(const detour_batch&) = delete;
+		detour_batch& operator=(const detour_batch&) = delete;
+	};
+
 	class detour
 	{
 	public:
@@ -270,6 +280,9 @@ namespace utils::hook
 
 		void enable();
 		void disable();
+
+		void queue_enable();
+		void queue_disable();
 
 		void create(void* place, void* target);
 		void create(size_t place, void* target);

@@ -151,7 +151,12 @@ namespace dvars
 			{
 				dvar_register_hook.create(game::Dvar_RegisterString, dvar_register_string_stub);
 				dvar_register_float_protected_hook.create(game::Dvar_RegisterFloatProtected, dvar_register_float_protected_stub);
+				dvar_register_float_protected_hook.enable();
 			}
+
+			dvar_find_malleable_var_hook.enable();
+			dvar_register_float_hook.enable();
+			dvar_register_hook.enable();
 
 			command::add("dvarDump", [](const command::params& argument)
 			{
