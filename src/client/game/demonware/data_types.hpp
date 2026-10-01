@@ -430,6 +430,47 @@ namespace demonware
 		}
 	};
 
+	class bdMarketplacePurchase final : public bdTaskResult
+	{
+	public:
+		std::string m_transactionId{};
+		std::uint64_t m_userId{};
+		std::string m_platform{};
+		std::vector<std::pair<std::uint8_t, std::uint32_t>> m_currencies{};
+		std::vector<std::pair<std::uint32_t, std::uint32_t>> m_items{};
+
+		void serialize(byte_buffer* data) override
+		{
+			data->write_string(m_transactionId);
+			data->write_uint64(m_userId);
+			data->write_string(m_platform);
+			data->write_uint32(static_cast<std::uint32_t>(m_currencies.size()));
+			for (const auto& [currency_id, balance] : m_currencies)
+			{
+				data->write_ubyte(currency_id);
+				data->write_uint32(balance);
+			}
+
+			data->write_uint32(static_cast<std::uint32_t>(m_items.size()));
+			for (const auto& [item_id, quantity] : m_items)
+			{
+				data->write_uint32(item_id);
+				data->write_uint32(quantity);
+				data->write_uint32(0);
+				data->write_blob("");
+				data->write_uint32(0);
+				data->write_int64(0);
+				data->write_uint16(0);
+				data->write_uint32(0);
+				data->write_uint32(0);
+			}
+
+			data->write_uint32(0);
+			data->write_uint32(0);
+			data->write_uint32(0);
+		}
+	};
+
 	class bdMarketplaceProduct final : public bdTaskResult
 	{
 	public:

@@ -21,6 +21,7 @@ namespace demonware
 		this->register_task(99, &bdMarketplace::getProducts);
 		this->register_task(106, &bdMarketplace::purchaseSkus);
 		this->register_task(111, &bdMarketplace::getSkusPaginated);
+		this->register_task(123, &bdMarketplace::purchaseSku);
 		this->register_task(130, &bdMarketplace::getBalance);
 		this->register_task(132, &bdMarketplace::getBalanceV2);
 		this->register_task(165, &bdMarketplace::getInventoryPaginated);
@@ -199,6 +200,53 @@ namespace demonware
 			}
 		}
 
+		reply.send();
+	}
+
+	void bdMarketplace::purchaseSku(service_server* server, byte_buffer* buffer) const
+	{
+		constexpr std::size_t max_transaction_id = 24;
+		constexpr std::size_t max_platform = 9;
+		constexpr std::uint32_t max_prices = 10;
+
+		std::string platform{};
+		std::string transaction_id{};
+		std::uint64_t user_id{};
+		std::string user_platform{};
+		std::uint32_t count{};
+		std::uint32_t sku_id{};
+		std::uint32_t quantity{};
+		std::uint32_t unknown{};
+		std::uint32_t price_count{};
+		if (!buffer->read_string(&platform) || !buffer->read_string(&transaction_id) || !buffer->read_uint64(&user_id)
+			|| !buffer->read_string(&user_platform) || !buffer->read_uint32(&count) || count != 1
+			|| !buffer->read_uint32(&sku_id) || !buffer->read_uint32(&quantity) || !buffer->read_uint32(&unknown)
+			|| !buffer->read_uint32(&price_count) || price_count > max_prices
+			|| transaction_id.size() > max_transaction_id || game::environment::is_dedicated())
+		{
+			server->create_reply(this->task_id(), BD_MARKETPLACE_INVALID_PARAMETER).send();
+			return;
+		}
+
+		const auto result = loot_service::purchase(sku_id, quantity);
+		if (!result)
+		{
+			server->create_reply(this->task_id(), BD_MARKETPLACE_INVALID_PARAMETER).send();
+			return;
+		}
+
+		auto purchase = std::make_unique<bdMarketplacePurchase>();
+		purchase->m_transactionId = transaction_id;
+		purchase->m_userId = steam::SteamUser()->GetSteamID().bits;
+		purchase->m_platform = user_platform.size() <= max_platform ? user_platform : "steam";
+		purchase->m_currencies.emplace_back(result->currency_id, result->balance);
+		for (const auto& [item_id, item_quantity] : result->items)
+		{
+			purchase->m_items.emplace_back(item_id, item_quantity);
+		}
+
+		auto reply = server->create_reply(this->task_id());
+		reply.add(purchase);
 		reply.send();
 	}
 

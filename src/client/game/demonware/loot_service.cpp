@@ -101,9 +101,16 @@ namespace demonware::loot_service
 			std::map<std::uint32_t, std::uint32_t> changes{};
 			const auto saved = loot_store::mutate([&](loot_store::state& state)
 			{
-				if (auto& owned = state.items[drop->guid])
+				const auto owned = state.items.find(drop->guid);
+				if (owned == state.items.end() || !owned->second)
 				{
-					changes[drop->guid] = --owned;
+					return false;
+				}
+
+				changes[drop->guid] = --owned->second;
+				if (!owned->second)
+				{
+					state.items.erase(owned);
 				}
 
 				for (const auto guid : items)
@@ -161,6 +168,7 @@ namespace demonware::loot_service
 			auto response = make_response(action, client_transaction, true);
 			auto& allocator = response.GetAllocator();
 			rapidjson::Value currencies{rapidjson::kArrayType};
+
 			if (saved)
 			{
 				rapidjson::Value entry{rapidjson::kObjectType};
@@ -210,6 +218,56 @@ namespace demonware::loot_service
 		}
 
 		return balances;
+	}
+
+	std::optional<purchase_result> purchase(const std::uint32_t sku_id, const std::uint32_t quantity)
+	{
+		constexpr std::uint32_t max_quantity = 100;
+
+		const auto& skus = get_skus();
+		const auto entry = std::find_if(skus.begin(), skus.end(), [&](const sku& value)
+		{
+			return value.sku_id == sku_id;
+		});
+
+		if (entry == skus.end() || !quantity || quantity > max_quantity)
+		{
+			return std::nullopt;
+		}
+
+		const auto infinite = get_settings().infinite_cod_points && entry->currency_id == currency_cod_points;
+		const auto cost = static_cast<std::uint64_t>(entry->price) * quantity;
+		purchase_result result{entry->currency_id};
+		const auto saved = loot_store::mutate([&](loot_store::state& state)
+		{
+			auto& balance = state.currencies[entry->currency_id];
+			if (!infinite)
+			{
+				if (balance < cost)
+				{
+					return false;
+				}
+
+				balance -= static_cast<std::uint32_t>(cost);
+			}
+
+			result.balance = infinite ? infinite_cod_points_balance : balance;
+
+			auto& owned = state.items[entry->item_id];
+			owned = add_capped(owned, quantity);
+			result.items[entry->item_id] = owned;
+
+			return true;
+		});
+
+		if (!saved)
+		{
+			console::demonware("[DW] loot: cannot purchase sku %u x%u\n", sku_id, quantity);
+			return std::nullopt;
+		}
+
+		console::demonware("[DW] loot: purchased sku %u x%u (balance %u)\n", sku_id, quantity, result.balance);
+		return result;
 	}
 
 	const std::vector<sku>& get_skus()
