@@ -2,7 +2,3 @@
 .vscode
 build/
 usergenerate.bat
-
-s2x_dump/s2x_mp64_ship.asm
-s2_ms_dump/
-tools/store_signatures/work/
