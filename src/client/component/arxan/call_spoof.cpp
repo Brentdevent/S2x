@@ -97,6 +97,8 @@ namespace arxan::call_spoof
 	struct component final : generic_component
 	{
 	public:
+		static constexpr bool steam_binary_only = true;
+
 		void post_unpack() override
 		{
 			arxan::detail::callstack_proxy_addr = utils::hook::assemble(callstack_stub);

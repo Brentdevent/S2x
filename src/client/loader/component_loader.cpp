@@ -25,9 +25,16 @@ namespace component_loader
 			return *components;
 		}
 
-		std::vector<std::pair<registration_functor, component_type>>& get_registration_functors()
+		struct registration
 		{
-			static std::vector<std::pair<registration_functor, component_type>> functors;
+			registration_functor functor;
+			component_type type;
+			bool steam_binary_only;
+		};
+
+		std::vector<registration>& get_registration_functors()
+		{
+			static std::vector<registration> functors;
 			return functors;
 		}
 
@@ -44,14 +51,14 @@ namespace component_loader
 		}
 	}
 
-	void register_component(registration_functor functor, component_type type)
+	void register_component(registration_functor functor, component_type type, const bool steam_binary_only)
 	{
 		if (!get_components().empty())
 		{
 			throw std::runtime_error("Registration is too late");
 		}
 
-		get_registration_functors().emplace_back(std::move(functor), type);
+		get_registration_functors().push_back({std::move(functor), type, steam_binary_only});
 	}
 
 	bool activate(bool singleplayer)
@@ -60,11 +67,16 @@ namespace component_loader
 		{
 			try
 			{
-				for (auto& functor : get_registration_functors())
+				for (auto& registration : get_registration_functors())
 				{
-					if (functor.second == component_type::any || singleplayer == (functor.second == component_type::singleplayer))
+					if (registration.steam_binary_only && game::environment::is_store_native())
 					{
-						activate_component(functor.first());
+						continue;
+					}
+
+					if (registration.type == component_type::any || singleplayer == (registration.type == component_type::singleplayer))
+					{
+						activate_component(registration.functor());
 					}
 				}
 			}

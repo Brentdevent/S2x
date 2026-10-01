@@ -2,10 +2,12 @@
 
 #include "loader/component_loader.hpp"
 #include "game.hpp"
+#include "store.hpp"
 
 #include <utils/finally.hpp>
 #include <utils/flags.hpp>
 #include <utils/hook.hpp>
+#include <utils/string.hpp>
 
 namespace game
 {
@@ -35,6 +37,13 @@ namespace game
 		bool is_valid_singleplayer_binary()
 		{
 			return get_host_library().get_optional_header()->CheckSum == 0x01743a38;
+		}
+
+		bool is_valid_store_native_binary()
+		{
+			const auto& host = get_host_library();
+			return store::is_supported_binary(host.get_nt_headers()->FileHeader.TimeDateStamp,
+				host.get_optional_header()->SizeOfImage);
 		}
 	}
 
@@ -67,6 +76,35 @@ namespace game
 			platform current_platform = platform::steam;
 			mode current_mode = mode::singleplayer;
 			bool dedicated = false;
+			bool store_native = false;
+		}
+
+		bool is_store_native()
+		{
+			return store_native;
+		}
+
+		void set_store_native(const bool is_store_native)
+		{
+			store_native = is_store_native;
+		}
+
+		std::string get_binary_string()
+		{
+			if (get_platform() == platform::steam)
+			{
+				return "Steam";
+			}
+
+			if (!is_store_native())
+			{
+				return "Steam via S2x runtime";
+			}
+
+			const auto& host = get_host_library();
+			return utils::string::va("Microsoft Store (%08X-%08X)",
+				host.get_nt_headers()->FileHeader.TimeDateStamp,
+				host.get_optional_header()->SizeOfImage);
 		}
 
 		platform get_platform()
@@ -171,6 +209,11 @@ namespace game
 
 	bool is_valid_binary()
 	{
+		if (environment::is_store_native())
+		{
+			return environment::uses_multiplayer_binary() && is_valid_store_native_binary();
+		}
+
 		return environment::uses_multiplayer_binary()
 			? is_valid_multiplayer_binary()
 			: is_valid_singleplayer_binary();

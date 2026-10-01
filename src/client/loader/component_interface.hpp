@@ -23,6 +23,7 @@ enum class component_type
 struct generic_component
 {
 	static constexpr component_type type = component_type::any;
+	static constexpr bool steam_binary_only = false;
 
 	virtual ~generic_component() = default;
 

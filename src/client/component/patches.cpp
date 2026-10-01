@@ -35,7 +35,14 @@ namespace patches
 		void post_thread_setup() override
 		{
 			// Intentionally allow multiple clients and dedicated servers in every build and mode.
-			utils::hook::set(0x78A5F0_g, 0xC301B0);
+			if (game::environment::is_store_native())
+			{
+				utils::hook::jump(0x140716192_ms, 0x1407162AB_ms);
+			}
+			else
+			{
+				utils::hook::set(0x78A5F0_g, 0xC301B0);
+			}
 		}
 
 		void post_unpack() override

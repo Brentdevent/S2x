@@ -47,6 +47,10 @@ namespace game
 		void set_platform(platform platform);
 		bool is_microsoft_store();
 
+		bool is_store_native();
+		void set_store_native(bool store_native);
+		std::string get_binary_string();
+
 		bool is_dedicated();
 		void set_dedicated(bool dedicated);
 
@@ -62,12 +66,33 @@ namespace game
 
 	bool is_valid_binary();
 
+	namespace store
+	{
+		size_t resolve(size_t steam_rva);
+	}
+
 	inline size_t relocate(const size_t val)
 	{
 		if (!val) return 0;
 
+		if (environment::is_store_native())
+		{
+			return store::resolve(val);
+		}
+
 		const auto base = get_base();
 		return base + val;
+	}
+
+	inline size_t store_relocate(const size_t val)
+	{
+		if (!environment::is_store_native())
+		{
+			throw std::runtime_error("Microsoft Store address used outside the Microsoft Store binary.");
+		}
+
+		constexpr size_t store_image_base = 0x140000000;
+		return get_base() + (val >= store_image_base ? val - store_image_base : val);
 	}
 
 	inline size_t derelocate(const size_t val)
@@ -143,6 +168,11 @@ namespace game
 
 		T call_safe(Args... args)
 		{
+			if (environment::is_store_native())
+			{
+				return this->get()(args...);
+			}
+
 			arxan::detail::set_address_to_call(this->get());
 			return static_cast<func_type*>(arxan::detail::callstack_proxy_addr)(args...);
 		}
@@ -169,6 +199,11 @@ namespace game
 inline size_t operator"" _g(const size_t val)
 {
 	return game::relocate(val);
+}
+
+inline size_t operator"" _ms(const size_t val)
+{
+	return game::store_relocate(val);
 }
 
 #include "symbols.hpp"

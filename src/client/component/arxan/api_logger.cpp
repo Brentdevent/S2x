@@ -162,6 +162,8 @@ namespace arxan::api_logger
 	struct component final : generic_component
 	{
 	public:
+		static constexpr bool steam_binary_only = true;
+
 		void post_load() override
 		{
 			utils::hook::set(game::select(0xB1C688, 0x84D518), utils::hook::assemble(thunk_stub));

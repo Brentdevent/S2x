@@ -639,6 +639,8 @@ namespace arxan::anti_debug
 	struct component final : generic_component
 	{
 	public:
+		static constexpr bool steam_binary_only = true;
+
 		void post_load() override
 		{
 			// Process-lifetime event: it intentionally remains unsignaled so the initialized

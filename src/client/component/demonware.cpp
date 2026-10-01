@@ -467,7 +467,7 @@ namespace demonware
 			}
 		}
 
-		void register_hook(const std::string& process, void* stub)
+		void register_hook(const std::string& process, void* stub, const bool required = true)
 		{
 			const utils::nt::library game_module{};
 
@@ -477,6 +477,11 @@ namespace demonware
 
 			if (!result)
 			{
+				if (!required)
+				{
+					return;
+				}
+
 				throw std::runtime_error("Failed to hook: " + process);
 			}
 
@@ -528,8 +533,9 @@ namespace demonware
 			register_hook("ioctlsocket", io::ioctlsocket_stub);
 			register_hook("getaddrinfo", io::getaddrinfo_stub);
 			register_hook("freeaddrinfo", io::freeaddrinfo_stub);
-			register_hook("getpeername", io::getpeername_stub);
-			register_hook("getsockname", io::getsockname_stub);
+			const auto steam_only_import = !game::environment::is_store_native();
+			register_hook("getpeername", io::getpeername_stub, steam_only_import);
+			register_hook("getsockname", io::getsockname_stub, steam_only_import);
 
 			if (game::environment::uses_multiplayer_binary())
 			{
@@ -549,8 +555,11 @@ namespace demonware
 			utils::hook::set(game::select(0xA7ABA0, 0x7B3FF0), 0xC301B0); // bdRSAKey::importKey
 			utils::hook::set(game::select(0xA7ACC0, 0x7B4110), 0xC300000001B8); // bdRSAKey::verifySignatureSHA256
 
-			utils::hook::set<uint8_t>(game::select(0xA249F7, 0x77FC87) + 3, 0x0); // CURLOPT_SSL_VERIFYPEER
-			utils::hook::set<uint8_t>(game::select(0xA249E0, 0x77FC70) + 3, 0xAF); // CURLOPT_SSL_VERIFYHOST
+			if (!game::environment::is_store_native())
+			{
+				utils::hook::set<uint8_t>(game::select(0xA249F7, 0x77FC87) + 3, 0x0); // CURLOPT_SSL_VERIFYPEER
+				utils::hook::set<uint8_t>(game::select(0xA249E0, 0x77FC70) + 3, 0xAF); // CURLOPT_SSL_VERIFYHOST
+			}
 
 			utils::hook::set<uint8_t>(game::select(0xC62D0C, 0x96FD8C) + 4, 0x0); // HTTPS -> HTTP
 

@@ -399,6 +399,8 @@ namespace arxan::code_healing
 	struct component final : generic_component
 	{
 	public:
+		static constexpr bool steam_binary_only = true;
+
 		void post_thread_setup() override
 		{
 			patch_code_healing();

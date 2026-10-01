@@ -128,6 +128,8 @@ namespace arxan::breakpoints
 	struct component final : generic_component
 	{
 	public:
+		static constexpr bool steam_binary_only = true;
+
 		void post_load() override
 		{
 			auto* add_vectored_exception_handler_import = utils::nt::library{}.get_iat_entry("kernel32.dll", "AddVectoredExceptionHandler");

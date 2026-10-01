@@ -143,7 +143,7 @@ namespace auth
 				p(0x5BC16B_g, 0x5BC1A1_g);
 				p(0x5C90F6_g, 0x5C9132_g);
 			}
-			else
+			else if (!game::environment::is_store_native())
 			{
 				p(0x1908A_g, 0x190D9_g);
 				p(0x1A553_g, 0x1A598_g);
