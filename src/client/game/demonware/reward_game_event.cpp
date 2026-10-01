@@ -1,6 +1,7 @@
 #include <std_include.hpp>
 
 #include "reward_game_event.hpp"
+#include "struct_buffer_reader.hpp"
 #include "dw_include.hpp"
 
 namespace demonware::reward_game_events
@@ -14,116 +15,6 @@ namespace demonware::reward_game_events
 		// Task 11 can contain 48 user batches with up to 100 events each.
 		constexpr auto maximum_report_for_users_request_size = 3u * 1024u * 1024u;
 		constexpr auto maximum_encryption_padding = 15u;
-
-		class struct_buffer_reader
-		{
-		public:
-			explicit struct_buffer_reader(const std::string_view data)
-				: data_(data)
-			{
-			}
-
-			bool empty() const
-			{
-				return data_.empty();
-			}
-
-			bool read_tag(std::uint32_t& field, std::uint8_t& wire_type)
-			{
-				std::uint64_t tag{};
-				if (!read_varint(tag) || tag > std::numeric_limits<std::uint32_t>::max())
-				{
-					return false;
-				}
-
-				field = static_cast<std::uint32_t>(tag >> 3);
-				wire_type = static_cast<std::uint8_t>(tag & 7);
-				return field != 0;
-			}
-
-			bool read_varint(std::uint64_t& value)
-			{
-				value = 0;
-				for (auto index = 0u; index < 10; ++index)
-				{
-					std::uint8_t byte{};
-					if (!read_byte(byte) || (index == 9 && (byte & 0xFE) != 0))
-					{
-						return false;
-					}
-
-					value |= static_cast<std::uint64_t>(byte & 0x7F) << (index * 7);
-					if ((byte & 0x80) == 0)
-					{
-						return true;
-					}
-				}
-
-				return false;
-			}
-
-			bool read_length_delimited(std::string_view& value)
-			{
-				std::uint64_t length{};
-				if (!read_varint(length) || length > data_.size())
-				{
-					return false;
-				}
-
-				value = data_.substr(0, static_cast<std::size_t>(length));
-				data_.remove_prefix(static_cast<std::size_t>(length));
-				return true;
-			}
-
-			bool skip_field(const std::uint8_t wire_type)
-			{
-				switch (wire_type)
-				{
-				case 0:
-				{
-					std::uint64_t value{};
-					return read_varint(value);
-				}
-				case 1:
-					return skip_bytes(8);
-				case 2:
-				{
-					std::string_view value{};
-					return read_length_delimited(value);
-				}
-				case 5:
-					return skip_bytes(4);
-				default:
-					return false;
-				}
-			}
-
-		private:
-			bool read_byte(std::uint8_t& value)
-			{
-				if (data_.empty())
-				{
-					return false;
-				}
-
-				value = static_cast<std::uint8_t>(data_.front());
-				data_.remove_prefix(1);
-				return true;
-			}
-
-			bool skip_bytes(const std::size_t count)
-			{
-				if (count > data_.size())
-				{
-					return false;
-				}
-
-				data_.remove_prefix(count);
-				return true;
-			}
-
-			std::string_view data_{};
-		};
 
 		bool is_valid_string(const std::string_view value, const std::size_t maximum_length)
 		{
@@ -341,6 +232,7 @@ namespace demonware::reward_game_events
 						return false;
 					}
 
+					result.transaction_id.assign(transaction_id);
 					has_transaction_id = true;
 				}
 				else if (!reader.skip_field(wire_type))
@@ -352,7 +244,7 @@ namespace demonware::reward_game_events
 			return has_account;
 		}
 
-		bool parse_report_payload(const std::string_view data, std::vector<event>& events)
+		bool parse_report_payload(const std::string_view data, report_request& result)
 		{
 			// ReportRewardGameEventsRequest: 1 = context, 2 = repeated events,
 			// 3 = transaction ID.
@@ -377,12 +269,13 @@ namespace demonware::reward_game_events
 						return false;
 					}
 
+					result.context.assign(context);
 					has_context = true;
 				}
 				else if (field == 2)
 				{
 					std::string_view event_data{};
-					if (wire_type != 2 || events.size() >= maximum_reported_events ||
+					if (wire_type != 2 || result.events.size() >= maximum_reported_events ||
 						!reader.read_length_delimited(event_data))
 					{
 						return false;
@@ -394,7 +287,7 @@ namespace demonware::reward_game_events
 						return false;
 					}
 
-					events.push_back(std::move(value));
+					result.events.push_back(std::move(value));
 				}
 				else if (field == 3)
 				{
@@ -406,6 +299,7 @@ namespace demonware::reward_game_events
 						return false;
 					}
 
+					result.transaction_id.assign(transaction_id);
 					has_transaction_id = true;
 				}
 				else if (!reader.skip_field(wire_type))
@@ -418,7 +312,7 @@ namespace demonware::reward_game_events
 		}
 
 		bool parse_report_for_users_payload(const std::string_view data,
-			std::vector<user_event_batch>& users)
+			report_for_users_request& result)
 		{
 			// ReportRewardGameEventsForUsersRequest: 1 = context, 2 = repeated users.
 			struct_buffer_reader reader{data};
@@ -441,12 +335,13 @@ namespace demonware::reward_game_events
 						return false;
 					}
 
+					result.context.assign(context);
 					has_context = true;
 				}
 				else if (field == 2)
 				{
 					std::string_view user_data{};
-					if (wire_type != 2 || users.size() >= maximum_reported_users ||
+					if (wire_type != 2 || result.users.size() >= maximum_reported_users ||
 						!reader.read_length_delimited(user_data))
 					{
 						return false;
@@ -458,7 +353,7 @@ namespace demonware::reward_game_events
 						return false;
 					}
 
-					users.push_back(std::move(user));
+					result.users.push_back(std::move(user));
 				}
 				else if (!reader.skip_field(wire_type))
 				{
@@ -487,32 +382,32 @@ namespace demonware::reward_game_events
 		}
 	}
 
-	bool parse_report_request(byte_buffer* buffer, std::vector<event>& events)
+	bool parse_report_request(byte_buffer* buffer, report_request& request)
 	{
 		std::string payload{};
-		std::vector<event> parsed{};
+		report_request parsed{};
 		if (!read_payload(buffer, payload, maximum_report_request_size) ||
 			!parse_report_payload(payload, parsed))
 		{
 			return false;
 		}
 
-		events = std::move(parsed);
+		request = std::move(parsed);
 		return true;
 	}
 
 	bool parse_report_for_users_request(byte_buffer* buffer,
-		std::vector<user_event_batch>& users)
+		report_for_users_request& request)
 	{
 		std::string payload{};
-		std::vector<user_event_batch> parsed{};
+		report_for_users_request parsed{};
 		if (!read_payload(buffer, payload, maximum_report_for_users_request_size) ||
 			!parse_report_for_users_payload(payload, parsed))
 		{
 			return false;
 		}
 
-		users = std::move(parsed);
+		request = std::move(parsed);
 		return true;
 	}
 }
