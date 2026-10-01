@@ -35,6 +35,12 @@ namespace branding
 		{
 			scheduler::loop(draw_branding, scheduler::renderer);
 
+			scheduler::once([]
+			{
+				static const auto binary = game::environment::get_binary_string();
+				game::Dvar_RegisterString("s2x_runtime", binary.data(), game::DVAR_FLAG_WRITE);
+			}, scheduler::main);
+
 			// Change window title prefix
 			if (game::environment::uses_multiplayer_binary())
 			{
