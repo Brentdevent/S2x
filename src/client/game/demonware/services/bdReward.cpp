@@ -7,6 +7,7 @@
 
 #include "game/game.hpp"
 #include "game/demonware/achievement_response.hpp"
+#include "game/demonware/loot_service.hpp"
 #include "game/demonware/reward_game_event.hpp"
 
 #include "steam/steam.hpp"
@@ -121,7 +122,6 @@ namespace demonware
 			request.Parse(json.data(), json.size());
 			if (request.HasParseError() || !request.IsObject() ||
 				!request.HasMember("Action") || !request["Action"].IsString() ||
-				request["Action"] != "get_user_achievements" ||
 				!request.HasMember("ClientTx") || !request["ClientTx"].IsString())
 			{
 				continue;
@@ -134,9 +134,27 @@ namespace demonware
 				continue;
 			}
 
-			send_reward_response(server, steam::SteamUser()->GetSteamID().bits, context,
-				achievement_response::make_get_user_achievements_response(client_tx));
-			console::demonware("[DW] bdReward: answered get_user_achievements (%.*s)\n",
+			const std::string_view action{request["Action"].GetString(), request["Action"].GetStringLength()};
+			std::optional<std::string> response{};
+			if (action == "get_user_achievements")
+			{
+				response = achievement_response::make_get_user_achievements_response(client_tx);
+			}
+			else if (!game::environment::is_dedicated())
+			{
+				response = loot_service::handle_action(action, client_tx, request);
+			}
+
+			if (!response)
+			{
+				console::demonware("[DW] bdReward: unhandled action '%.*s'\n",
+					static_cast<int>(action.size()), action.data());
+				continue;
+			}
+
+			send_reward_response(server, steam::SteamUser()->GetSteamID().bits, context, *response);
+			console::demonware("[DW] bdReward: answered %.*s (%.*s)\n",
+				static_cast<int>(action.size()), action.data(),
 				static_cast<int>(client_tx.size()), client_tx.data());
 		}
 	}

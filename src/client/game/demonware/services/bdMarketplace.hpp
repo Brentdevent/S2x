@@ -23,5 +23,6 @@ namespace demonware
 		void pawnItems(service_server* server, byte_buffer* buffer) const;
 		void getEntitlements(service_server* server, byte_buffer* buffer) const;
 		void getSkusPaginated(service_server* server, byte_buffer* buffer) const;
+		void getProducts(service_server* server, byte_buffer* buffer) const;
 	};
 }

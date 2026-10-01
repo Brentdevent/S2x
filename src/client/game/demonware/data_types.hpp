@@ -430,6 +430,72 @@ namespace demonware
 		}
 	};
 
+	class bdMarketplaceProduct final : public bdTaskResult
+	{
+	public:
+		std::uint32_t m_productId{};
+		std::vector<std::pair<std::uint32_t, std::uint32_t>> m_items{};
+
+		void serialize(byte_buffer* data) override
+		{
+			data->write_uint32(m_productId);
+			data->write_blob("");
+			data->write_blob("");
+			data->write_blob("");
+			data->write_uint16(0);
+			data->write_uint32(0);
+			data->write_uint32(static_cast<std::uint32_t>(m_items.size()));
+			for (const auto& [item_id, quantity] : m_items)
+			{
+				data->write_uint32(item_id);
+				data->write_uint32(quantity);
+			}
+
+			data->write_uint32(0);
+			data->write_uint32(0);
+		}
+	};
+
+	class bdMarketplaceSku final : public bdTaskResult
+	{
+	public:
+		std::uint32_t m_skuId{};
+		std::uint32_t m_productId{};
+		std::string m_skuData{};
+		std::uint32_t m_saleEndTime{};
+		std::string m_promotionalText{};
+		std::vector<std::pair<std::uint8_t, std::uint32_t>> m_prices{};
+		std::uint32_t m_maxQuantity{};
+		bool m_soldOut{};
+
+		void serialize(byte_buffer* data) override
+		{
+			data->write_uint32(m_skuId);
+			data->write_uint32(m_productId);
+			data->write_ubyte(0);
+			data->write_blob(m_skuData);
+			data->write_ubyte(0);
+			data->write_uint32(0);
+			data->write_uint32(m_saleEndTime);
+			data->write_uint32(0);
+			data->write_ubyte(0);
+			data->write_blob(m_promotionalText);
+			data->write_uint32(0);
+			data->write_uint16(0);
+			data->write_uint32(0);
+			data->write_ubyte(0);
+			data->write_uint32(static_cast<std::uint32_t>(m_prices.size()));
+			for (const auto& [currency_id, amount] : m_prices)
+			{
+				data->write_ubyte(currency_id);
+				data->write_uint32(amount);
+			}
+			data->write_ubyte(0);
+			data->write_uint32(m_maxQuantity);
+			data->write_bool(m_soldOut);
+		}
+	};
+
 	class bdPublisherVariablesInfo final : public bdTaskResult
 	{
 	public:
