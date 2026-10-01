@@ -15,15 +15,19 @@ namespace demonware::achievement_claim
 		{
 			return false;
 		}
+
 		auto input = *buffer;
+
 		std::string context, json;
 		std::uint16_t count{};
 		std::int32_t type{};
+
 		if (!input.read_string(&context, 16) || !input.read_uint16(&count) || count != 1 ||
 			!input.read_int32(&type) || type != 1 || !input.read_string(&json, 6143))
 		{
 			return false;
 		}
+		
 		rapidjson::Document request;
 		request.Parse(json.data(), json.size());
 		if (request.HasParseError() || !request.IsObject() || !request.HasMember("Action") ||
@@ -31,11 +35,13 @@ namespace demonware::achievement_claim
 		{
 			return false;
 		}
+
 		const auto fetching = request["Action"] == achievement_response::get_user_achievements_action.data();
 		if (!fetching && request["Action"] != action)
 		{
 			return false;
 		}
+
 		if (context != "s2_steam" || !input.has_only_zero_padding(16))
 		{
 			if (fetching)
@@ -45,6 +51,7 @@ namespace demonware::achievement_claim
 			server->create_reply(4, BD_PARAM_PARSE_ERROR).send();
 			return true;
 		}
+
 		const auto user = achievement_sync::local_user_id();
 		if (!user || game::environment::is_dedicated())
 		{
@@ -55,6 +62,7 @@ namespace demonware::achievement_claim
 			server->create_reply(4, BD_SERVICE_NOT_AVAILABLE).send();
 			return true;
 		}
+
 		const auto send = [&](const std::uint32_t push_type, const std::string& payload)
 		{
 			bdRewardEvent event;
@@ -71,6 +79,7 @@ namespace demonware::achievement_claim
 			event.serialize(&data);
 			server->create_message(BD_LOBBY_SERVICE_PUSH_MESSAGE).send(&data, true);
 		};
+
 		const auto send_state = [&](const achievement_record& record, const char* reason)
 		{
 			rapidjson::Document push;
@@ -89,6 +98,7 @@ namespace demonware::achievement_claim
 			send(0x43, {encoded.GetString(), encoded.GetSize()});
 			return true;
 		};
+
 		if (fetching)
 		{
 			achievement_response::user_achievements_request query;
@@ -96,14 +106,15 @@ namespace demonware::achievement_claim
 			{
 				return false;
 			}
+
 			reward_task4::execution_context execution;
 			execution.user_id = user;
 			if (reward_task4::handle(server, buffer, execution).action.error)
 			{
 				return true;
 			}
-			// The full fetch (0x13E960) caches finished periodic records too. Apply
-			// terminal states afterwards through AE_HandleAchievementPush (0x13C480),
+
+			// 0x13E960 caches finished periodic records. apply terminal states afterwards through AE_HandleAchievementPush (0x13C480),
 			// just as a successful claim does, without replaying inventory triggers.
 			// The expired list is process-local; rebuild it after restart, but do not
 			// re-add cards dismissed by the player on every menu fetch.
@@ -131,45 +142,42 @@ namespace demonware::achievement_claim
 					notified.insert(key);
 				}
 			}
+
 			return true;
 		}
+
 		const auto response = process(json, user, static_cast<std::uint32_t>(time(nullptr)));
 		if (response.acknowledgement.empty())
 		{
 			server->create_reply(4, response.error).send();
 			return true;
 		}
+
 		server->create_reply(4).send();
-		// 0xA35CE0 -> 0x13C480 applies the committed inventory/wallet through the
-		// native achievement listener. Task 158's 0x39 callback only finishes the
-		// claim/UI transaction; publish its success after the reward cache update.
+
 		if (!response.error)
 		{
 			if (!response.achievement_push.empty())
 			{
 				send(0x43, response.achievement_push);
 			}
+
 			const auto records = achievement_store::get_all();
+
 			const auto claimed = std::ranges::find(records, request["AchievementName"].GetString(), &achievement_record::name);
 			if (claimed != records.end() && (claimed->kind == 1 || claimed->kind == 2))
 			{
 				const auto name = claimed->kind == 1 ? "above_beyond_daily" : "above_beyond_weekly";
 				const auto meta = std::ranges::find(records, name, &achievement_record::name);
-				// A fetch updates the cache after the claim callback has rebuilt LUI.
-				// Native kind-5 pushes update the open widget immediately; completed
-				// replaces the record even when the recurring counter resets to zero.
-				// Empty triggers project state only, including on a claim replay.
 				if (meta != records.end())
 				{
 					send_state(*meta, meta->progress ? "inProgress" : "completed");
 				}
 			}
 		}
-		// AE_ProcessResponse (0x676A40) matches ClientTx and marks Task 158
-		// failed for a non-ok application Status.
+
 		send(BD_REWARD_EVENT_MESSAGE, response.acknowledgement);
-		// Rebuild meta counters after successful claims. On failure the same stock
-		// fetch clears the temporary Waiting card and restores its claimable state.
+
 		achievement_sync::request_refresh();
 		return true;
 	}

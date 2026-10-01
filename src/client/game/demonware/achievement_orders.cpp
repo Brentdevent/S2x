@@ -73,14 +73,12 @@ namespace demonware::achievement_orders
 
 		std::optional<std::vector<rotation_group>> load_rotations()
 		{
-			// Immutable backend policy, not profile state. Captured offers retain
-			// backend overrides of table defaults; uncaptured rewards are marked local.
-			// Objective predicates, names and presentation still use the stock tables.
 			const auto data = utils::nt::load_resource(DW_ACHIEVEMENT_OFFERS);
 			if (data.empty() || data.size() > achievement_response::maximum_response_length)
 			{
 				return {};
 			}
+
 			rapidjson::Document document;
 			document.Parse(data.data(), data.size());
 			if (document.HasParseError() || !unique_object(document) ||
@@ -90,6 +88,7 @@ namespace demonware::achievement_orders
 			{
 				return {};
 			}
+
 			std::vector<rotation_group> result;
 			std::set<int> kinds;
 			std::set<std::string> used;
@@ -105,9 +104,11 @@ namespace demonware::achievement_orders
 				{
 					return {};
 				}
+
 				rotation_group rotation;
 				rotation.kind = group["kind"].GetInt();
 				rotation.limit = group["activationLimit"].GetUint();
+
 				for (const auto& set : group["sets"].GetArray())
 				{
 					const auto count = achievement_kind::contract(rotation.kind) ? 9u : (rotation.kind == 2 || rotation.kind == 9 ? 3u : 6u);
@@ -123,11 +124,13 @@ namespace demonware::achievement_orders
 						{
 							return {};
 						}
+
 						const auto found = document["offers"].FindMember(name.GetString());
 						if (found == document["offers"].MemberEnd())
 						{
 							return {};
 						}
+
 						const auto& value = found->value;
 						if (!unique_object(value) || !value.HasMember("kind") || !value["kind"].IsInt() ||
 							value["kind"].GetInt() != rotation.kind ||
@@ -138,6 +141,7 @@ namespace demonware::achievement_orders
 						{
 							return {};
 						}
+
 						order_offer order;
 						auto& record = order.achievement;
 						record.name = name.GetString();
@@ -145,6 +149,7 @@ namespace demonware::achievement_orders
 						record.progress_target = value["progressTarget"].GetUint();
 						record.requires_claim = true;
 						record.success_rewards = encode(value["successRewards"]);
+
 						if (achievement_kind::contract(rotation.kind))
 						{
 							if (!value.HasMember("costItemID") || !value["costItemID"].IsUint() || !value["costItemID"].GetUint() ||
@@ -161,16 +166,20 @@ namespace demonware::achievement_orders
 						{
 							return {};
 						}
+
 						used.emplace(record.name);
 						orders.push_back(std::move(order));
 					}
 				}
+
 				result.push_back(std::move(rotation));
 			}
+
 			if (used.size() != document["offers"].MemberCount())
 			{
 				return {};
 			}
+
 			return result;
 		}
 
@@ -181,6 +190,7 @@ namespace demonware::achievement_orders
 			{
 				return false;
 			}
+
 			for (const auto& entry : catalog.value->skus())
 			{
 				const auto& sku = entry.fields;
@@ -196,6 +206,7 @@ namespace demonware::achievement_orders
 					return true;
 				}
 			}
+
 			return false;
 		}
 
@@ -207,10 +218,10 @@ namespace demonware::achievement_orders
 			{
 				return result;
 			}
+
 			for (const auto& group : *rotations)
 			{
-				// Local fixed rotations use the established UTC resets. Contracts
-				// rotate daily, independently of already purchased tokens and progress.
+				// using UTC, contracts rotate daily independently of already purchased tokens and progress.
 				const bool weekly = group.kind == 2 || group.kind == 9;
 				const std::uint64_t period = weekly ? 7 * 86400 : 86400;
 				const std::uint64_t phase = weekly ? 5 * 86400 + 17 * 3600 : 17 * 3600;
@@ -218,6 +229,7 @@ namespace demonware::achievement_orders
 				{
 					return result;
 				}
+
 				const auto index = (timestamp - phase) / period;
 				const auto start = phase + index * period;
 				result.limits[group.kind] = group.limit;
@@ -229,11 +241,13 @@ namespace demonware::achievement_orders
 					order.next_period_start = start + period;
 					result.orders.push_back(std::move(order));
 				};
+
 				const auto& current = group.sets[index % group.sets.size()];
 				for (const auto& order : current)
 				{
 					append(order);
 				}
+
 				// A token paid for before reset remains redeemable after its offer
 				// rotates away. Only activation requests use this fallback; the locked
 				// store still requires ownership and enforces the active limit. New
@@ -273,10 +287,12 @@ namespace demonware::achievement_orders
 			{
 				continue;
 			}
+
 			if (result || order.next_period_start <= timestamp)
 			{
 				return std::nullopt;
 			}
+
 			result = order;
 		}
 		return result;
@@ -289,16 +305,17 @@ namespace demonware::achievement_orders
 		{
 			return std::nullopt;
 		}
+
 		const auto empty = achievement_response::make_empty_scheduled_user_achievements_response(transaction);
 		if (!empty)
 		{
 			return std::nullopt;
 		}
+
 		rapidjson::Document response;
 		response.Parse(empty->c_str());
 		auto& allocator = response.GetAllocator();
-		// The stock parser leaves omitted map entries unchanged. Clear unsupported
-		// or expired kinds explicitly, including after a previous online session.
+
 		for (int kind = 0; kind < 14; ++kind)
 		{
 			const auto key = std::to_string(kind);
@@ -306,6 +323,7 @@ namespace demonware::achievement_orders
 			response["ActivationLimits"].AddMember(rapidjson::Value{key.c_str(), allocator}.Move(), current ? snapshot.limits[kind] : 0, allocator);
 			response["NextPeriodStartTimes"].AddMember(rapidjson::Value{key.c_str(), allocator}.Move(), current ? snapshot.next_period[kind] : 0, allocator);
 		}
+
 		const auto active = achievement_store::get_all();
 		for (const auto& order : snapshot.orders)
 		{
@@ -314,12 +332,12 @@ namespace demonware::achievement_orders
 			{
 				continue;
 			}
-			// The Contracts menu compares the native SKU price directly. Offers
-			// require a captured or explicitly supported local catalog entry.
+
 			if (order.cost_item_id && !has_contract_catalog(order.cost_item_id))
 			{
 				continue;
 			}
+
 			std::string status = "available";
 			const auto existing = std::ranges::find(active, name, &achievement_record::name);
 			if (existing != active.end())
@@ -338,6 +356,7 @@ namespace demonware::achievement_orders
 					break;
 				}
 			}
+
 			auto value = serialize_achievement(order.achievement, allocator);
 			if (order.cost_item_id && value.IsObject())
 			{
@@ -347,14 +366,17 @@ namespace demonware::achievement_orders
 			{
 				return std::nullopt;
 			}
+
 			value["status"].SetString(status.c_str(), allocator);
 			response["Achievements"].PushBack(value, allocator);
 		}
+
 		auto json = encode(response);
 		if (json.size() > achievement_response::maximum_response_length)
 		{
 			return std::nullopt;
 		}
+
 		return json;
 	}
 
@@ -365,12 +387,14 @@ namespace demonware::achievement_orders
 		{
 			return {BD_REWARD_EVENTS_DATA_ERROR};
 		}
+
 		rapidjson::Document document;
 		document.Parse(request.data(), request.size());
 		if (document.HasParseError() || !unique_object(document))
 		{
 			return {BD_REWARD_EVENTS_DATA_ERROR};
 		}
+
 		const auto contract = document.HasMember("Action") && is_string(document["Action"], contract_action);
 		if (document.MemberCount() != (contract ? 4u : 5u) ||
 			!document.HasMember("Version") || !document["Version"].IsInt() || document["Version"].GetInt() != 0 ||
@@ -381,23 +405,28 @@ namespace demonware::achievement_orders
 		{
 			return {BD_REWARD_EVENTS_DATA_ERROR};
 		}
+
 		const std::string name = document["AchievementName"].GetString();
 		const std::string transaction = document["ClientTx"].GetString();
 		auto kind = contract ? 0 : document["AchievementKind"].GetInt();
+
 		if (!contract && !achievement_kind::order(kind))
 		{
 			return {BD_REWARD_EVENTS_NOT_ENABLED};
 		}
+
 		const auto& snapshot = offers(timestamp, contract ? name : "");
 		std::optional<achievement_store::order_offer> offer;
 		const auto found = std::ranges::find_if(snapshot.orders, [&name](const auto& order)
 		{
 			return order.achievement.name == name;
 		});
+
 		if (snapshot.valid && found != snapshot.orders.end())
 		{
 			offer = *found;
 		}
+
 		// 0x1222C0 sends only a name for either contract kind (4/11).
 		if (contract)
 		{
@@ -419,6 +448,7 @@ namespace demonware::achievement_orders
 				return {BD_REWARD_CHALLENGE_NOT_SCHEDULED};
 			}
 		}
+
 		// Replay is checked in the same locked store transaction, before schedule
 		// validity/expiry. Rotation must not invalidate an already committed Order.
 		// The stock menu explicitly handles 13909 for the activation limit.
@@ -436,11 +466,13 @@ namespace demonware::achievement_orders
 		case result::save_failed: return {BD_REWARD_EVENTS_TRANSACTION_ERROR};
 		default: return {BD_REWARD_CONFIGURATION_ERROR};
 		}
+
 		rapidjson::Document response{rapidjson::kObjectType};
 		auto& allocator = response.GetAllocator();
 		response.AddMember("Action", rapidjson::Value{contract ? contract_action.data() : activation_action.data(), allocator}, allocator);
 		response.AddMember("Status", "ok", allocator);
 		response.AddMember("ClientTx", rapidjson::Value{transaction.c_str(), allocator}, allocator);
+
 		if (contract)
 		{
 			// 0x13E8B0 -> 0x27C1D0 updates/removes absolute inventory rows before
@@ -460,6 +492,7 @@ namespace demonware::achievement_orders
 			inventory.PushBack(item, allocator);
 			response.AddMember("DetailedInventory", inventory, allocator);
 		}
+		
 		return {0, encode(response)};
 	}
 }

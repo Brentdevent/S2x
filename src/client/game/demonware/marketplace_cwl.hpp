@@ -5,18 +5,16 @@
 
 namespace demonware::marketplace_cwl
 {
-	// Local offline price, not the historical COD Point offer. Each pack uses
-	// its emblem as SKU/product identity and as the stock l: ownership limiter.
-	inline constexpr std::uint32_t price = 1000;
+	inline constexpr std::uint32_t price = 500; // price was verified with YouTube videos showing it off
+
 	struct pack
 	{
 		const char* tag;
 		const char* name;
 		std::array<std::uint32_t, 5> items; // emblem, calling card, helmet, charm, camo
 	};
-	// Tags come from quartermaster_cwl_menu_uc; item identities/materials are
-	// the matching CWL families in the shipped StatsTable. No extra entitlement
-	// flags or platform ownership are granted by this local catalog policy.
+
+	// quartermaster_cwl_menu_uc
 	inline constexpr pack packs[]{
 		{"CWL_EF", "Echo Fox Pack", {0x200010C, 0x240042B, 0x6632175, 0x7000098, 0x7040004}},
 		{"CWL_ENVY", "Team Envy Pack", {0x2000117, 0x240042C, 0x6632181, 0x7000099, 0x704000F}},
