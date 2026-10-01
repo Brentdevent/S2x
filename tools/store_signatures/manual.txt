@@ -1,7 +1,0 @@
-# steam_rva store_rva   (store_rva 0 = no store equivalent; handled by store-specific code)
-15330 3A90E0   # CG_GetLocalClient: Steam getter is Arxan-obfuscated, store has a plain movsxd/imul 43A980h/add/ret getter
-461E0 0        # CG_GetLocalClientStatic: Arxan getter, no store function
-795D0 0        # CL_GetLocalClientActive: Arxan getter, no store function
-92390 756A0    # Com_Frame: same size, same callee sequence
-4728F0 3FE5E0  # PartyClient_HandleGo: same callee sequence
-4938E0 41F210  # PartySettings republish helper: identical code
