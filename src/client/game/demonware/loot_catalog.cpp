@@ -14,6 +14,8 @@ namespace demonware::loot_catalog
 	{
 		constexpr auto rarity_count = 5;
 
+		constexpr std::size_t zombie_regular_item_count = 2;
+
 		constexpr auto drop_name_column = 0;
 		constexpr auto drop_guid_column = 5;
 		constexpr auto drop_zombies_column = 11;
@@ -326,27 +328,45 @@ namespace demonware::loot_catalog
 			}
 		}
 
-		if (drop.zombies || drop.focus == focus_zombie_consumable)
+		std::vector<const item*> consumables{};
+		for (const auto& entry : loaded_catalog->zombie_consumables)
 		{
-			for (const auto& entry : loaded_catalog->zombie_consumables)
-			{
-				pool.push_back(&entry);
-			}
+			consumables.push_back(&entry);
 		}
 
-		if (pool.empty())
+		if (drop.focus == focus_zombie_consumable)
+		{
+			pool = consumables;
+		}
+
+		const auto needs_consumable = drop.zombies && drop.focus != focus_zombie_consumable;
+		if (pool.empty() || (needs_consumable && consumables.empty()))
 		{
 			return result;
 		}
 
 		static std::mt19937 engine{std::random_device{}()};
-		for (std::size_t i = 0; i < count; ++i)
+		const auto regular_count = needs_consumable ? std::min(count, zombie_regular_item_count) : count;
+		for (std::size_t i = 0; i < regular_count; ++i)
 		{
 			const auto rarity = roll_rarity(engine, i == 0 ? drop.min_rarity : 0);
 			if (const auto guid = pick(engine, pool, rarity))
 			{
 				result.push_back(guid);
 			}
+		}
+
+		for (auto i = regular_count; needs_consumable && i < count; ++i)
+		{
+			if (const auto guid = pick(engine, consumables, roll_rarity(engine, 0)))
+			{
+				result.push_back(guid);
+			}
+		}
+
+		if (result.size() != count)
+		{
+			result.clear();
 		}
 
 		return result;

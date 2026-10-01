@@ -15,6 +15,7 @@ namespace demonware::loot_service
 	namespace
 	{
 		constexpr std::size_t supply_drop_item_count = 3;
+		constexpr std::size_t zombie_supply_drop_item_count = 5;
 		constexpr std::uint8_t currency_cod_points = 2;
 		constexpr std::uint32_t infinite_cod_points_balance = 999999;
 		constexpr std::uint8_t currency_armory_credits = 6;
@@ -96,7 +97,8 @@ namespace demonware::loot_service
 
 			const std::string_view name{request["SupplyDropID"].GetString(), request["SupplyDropID"].GetStringLength()};
 			const auto drop = loot_catalog::find_drop(name);
-			const auto items = drop ? loot_catalog::roll_drop(*drop, supply_drop_item_count) : std::vector<std::uint32_t>{};
+			const auto items = drop ? loot_catalog::roll_drop(*drop,
+				drop->zombies ? zombie_supply_drop_item_count : supply_drop_item_count) : std::vector<std::uint32_t>{};
 			if (items.empty())
 			{
 				console::demonware("[DW] loot: cannot open supply drop '%.*s'\n",
