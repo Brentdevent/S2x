@@ -46,6 +46,27 @@ local function open_unlock_confirmation( element, controller, command, warning )
 	} )
 end
 
+local function rarity_option()
+	local scales = { 0.5, 1, 2, 3 }
+	local names = { "Slow", "Normal", "Generous", "High" }
+	local function index()
+		local value = Engine.GetDvarFloat( "cg_lootRarityScale" )
+		for i, scale in ipairs( scales ) do if value <= scale then return i end end
+		return #scales
+	end
+	local function change( direction )
+		Engine.SetDvarFloat( "cg_lootRarityScale", scales[(index() - 1 + direction) % #scales + 1] )
+	end
+	return {
+		buttonType = "GenericButtonScrollable",
+		buttonText = "Supply Drop Rarity",
+		buttonDesc = "Adjust the chance of Legendary, Epic and Heroic rewards. Guaranteed rarity and eligible items stay the same.",
+		buttonDisplayFunc = function () return names[index()] end,
+		buttonLeftFunc = function () change( -1 ) end,
+		buttonRightFunc = function () change( 1 ) end
+	}
+end
+
 local function multiplayer_options( controller )
 	local items_toggle = toggle_dvar( "cg_unlockall_items" )
 	local loot_toggle = toggle_dvar( "cg_unlockall_loot" )
@@ -98,6 +119,18 @@ local function zombies_options( controller )
 			end
 		},
 		{
+			buttonType = "GenericButton",
+			buttonText = Engine.Localize( "Unlock Zombies Easter Eggs" ),
+			buttonDesc = Engine.Localize(
+				"Permanently unlock supported quest records, Groesten Haus, Tortured Path chapters and survival maps, " ..
+				"including Sword of Barbarossa access. Red Talon still requires its per-match puzzle." ),
+			buttonActionFunc = function ( element )
+				open_unlock_confirmation( element, controller, "unlockzmeastereggs",
+					"WARNING: This permanently completes supported Zombies quest and map progression. " ..
+					"It does not change rank or character challenges and cannot automatically be undone." )
+			end
+		},
+		{
 			buttonType = "GenericButtonScrollable",
 			buttonText = Engine.Localize( "Unlock All Loot" ),
 			buttonDesc = Engine.Localize( "Override loot item availability." ),
@@ -134,6 +167,7 @@ local function build_unlocks_menu( menu_name, properties, options_factory )
 	local controller = get_controller_index( self, properties )
 	local scoped_data = LUI.FlowManager.GetScopedData( self )
 	scoped_data.gridData = options_factory( controller )
+	table.insert( scoped_data.gridData, rarity_option() )
 
 	local background = LUI.MenuBuilder.BuildRegisteredType( "GenericMenuBackground", {
 		controllerIndex = controller,

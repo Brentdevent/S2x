@@ -5,6 +5,7 @@
 #include "component/console/console.hpp"
 #include "component/hidden_challenge_relay.hpp"
 #include "component/hidden_challenges.hpp"
+#include "component/demonware/zombies_progression.hpp"
 #include "game/game.hpp"
 #include "game/demonware/achievement_response.hpp"
 #include "game/demonware/reward_game_event.hpp"
@@ -27,6 +28,10 @@ namespace demonware
 			const auto catalog = loot_catalog::get_snapshot();
 			for (const auto& event : events)
 			{
+				if (!zombies_progression::process(event, user))
+				{
+					return false;
+				}
 				std::string push;
 				if (!hq_rewards::process(event, user, static_cast<std::uint32_t>(time(nullptr)), catalog.get(), push))
 				{

@@ -21,8 +21,6 @@ namespace unlock_zombies
 
 		constexpr std::array supplemental_zombie_achievements
 		{
-			std::pair{1112, std::uint16_t{1}}, // Tortured Path maps completed.
-			std::pair{1114, std::uint16_t{1}}, // DLC3 survival maps unlocked.
 			std::pair{1142, std::uint16_t{1}}, // Zombies master-prestige reward.
 			std::pair{1143, std::uint16_t{1}}, // All Zombies challenge sets completed.
 			std::pair{1144, std::uint16_t{1}}, // Zombies master-prestige reward 2.
