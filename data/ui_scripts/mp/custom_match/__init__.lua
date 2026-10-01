@@ -6,7 +6,9 @@ CustomMatch = CustomMatch or {}
 
 -- Rank presentation also applies to the in-game scoreboard.
 package.loaded["custom_match.ranks"] = nil
+package.loaded["custom_match.loadouts"] = nil
 require( "custom_match.ranks" )
+require( "custom_match.loadouts" )
 
 if not Engine.InFrontend() then
 	return
