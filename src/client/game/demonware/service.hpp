@@ -1,5 +1,9 @@
 #pragma once
+#include <array>
+
 #include <utils/string.hpp>
+
+#include "game/types/demonware.hpp"
 
 #include "component/console/console.hpp"
 
@@ -16,6 +20,8 @@ namespace demonware
 		std::mutex mutex_;
 		uint8_t task_id_;
 		std::map<uint8_t, callback_t> tasks_;
+		std::array<std::uint32_t, 256> task_execution_log_counts_{};
+		std::array<std::uint32_t, 256> missing_task_log_counts_{};
 
 	public:
 		virtual ~service() = default;
@@ -47,20 +53,60 @@ namespace demonware
 			std::lock_guard<std::mutex> _(this->mutex_);
 
 			byte_buffer buffer(data);
+			uint8_t task_id{};
+			if (!buffer.read_ubyte(&task_id))
+			{
+				console::error("[DW] %s: malformed task header\n", name_.data());
+				server->create_reply(0, game::demonware::BD_PARAM_PARSE_ERROR).send();
+				return;
+			}
 
-			buffer.read_ubyte(&this->task_id_);
+			this->task_id_ = task_id;
 
 			const auto& it = this->tasks_.find(this->task_id_);
 
 			if (it != this->tasks_.end())
 			{
-				console::demonware("[DW] %s: executing task '%d' (transaction ID: %llu)\n", name_.data(), this->task_id_, service_reply::transaction_id + 1);
+				constexpr std::uint32_t maximum_task_execution_logs = 32;
+				auto& log_count = this->task_execution_log_counts_[this->task_id_];
+				if (log_count < maximum_task_execution_logs)
+				{
+					console::demonware(
+						"[DW] %s: executing task '%d' (transaction ID: %llu)\n",
+						name_.data(), this->task_id_, service_reply::transaction_id + 1);
+				}
+				else if (log_count == maximum_task_execution_logs)
+				{
+					console::demonware(
+						"[DW] %s: further task '%d' execution logs suppressed\n",
+						name_.data(), this->task_id_);
+				}
+				if (log_count <= maximum_task_execution_logs)
+				{
+					++log_count;
+				}
 
 				it->second(server, &buffer);
 			}
 			else
 			{
-				console::error("[DW] %s: missing task '%d'\n", name_.data(), this->task_id_);
+				constexpr std::uint32_t maximum_missing_task_logs = 8;
+				auto& log_count = this->missing_task_log_counts_[this->task_id_];
+				if (log_count < maximum_missing_task_logs)
+				{
+					console::error("[DW] %s: missing task '%d'\n", name_.data(),
+						this->task_id_);
+				}
+				else if (log_count == maximum_missing_task_logs)
+				{
+					console::error(
+						"[DW] %s: further missing-task '%d' logs suppressed\n",
+						name_.data(), this->task_id_);
+				}
+				if (log_count <= maximum_missing_task_logs)
+				{
+					++log_count;
+				}
 
 				// return no error
 				server->create_reply(this->task_id_).send();
