@@ -6,6 +6,7 @@
 #include "scheduler.hpp"
 
 #include <utils/hook.hpp>
+#include <utils/string.hpp>
 
 namespace branding
 {
@@ -44,14 +45,9 @@ namespace branding
 			// Change window title prefix
 			if (game::environment::uses_multiplayer_binary())
 			{
-				if (game::environment::is_zombies())
-				{
-					utils::hook::copy_string(0xBA6040_g, "S2x - Zombies");
-				}
-				else
-				{
-					utils::hook::copy_string(0xBA6040_g, "S2x - Multiplayer");
-				}
+				const auto* platform = game::environment::is_store_native() ? "MS" : "Steam";
+				const auto* mode = game::environment::is_zombies() ? "Zombies" : "Multiplayer";
+				utils::hook::copy_string(0xBA6040_g, utils::string::va("S2x (%s) - %s", platform, mode));
 			}
 			else
 			{
