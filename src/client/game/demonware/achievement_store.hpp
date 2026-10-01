@@ -24,6 +24,13 @@ namespace demonware
 		int fulfilled_times{1};
 		std::uint64_t completion_timestamp{};
 		achievement_status status{achievement_status::finished};
+		bool requires_claim{};
+		std::uint64_t activation_timestamp{};
+		std::uint64_t expiration_timestamp{};
+		std::uint32_t usage_time_target{};
+		std::uint32_t reward_item{};
+		std::uint32_t reward_currency{};
+		std::uint32_t reward_amount{};
 	};
 
 	const char* get_achievement_status_name(achievement_status status);
@@ -41,5 +48,6 @@ namespace demonware
 		bool merge(const std::vector<achievement_record>& records);
 		mutation_result mutate(const std::string& name,
 			const std::function<bool(achievement_record&)>& mutator);
+		bool erase(const std::string& name);
 	}
 }

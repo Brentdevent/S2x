@@ -9,10 +9,10 @@ namespace demonware::loot_service
 	struct sku
 	{
 		std::uint32_t sku_id;
-		const char* sku_data;
+		std::string sku_data;
 		std::uint8_t currency_id;
 		std::uint32_t price;
-		std::uint32_t item_id;
+		std::vector<std::uint32_t> item_ids;
 	};
 
 	struct settings
@@ -22,7 +22,7 @@ namespace demonware::loot_service
 		std::uint32_t match_cod_points{};
 	};
 
-	const std::vector<sku>& get_skus();
+	std::vector<sku> get_skus();
 	void set_settings(const settings& value);
 	std::map<std::uint32_t, std::uint32_t> get_balances();
 

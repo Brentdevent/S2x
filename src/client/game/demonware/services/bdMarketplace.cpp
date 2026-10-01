@@ -7,8 +7,27 @@
 
 #include "steam/steam.hpp"
 
+#include "component/console/console.hpp"
+
+#include <utils/string.hpp>
+
 namespace demonware
 {
+	namespace
+	{
+		void log_request(const char* name, byte_buffer* buffer)
+		{
+			const auto data = buffer->get_remaining();
+			std::string hex{};
+			for (std::size_t i = 0; i < data.size() && i < 512; ++i)
+			{
+				hex += utils::string::va("%02X", static_cast<unsigned char>(data[i]));
+			}
+
+			console::demonware("[DW] bdMarketplace: %s request (%zu bytes) %s\n", name, data.size(), hex.data());
+		}
+	}
+
 	bdMarketplace::bdMarketplace() : service(80, "bdMarketplace")
 	{
 		this->register_task(42, &bdMarketplace::startExchangeTransaction);
@@ -25,14 +44,16 @@ namespace demonware
 		this->register_task(130, &bdMarketplace::getBalance);
 		this->register_task(132, &bdMarketplace::getBalanceV2);
 		this->register_task(165, &bdMarketplace::getInventoryPaginated);
+		this->register_task(168, &bdMarketplace::updateInventoryItems);
 		this->register_task(193, &bdMarketplace::putPlayersInventoryItems);
 		this->register_task(199, &bdMarketplace::pawnItems);
 		this->register_task(232, &bdMarketplace::getEntitlements);
+		this->register_task(242, &bdMarketplace::unknown242);
 	}
 
-	void bdMarketplace::startExchangeTransaction(service_server* server, byte_buffer* /*buffer*/) const
+	void bdMarketplace::startExchangeTransaction(service_server* server, byte_buffer* buffer) const
 	{
-		// TODO:
+		log_request("startExchangeTransaction", buffer);
 		auto reply = server->create_reply(this->task_id());
 		reply.send();
 	}
@@ -163,16 +184,29 @@ namespace demonware
 		reply.send();
 	}
 
-	void bdMarketplace::putPlayersInventoryItems(service_server* server, byte_buffer* /*buffer*/) const
+	void bdMarketplace::updateInventoryItems(service_server* server, byte_buffer* /*buffer*/) const
 	{
-		// TODO:
 		auto reply = server->create_reply(this->task_id());
 		reply.send();
 	}
 
-	void bdMarketplace::pawnItems(service_server* server, byte_buffer* /*buffer*/) const
+	void bdMarketplace::unknown242(service_server* server, byte_buffer* buffer) const
 	{
-		// TODO:
+		log_request("unknown242", buffer);
+		auto reply = server->create_reply(this->task_id());
+		reply.send();
+	}
+
+	void bdMarketplace::putPlayersInventoryItems(service_server* server, byte_buffer* buffer) const
+	{
+		log_request("putPlayersInventoryItems", buffer);
+		auto reply = server->create_reply(this->task_id());
+		reply.send();
+	}
+
+	void bdMarketplace::pawnItems(service_server* server, byte_buffer* buffer) const
+	{
+		log_request("pawnItems", buffer);
 		auto reply = server->create_reply(this->task_id());
 		reply.send();
 	}
@@ -286,7 +320,10 @@ namespace demonware
 				{
 					if (entry.sku_id == product_id)
 					{
-						product->m_items.emplace_back(entry.item_id, 1);
+						for (const auto item_id : entry.item_ids)
+						{
+							product->m_items.emplace_back(item_id, 1);
+						}
 					}
 				}
 			}

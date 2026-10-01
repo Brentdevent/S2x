@@ -5,6 +5,7 @@
 #include "component/scheduler.hpp"
 
 #include "game/game.hpp"
+#include "game/demonware/challenge_service.hpp"
 #include "game/demonware/loot_catalog.hpp"
 #include "game/demonware/loot_service.hpp"
 
@@ -50,6 +51,17 @@ namespace loot
 				}
 
 				console::debug("[loot] supply drop catalog loaded\n");
+				return scheduler::cond_end;
+			}, scheduler::pipeline::main, 1s);
+
+			scheduler::schedule([]
+			{
+				if (!demonware::challenge_service::load())
+				{
+					return scheduler::cond_continue;
+				}
+
+				console::debug("[loot] challenge catalog loaded\n");
 				return scheduler::cond_end;
 			}, scheduler::pipeline::main, 1s);
 		}

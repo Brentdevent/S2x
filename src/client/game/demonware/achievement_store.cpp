@@ -120,6 +120,25 @@ namespace demonware::achievement_store
 					record.completion_timestamp = value["completionTimestamp"].GetUint64();
 				}
 
+				const auto read_uint64 = [&](const char* key) -> std::uint64_t
+				{
+					return value.HasMember(key) && value[key].IsUint64() ? value[key].GetUint64() : 0;
+				};
+
+				const auto read_uint = [&](const char* key) -> std::uint32_t
+				{
+					return value.HasMember(key) && value[key].IsUint() ? value[key].GetUint() : 0;
+				};
+
+				record.requires_claim = value.HasMember("requiresClaim") && value["requiresClaim"].IsBool() &&
+					value["requiresClaim"].GetBool();
+				record.activation_timestamp = read_uint64("activationTimestamp");
+				record.expiration_timestamp = read_uint64("expirationTimestamp");
+				record.usage_time_target = read_uint("usageTimeTarget");
+				record.reward_item = read_uint("rewardItem");
+				record.reward_currency = read_uint("rewardCurrency");
+				record.reward_amount = read_uint("rewardAmount");
+
 				record.status = record.fulfilled_times > 0
 					? achievement_status::finished
 					: achievement_status::in_progress;
@@ -155,6 +174,13 @@ namespace demonware::achievement_store
 				value.AddMember("completionTimestamp", record.completion_timestamp, allocator);
 				value.AddMember("status", rapidjson::Value{get_achievement_status_name(record.status),
 					allocator}, allocator);
+				value.AddMember("requiresClaim", record.requires_claim, allocator);
+				value.AddMember("activationTimestamp", record.activation_timestamp, allocator);
+				value.AddMember("expirationTimestamp", record.expiration_timestamp, allocator);
+				value.AddMember("usageTimeTarget", record.usage_time_target, allocator);
+				value.AddMember("rewardItem", record.reward_item, allocator);
+				value.AddMember("rewardCurrency", record.reward_currency, allocator);
+				value.AddMember("rewardAmount", record.reward_amount, allocator);
 				array.PushBack(value, allocator);
 			}
 
@@ -297,6 +323,28 @@ namespace demonware::achievement_store
 		}
 
 		return mutation_result::save_failed;
+	}
+
+	bool erase(const std::string& name)
+	{
+		std::lock_guard lock{achievement_mutex};
+		load_achievements();
+
+		const auto entry = achievements.find(name);
+		if (entry == achievements.end())
+		{
+			return true;
+		}
+
+		auto original = std::move(entry->second);
+		achievements.erase(entry);
+		if (save_achievements())
+		{
+			return true;
+		}
+
+		achievements[name] = std::move(original);
+		return false;
 	}
 }
 

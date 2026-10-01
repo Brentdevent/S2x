@@ -7,10 +7,13 @@
 
 #include "game/game.hpp"
 #include "game/demonware/achievement_response.hpp"
+#include "game/demonware/challenge_service.hpp"
 #include "game/demonware/loot_service.hpp"
 #include "game/demonware/reward_game_event.hpp"
 
 #include "steam/steam.hpp"
+
+#include <utils/string.hpp>
 
 namespace demonware
 {
@@ -72,8 +75,22 @@ namespace demonware
 				return;
 			}
 
+			const auto user_id = steam::SteamUser()->GetSteamID().bits;
 			for (const auto& event : events)
 			{
+				std::string parameters{};
+				for (const auto& parameter : event.parameters)
+				{
+					parameters += utils::string::va(" %s=%llu", parameter.selector.data(),
+						static_cast<unsigned long long>(parameter.value));
+				}
+
+				console::demonware("[DW] bdReward: game event '%s'%s\n", event.name.data(), parameters.data());
+				for (const auto& push : challenge_service::handle_game_event(event))
+				{
+					send_reward_response(server, user_id, {}, push, BD_REWARD_ACHIEVEMENT_MESSAGE);
+				}
+
 				if (event.name != "picked_up_payroll")
 				{
 					continue;
@@ -160,9 +177,18 @@ namespace demonware
 
 			const std::string_view action{request["Action"].GetString(), request["Action"].GetStringLength()};
 			std::optional<std::string> response{};
+			std::vector<std::string> pushes{};
 			if (action == "get_user_achievements")
 			{
 				response = achievement_response::make_get_user_achievements_response(client_tx);
+			}
+			else if (!game::environment::is_dedicated() && challenge_service::handles_action(action))
+			{
+				if (auto result = challenge_service::handle_action(action, client_tx, request))
+				{
+					response = std::move(result->response);
+					pushes = std::move(result->pushes);
+				}
 			}
 			else if (!game::environment::is_dedicated())
 			{
@@ -177,6 +203,12 @@ namespace demonware
 			}
 
 			send_reward_response(server, steam::SteamUser()->GetSteamID().bits, context, *response);
+			for (const auto& push : pushes)
+			{
+				send_reward_response(server, steam::SteamUser()->GetSteamID().bits, {}, push,
+					BD_REWARD_ACHIEVEMENT_MESSAGE);
+			}
+
 			console::demonware("[DW] bdReward: answered %.*s (%.*s)\n",
 				static_cast<int>(action.size()), action.data(),
 				static_cast<int>(client_tx.size()), client_tx.data());

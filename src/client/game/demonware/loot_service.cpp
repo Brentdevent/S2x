@@ -4,6 +4,7 @@
 #include "loot_catalog.hpp"
 #include "loot_store.hpp"
 #include "achievement_store.hpp"
+#include "challenge_service.hpp"
 
 #include "component/console/console.hpp"
 
@@ -284,9 +285,12 @@ namespace demonware::loot_service
 
 			result.balance = infinite ? infinite_cod_points_balance : balance;
 
-			auto& owned = state.items[entry->item_id];
-			owned = add_capped(owned, quantity);
-			result.items[entry->item_id] = owned;
+			for (const auto item_id : entry->item_ids)
+			{
+				auto& owned = state.items[item_id];
+				owned = add_capped(owned, quantity);
+				result.items[item_id] = owned;
+			}
 
 			return true;
 		});
@@ -370,13 +374,35 @@ namespace demonware::loot_service
 		return serialize(response);
 	}
 
-	const std::vector<sku>& get_skus()
+	std::vector<sku> get_skus()
 	{
-		static const std::vector<sku> skus
+		static const std::vector<sku> base_skus
 		{
-			{1001, "t:MP", currency_cod_points, 200, 2},
-			{1002, "t:ZM", currency_cod_points, 200, 6},
+			{1001, "t:MP", currency_cod_points, 200, {2}},
+			{1002, "t:ZM", currency_cod_points, 200, {6}},
+			{2001, "t:CWL_CWL;l:0x80018B|1", currency_cod_points, 500, {0x6632177, 0x200012F, 0x240042A, 0x7000097, 0x80018B}},
+			{2002, "t:CWL_EF;l:0x80017C|1", currency_cod_points, 500, {0x6632175, 0x200010C, 0x240042B, 0x7000098, 0x80017C}},
+			{2003, "t:CWL_ENVY;l:0x80017D|1", currency_cod_points, 500, {0x6632181, 0x2000117, 0x240042C, 0x7000099, 0x80017D}},
+			{2004, "t:CWL_EPSI;l:0x80017E|1", currency_cod_points, 500, {0x6632176, 0x200010D, 0x240042D, 0x700009A, 0x80017E}},
+			{2005, "t:CWL_EU;l:0x80017F|1", currency_cod_points, 500, {0x6632178, 0x200010E, 0x240042E, 0x700009B, 0x80017F}},
+			{2006, "t:CWL_EVIL;l:0x800180|1", currency_cod_points, 500, {0x6632179, 0x200010F, 0x240042F, 0x700009C, 0x800180}},
+			{2007, "t:CWL_FAZE;l:0x800181|1", currency_cod_points, 500, {0x663217A, 0x2000110, 0x2400430, 0x700009D, 0x800181}},
+			{2008, "t:CWL_LUMI;l:0x800182|1", currency_cod_points, 500, {0x663217B, 0x2000111, 0x2400431, 0x700009F, 0x800182}},
+			{2009, "t:CWL_MIND;l:0x800183|1", currency_cod_points, 500, {0x663217C, 0x2000112, 0x2400432, 0x70000A0, 0x800183}},
+			{2010, "t:CWL_OPT;l:0x800184|1", currency_cod_points, 500, {0x663217D, 0x2000113, 0x2400433, 0x70000A1, 0x800184}},
+			{2011, "t:CWL_RED;l:0x800185|1", currency_cod_points, 500, {0x663217E, 0x2000114, 0x2400434, 0x70000A2, 0x800185}},
+			{2012, "t:CWL_RISE;l:0x800186|1", currency_cod_points, 500, {0x663217F, 0x2000115, 0x2400435, 0x70000A3, 0x800186}},
+			{2013, "t:CWL_SPLY;l:0x800187|1", currency_cod_points, 500, {0x6632180, 0x2000116, 0x2400436, 0x70000A4, 0x800187}},
+			{2014, "t:CWL_UNI;l:0x800188|1", currency_cod_points, 500, {0x6632184, 0x200011A, 0x2400437, 0x70000A5, 0x800188}},
+			{2015, "t:CWL_VITA;l:0x800189|1", currency_cod_points, 500, {0x6632183, 0x2000119, 0x2400439, 0x70000A6, 0x800189}},
+			{2016, "t:CWL_KALI;l:0x80018A|1", currency_cod_points, 500, {0x6632182, 0x2000118, 0x2400438, 0x700009E, 0x80018A}},
 		};
+
+		auto skus = base_skus;
+		for (const auto& contract : challenge_service::get_contract_skus())
+		{
+			skus.push_back({contract.sku_id, contract.sku_data, currency_armory_credits, contract.price, {contract.item_id}});
+		}
 
 		return skus;
 	}

@@ -12,5 +12,8 @@ namespace demonware::achievement_response
 		const std::vector<achievement_record>& achievements,
 		rapidjson::Document::AllocatorType& allocator);
 
+	rapidjson::Value serialize_rewards(const achievement_record& achievement,
+		rapidjson::Document::AllocatorType& allocator);
+
 	std::string make_get_user_achievements_response(std::string_view client_transaction);
 }
