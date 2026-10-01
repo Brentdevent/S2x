@@ -3,7 +3,6 @@
 #include "game/demonware/achievement_claim.hpp"
 
 #include "component/console/console.hpp"
-#include "component/hidden_challenge_relay.hpp"
 #include "component/hidden_challenges.hpp"
 #include "component/demonware/zombies_progression.hpp"
 #include "game/game.hpp"
@@ -171,10 +170,8 @@ namespace demonware
 					{
 						hidden_challenges::submit_completion(group, challenge);
 					}
-					else
-					{
-						hidden_challenge_relay::submit(user.user_id, group, challenge);
-					}
+					// Foreign users are delivered at native queue admission. Task 11
+					// retries may regenerate ClientTx, so must not emit another occurrence.
 				}
 			}
 		}

@@ -989,7 +989,10 @@ namespace game
 			char __pad0[0x30 - 0x04];
 			netadr_s remoteAddress;
 			int qport;
-			char __pad1[0x41DF0 - 0x48];
+			char __pad1[0xD38 - 0x48];
+			std::uint32_t reliableSequence;
+			std::uint32_t reliableAcknowledge;
+			char __padD40[0x41DF0 - 0xD40];
 			gentity_s* gentity;
 			char name[36];
 			char __pad41E1C[0x41E20 - 0x41E1C];
@@ -1010,6 +1013,8 @@ namespace game
 		static_assert(offsetof(client_t, state) == 0x00000);
 		static_assert(offsetof(client_t, remoteAddress) == 0x00030);
 		static_assert(offsetof(client_t, qport) == 0x00044);
+		static_assert(offsetof(client_t, reliableSequence) == 0xD38);
+		static_assert(offsetof(client_t, reliableAcknowledge) == 0xD3C);
 		static_assert(offsetof(client_t, gentity) == 0x41DF0);
 		static_assert(offsetof(client_t, name) == 0x41DF8);
 		static_assert(offsetof(client_t, lastPacketTime) == 0x41E20);
