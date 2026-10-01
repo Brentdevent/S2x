@@ -54,6 +54,32 @@ namespace demonware::reward_json
 		return true;
 	}
 
+	const rapidjson::Value* find_member(const rapidjson::Value& object, const char* name)
+	{
+		if (!object.IsObject())
+		{
+			return nullptr;
+		}
+
+		const auto member = object.FindMember(name);
+		return member != object.MemberEnd() ? &member->value : nullptr;
+	}
+
+	std::string_view view(const rapidjson::Value& value)
+	{
+		return {value.GetString(), value.GetStringLength()};
+	}
+
+	bool equals(const rapidjson::Value* value, const std::string_view text)
+	{
+		return value && value->IsString() && view(*value) == text;
+	}
+
+	bool ascii_string(const rapidjson::Value* value, const std::size_t maximum)
+	{
+		return value && value->IsString() && bounded_ascii(view(*value), maximum);
+	}
+
 	bool common_fields(const rapidjson::Value& object, const std::string_view action, std::string& transaction,
 		const bool exact_transaction_length)
 	{

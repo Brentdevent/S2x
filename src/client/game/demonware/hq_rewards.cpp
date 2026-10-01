@@ -2,68 +2,92 @@
 #include "hq_rewards.hpp"
 #include "achievement_claim.hpp"
 
+#include <utils/string.hpp>
+
 namespace demonware::hq_rewards
 {
 	namespace
 	{
+		constexpr std::uint8_t social_score_currency = 7;
+		constexpr std::int64_t millisecond_timestamp = 1000000000000;
+
 		achievement_record automatic(const std::string& name, const std::uint32_t item, const std::uint32_t quantity)
 		{
-			achievement_record record;
+			achievement_record record{};
 			record.name = name;
 			record.kind = 5;
 			record.fulfilled_times = 0;
 			record.status = achievement_status::in_progress;
-			if (!item)
+
+			if (item)
 			{
-				record.success_rewards = "[{\"type\":\"grant_currency\",\"currency\":{\"id\":6,\"amount\":" + std::to_string(quantity) + "}}]";
+				record.success_rewards = utils::string::va(R"([{"type":"grant_product","product":{"id":%u,"items":[{"id":%u,"quantity":%u,"usage_duration":null,"override_usage_duration":0}],"currencies":[]}}])",
+					item, item, quantity);
 			}
 			else
 			{
-				record.success_rewards = "[{\"type\":\"grant_product\",\"product\":{\"id\":" + std::to_string(item) +
-					",\"items\":[{\"id\":" + std::to_string(item) + ",\"quantity\":" + std::to_string(quantity) +
-					",\"usage_duration\":null,\"override_usage_duration\":0}],\"currencies\":[]}}]";
+				record.success_rewards = utils::string::va(R"([{"type":"grant_currency","currency":{"id":6,"amount":%u}}])", quantity);
 			}
+
 			return record;
 		}
 
-		std::optional<std::uint64_t> selector(const reward_game_events::event& event, const char* key)
+		achievement_record social_rank(const std::uint64_t rank, const loot_catalog::social_rank_reward& reward)
 		{
-			std::optional<std::uint64_t> value;
+			return automatic("hit_social_rank_" + std::to_string(rank), reward.item_id, reward.quantity);
+		}
+
+		std::optional<std::uint64_t> selector(const reward_game_events::event& event, const std::string_view key)
+		{
+			std::optional<std::uint64_t> value{};
+
 			for (const auto& param : event.parameters)
 			{
-				if (param.selector == key)
+				if (param.selector != key)
 				{
-					if (value)
-					{
-						return {};
-					}
-					value = param.value;
+					continue;
 				}
+
+				if (value)
+				{
+					return std::nullopt;
+				}
+
+				value = param.value;
 			}
+
 			return value;
+		}
+
+		// bdRewardGameEvent carries epoch milliseconds, but whole-second SDK callers are accepted too
+		std::uint64_t event_seconds(const std::int64_t timestamp)
+		{
+			return static_cast<std::uint64_t>(timestamp > millisecond_timestamp ? timestamp / 1000 : timestamp);
 		}
 	}
 
+	// The retail descriptor pays 200 AC, the stock kiosk's master prestige fallback pays 300 AC
 	achievement_record payroll(const bool master_prestige)
 	{
-		// Retail payroll_officer descriptor: 200 AC. The stock kiosk's master
-		// prestige fallback is 300 AC; both variants use its four-hour cooldown.
-		return automatic(master_prestige ? "payroll_officer_masterprestige" : "payroll_officer",
-			0, master_prestige ? 300 : 200);
+		const auto* name = master_prestige ? "payroll_officer_masterprestige" : "payroll_officer";
+		return automatic(name, 0, master_prestige ? 300 : 200);
 	}
 
 	std::vector<achievement_record> initial_records()
 	{
 		std::vector<achievement_record> records{payroll(false), payroll(true)};
+
 		const auto catalog = loot_catalog::get_snapshot();
-		if (catalog)
+		if (!catalog)
 		{
-			for (std::size_t rank = 0; rank < catalog->social_ranks.size(); ++rank)
-			{
-				const auto& reward = catalog->social_ranks[rank];
-				records.push_back(automatic("hit_social_rank_" + std::to_string(rank + 1), reward.item_id, reward.quantity));
-			}
+			return records;
 		}
+
+		for (std::size_t rank = 0; rank < catalog->social_ranks.size(); ++rank)
+		{
+			records.push_back(social_rank(rank + 1, catalog->social_ranks[rank]));
+		}
+
 		return records;
 	}
 
@@ -71,22 +95,27 @@ namespace demonware::hq_rewards
 		const std::uint32_t timestamp, const loot_catalog::catalog* catalog, std::string& push)
 	{
 		push.clear();
-		if (event.name != "social_score" && event.name != "picked_up_payroll")
+
+		const auto is_payroll = event.name == "picked_up_payroll";
+		if (!is_payroll && event.name != "social_score")
 		{
 			return true;
 		}
+
 		if (!user || !timestamp)
 		{
 			return false;
 		}
+
 		const auto value = selector(event, "1");
 		if (!value)
 		{
 			return true;
 		}
-		const auto is_payroll = event.name == "picked_up_payroll";
-		achievement_record record;
+
+		achievement_record record{};
 		std::uint32_t threshold{};
+
 		if (is_payroll)
 		{
 			const auto master = selector(event, "2");
@@ -94,6 +123,7 @@ namespace demonware::hq_rewards
 			{
 				return true;
 			}
+
 			record = payroll(*master != 0);
 		}
 		else
@@ -102,35 +132,38 @@ namespace demonware::hq_rewards
 			{
 				return false;
 			}
+
 			if (!*value || *value > catalog->social_ranks.size())
 			{
 				return true;
 			}
+
 			const auto& reward = catalog->social_ranks[*value - 1];
 			threshold = reward.threshold;
-			record = automatic("hit_social_rank_" + std::to_string(*value), reward.item_id, reward.quantity);
+			record = social_rank(*value, reward);
 		}
+
 		if (event.timestamp <= 0)
 		{
 			return true;
 		}
-		// bdRewardGameEvent carries epoch milliseconds; accept whole-second SDK
-		// callers too. Time never identifies an occurrence: completion state does.
-		const auto event_time = static_cast<std::uint64_t>(event.timestamp > 1000000000000LL ?
-			event.timestamp / 1000 : event.timestamp);
-		const auto saved = achievement_store::complete_hq_reward(record, timestamp, event_time, is_payroll,
+
+		const auto saved = achievement_store::complete_hq_reward(record, timestamp, event_seconds(event.timestamp), is_payroll,
 			[&](marketplace_store::transaction& economy, const achievement_record& completed, const bool grant)
+		{
+			if (!is_payroll && economy.get_currency(social_score_currency) < threshold)
 			{
-				if (!is_payroll && economy.get_currency(7) < threshold)
-				{
-					return false;
-				}
-				return achievement_claim::settle_reward(economy, completed, grant, user, timestamp, push);
-			});
+				return false;
+			}
+
+			return achievement_claim::settle_reward(economy, completed, grant, user, timestamp, push);
+		});
+
 		if (!saved)
 		{
 			push.clear();
 		}
+
 		return saved;
 	}
 }

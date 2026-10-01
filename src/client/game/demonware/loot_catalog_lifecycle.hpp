@@ -3,14 +3,6 @@
 #include "loot_catalog.hpp"
 #include "loot_compatibility.hpp"
 
-#include <atomic>
-#include <exception>
-#include <functional>
-#include <memory>
-#include <mutex>
-#include <optional>
-#include <utility>
-
 namespace demonware::runtime
 {
 	class loot_catalog_lifecycle
@@ -34,7 +26,10 @@ namespace demonware::runtime
 			invalidate_locked();
 		}
 
-		void end_load() { load_depth_.fetch_sub(1, std::memory_order_release); }
+		void end_load()
+		{
+			load_depth_.fetch_sub(1, std::memory_order_release);
+		}
 
 		void stop()
 		{
@@ -50,6 +45,7 @@ namespace demonware::runtime
 			{
 				return false;
 			}
+
 			if (load_depth_.load(std::memory_order_acquire) || !std::invoke(database_ready))
 			{
 				if (was_ready_)
@@ -59,23 +55,23 @@ namespace demonware::runtime
 				was_ready_ = false;
 				return false;
 			}
+
 			was_ready_ = true;
+
 			const auto revision = requested_.load(std::memory_order_acquire);
 			if (attempted_ == revision)
 			{
 				return false;
 			}
-			// Load entry hooks take this lock BEFORE entering the stock DB writer
-			// path, then release it with load_depth_ set. Never acquire it for the
-			// first time from inside the engine's asset-writer critical section.
+
+			// Load hooks take this lock before the stock DB writer path, never inside its critical section
 			std::lock_guard lock{publication_mutex_};
 			if (stopped_.load(std::memory_order_relaxed))
 			{
 				return false;
 			}
-			// A load may have begun and returned after the cheap outer check.
-			// Re-read its asynchronous completion state while load entry is
-			// excluded, before admitting any live DB reads or consuming a revision.
+
+			// A load may have started and finished since the unlocked check above
 			if (load_depth_.load(std::memory_order_relaxed) || !std::invoke(database_ready))
 			{
 				if (was_ready_)
@@ -85,13 +81,15 @@ namespace demonware::runtime
 				was_ready_ = false;
 				return false;
 			}
+
 			if (requested_.load(std::memory_order_relaxed) != revision)
 			{
 				return false;
 			}
-			// Failed/invalid generations stay unavailable until a real transition
-			// or explicit invalidation, rather than retrying a full scan each frame.
+
+			// A failed generation is not rescanned every frame, only after the next transition or invalidation
 			attempted_ = revision;
+
 			try
 			{
 				auto result = std::forward<Provider>(provider)(revision);
@@ -100,13 +98,16 @@ namespace demonware::runtime
 				{
 					return false;
 				}
-				result->generation = revision;
 
-				current_.store(std::make_shared<const loot_catalog::catalog>(std::move(*result)),
-					std::memory_order_release);
+				result->generation = revision;
+				current_.store(std::make_shared<const loot_catalog::catalog>(std::move(*result)), std::memory_order_release);
+
 				return true;
 			}
-			catch (const std::exception&) { return false; }
+			catch (const std::exception&)
+			{
+				return false;
+			}
 		}
 
 	private:
@@ -121,7 +122,8 @@ namespace demonware::runtime
 			{
 				return false;
 			}
-			for (const auto id : {"sd_mp", "sd_mp_rare"})
+
+			for (const auto* id : {"sd_mp", "sd_mp_rare"})
 			{
 				const auto drop = loot_catalog::find_supply_drop(value, id);
 				if (!drop || !loot_compatibility::is_confirmed_mp_supply_drop(*drop))
@@ -129,6 +131,7 @@ namespace demonware::runtime
 					return false;
 				}
 			}
+
 			return true;
 		}
 
@@ -137,6 +140,7 @@ namespace demonware::runtime
 			requested_.fetch_add(1, std::memory_order_release);
 			current_.store({}, std::memory_order_release);
 		}
+
 		std::atomic<std::shared_ptr<const loot_catalog::catalog>> current_{};
 		std::recursive_mutex publication_mutex_{};
 		std::atomic_uint64_t requested_{1};

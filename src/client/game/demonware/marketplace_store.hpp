@@ -47,6 +47,12 @@ namespace demonware::marketplace_store
 		bool operator==(const inventory_record&) const = default;
 	};
 
+	inline bool is_permanent(const inventory_record& item)
+	{
+		return (!item.expire_date_time && !item.expiry_duration) ||
+			(item.expire_date_time == UINT32_MAX && item.expiry_duration == INT64_MAX);
+	}
+
 	// Accepted atomic economy mutation and the exact response returned on replay.
 	// Progress-only events must not enter this permanent, non-evicting ledger.
 	struct committed_economy_transaction

@@ -1,15 +1,7 @@
 #pragma once
 
-#include <array>
 #include <charconv>
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <optional>
 #include <span>
-#include <string>
-#include <string_view>
-#include <vector>
 
 namespace demonware::loot_catalog
 {
@@ -60,8 +52,6 @@ namespace demonware::loot_catalog
 		int table_column_count{};
 	};
 
-
-	// Owned row facts. Native parsing is separate from local selection policy.
 	struct item_definition
 	{
 		loot_item item{};
@@ -82,12 +72,15 @@ namespace demonware::loot_catalog
 
 	struct social_rank_reward
 	{
-		std::uint32_t threshold{}, item_id{}, quantity{};
+		std::uint32_t threshold{};
+		std::uint32_t item_id{};
+		std::uint32_t quantity{};
 	};
 
 	struct cod_point_bundle
 	{
-		std::string id{}, title{};
+		std::string id{};
+		std::string title{};
 		std::uint32_t amount{};
 		std::string image{};
 	};
@@ -100,10 +93,10 @@ namespace demonware::loot_catalog
 		std::vector<cod_point_bundle> cod_point_bundles{};
 		std::vector<supply_drop> supply_drops{};
 		std::vector<item_definition> items{};
-		// Sorted native GUIDs for accessibility overrides, independent of drop pools.
 		std::vector<std::uint32_t> permanent_customization{};
 		table_status source_table{};
 	};
+
 	namespace detail
 	{
 		template <typename T>
@@ -114,8 +107,10 @@ namespace demonware::loot_catalog
 				return false;
 			}
 
-			const auto parsed = std::from_chars(value.data(), value.data() + value.size(), result);
-			return parsed.ec == std::errc{} && parsed.ptr == value.data() + value.size();
+			const auto end = value.data() + value.size();
+			const auto parsed = std::from_chars(value.data(), end, result);
+
+			return parsed.ec == std::errc{} && parsed.ptr == end;
 		}
 
 		inline bool parse_optional_nonnegative(const std::string_view value, int& result)
@@ -142,40 +137,47 @@ namespace demonware::loot_catalog
 		}
 	}
 
-	inline std::optional<supply_drop> parse_supply_drop_row(
-		const std::span<const std::string_view> cells)
+	inline std::optional<supply_drop> parse_supply_drop_row(const std::span<const std::string_view> cells)
 	{
-		if (cells.size() <= 23 || cells[4].empty())
+		constexpr std::size_t type_column = 1;
+		constexpr std::size_t backend_id_column = 4;
+		constexpr std::size_t item_id_column = 5;
+		constexpr std::size_t zm_consumables_column = 11;
+		constexpr std::size_t first_slot_column = 12;
+		constexpr std::size_t slot_columns = 4;
+
+		if (cells.size() <= 23 || cells[backend_id_column].empty())
 		{
 			return std::nullopt;
 		}
 
 		supply_drop drop{};
-		if (!detail::parse_integer(cells[1], drop.type) ||
-			!detail::parse_integer(cells[5], drop.item_id) || !drop.item_id ||
-			!detail::parse_optional_flag(cells[11], drop.contains_zm_consumables))
+		if (!detail::parse_integer(cells[type_column], drop.type) ||
+			!detail::parse_integer(cells[item_id_column], drop.item_id) || !drop.item_id ||
+			!detail::parse_optional_flag(cells[zm_consumables_column], drop.contains_zm_consumables))
 		{
 			return std::nullopt;
 		}
 
-		drop.backend_id.assign(cells[4]);
-		for (std::size_t slot_index = 0; slot_index < drop.slots.size(); ++slot_index)
+		drop.backend_id.assign(cells[backend_id_column]);
+
+		for (std::size_t index = 0; index < drop.slots.size(); ++index)
 		{
-			const auto first_column = 12 + slot_index * 4;
-			auto& slot = drop.slots[slot_index];
-			if (!detail::parse_optional_nonnegative(cells[first_column], slot.rarity) ||
-				!detail::parse_optional_nonnegative(cells[first_column + 1], slot.type) ||
-				!detail::parse_optional_flag(cells[first_column + 3], slot.dupe_protection))
+			const auto column = first_slot_column + index * slot_columns;
+
+			auto& slot = drop.slots[index];
+			if (!detail::parse_optional_nonnegative(cells[column], slot.rarity) ||
+				!detail::parse_optional_nonnegative(cells[column + 1], slot.type) ||
+				!detail::parse_optional_flag(cells[column + 3], slot.dupe_protection))
 			{
 				return std::nullopt;
 			}
 
-			slot.operation.assign(cells[first_column + 2]);
+			slot.operation.assign(cells[column + 2]);
 		}
 
 		return drop;
 	}
-
 
 	std::optional<supply_drop> find_supply_drop(const catalog& source, std::string_view backend_id);
 	std::shared_ptr<const catalog> get_snapshot();
