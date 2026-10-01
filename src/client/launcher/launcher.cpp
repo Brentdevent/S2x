@@ -18,7 +18,7 @@ namespace
 
 launcher::launcher() :
 	launch_options_(load_launch_options()),
-	main_window_("S2x Launcher", 1360, 768)
+	main_window_("S2x", 880, 420)
 {
 	this->create_main_menu();
 }
