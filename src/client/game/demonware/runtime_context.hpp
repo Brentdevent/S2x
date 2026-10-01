@@ -1,9 +1,5 @@
 #pragma once
 
-#include <cstdint>
-#include <memory>
-#include <string>
-
 namespace demonware::runtime_context
 {
 	struct identity
@@ -14,9 +10,8 @@ namespace demonware::runtime_context
 		float loot_rarity_scale{1.0f};
 	};
 
-	// Readers retain one immutable owned generation. A normal client without an
-	// identity must fail closed; zero is never synthesized as a local player ID.
 	std::shared_ptr<const identity> get_snapshot();
+	std::uint64_t get_local_user_id();
 	bool publish(identity value);
 	void clear();
 }

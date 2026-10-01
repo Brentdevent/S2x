@@ -13,8 +13,6 @@
 
 namespace demonware::runtime
 {
-	// Only poll() touches the main-producer cursor. Invalidation/load/shutdown
-	// may originate elsewhere and never invoke the provider or game functions.
 	class loot_catalog_lifecycle
 	{
 	public:

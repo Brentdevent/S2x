@@ -1,8 +1,6 @@
 #pragma once
 
 #include "marketplace_store.hpp"
-#include <rapidjson/document.h>
-#include <string_view>
 
 namespace demonware::reward_json
 {
@@ -13,8 +11,10 @@ namespace demonware::reward_json
 		std::string& transaction, bool exact_transaction_length = true);
 	void add_string(rapidjson::Value& object, const char* name, std::string_view value,
 		rapidjson::Document::AllocatorType& allocator);
-	void add_detailed_inventory(rapidjson::Value& array,
-		const marketplace_store::inventory_record& record,
+	rapidjson::Value inventory_row(const marketplace_store::inventory_record& record,
 		rapidjson::Document::AllocatorType& allocator);
+	void add_detailed_inventory(rapidjson::Value& array, const marketplace_store::inventory_record& record,
+		rapidjson::Document::AllocatorType& allocator);
+	std::string encode(const rapidjson::Value& value);
 	std::uint32_t modification_time();
 }

@@ -4,8 +4,9 @@
 
 namespace zombies_progression
 {
-	// False leaves the local native queue entry unacknowledged for retry.
+	// False leaves the native queue entry unacknowledged so it is retried
 	bool process(const demonware::reward_game_events::event& event, std::uint64_t user);
-	// Main pipeline only; does not change rank, character challenges or native DDL.
+
+	// Main pipeline only
 	bool unlock_quests();
 }

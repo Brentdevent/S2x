@@ -19,8 +19,6 @@ namespace demonware::inventory_cache
 			*completion.result_count < completion.items_per_page;
 	}
 
-	// Capture the result count before entering this function: stock clears its
-	// scratch state while applying inventory and scheduling the next full page.
 	template <typename Original, typename Baseline>
 	auto complete_fetch(const fetch_completion completion, Original&& original, Baseline&& baseline)
 	{

@@ -15,13 +15,14 @@ namespace demonware_loot
 	{
 		constexpr std::ptrdiff_t inventory_fetch_task_result_offset = 0x18;
 		constexpr std::ptrdiff_t inventory_fetch_result_count_offset = 0x38;
+
 		utils::hook::detour inventory_fetch_success_hook;
 
 		bool refresh_supply_drop_inventory_cache(const std::uint32_t controller_index)
 		{
-
 			game::LUI_EnterCriticalSection();
 			const auto leave_critical_section = utils::finally(game::LUI_LeaveCriticalSection);
+
 			auto* const state = *game::hks::lui_lua_state;
 			if (!state || !state->m_apistack.base || !state->m_apistack.top)
 			{
@@ -54,9 +55,7 @@ namespace demonware_loot
 			}
 			catch (const std::exception& error)
 			{
-				console::error(
-					"[DW] Marketplace task 165 could not baseline the stock supply-drop cache: %s\n",
-					error.what());
+				console::error("[DW] Failed to refresh supply drop inventory cache: %s\n", error.what());
 			}
 
 			return false;
@@ -77,11 +76,8 @@ namespace demonware_loot
 				return std::nullopt;
 			}
 
-			// S2 MP 0x27B360 passes task+0x18 to 0xA3DB60; that accessor reads
-			// the returned-record count from result+0x38. Snapshot it before the
-			// original callback clears its global scratch while scheduling another page.
-			return *reinterpret_cast<const std::uint32_t*>(
-				result + inventory_fetch_result_count_offset);
+			// 0x27B360 passes task+0x18 to 0xA3DB60, which reads the record count from result+0x38
+			return *reinterpret_cast<const std::uint32_t*>(result + inventory_fetch_result_count_offset);
 		}
 
 		char handle_inventory_fetch_success_stub(void* task)
@@ -89,18 +85,17 @@ namespace demonware_loot
 			const auto controller_index = *reinterpret_cast<const std::uint32_t*>(0x816A5F4_g);
 			const auto items_per_page = *reinterpret_cast<const std::uint32_t*>(0x816A5F8_g);
 			const auto result_count = read_inventory_fetch_result_count(task);
-			const auto result = demonware::inventory_cache::complete_fetch(
+
+			return demonware::inventory_cache::complete_fetch(
 				{true, items_per_page, result_count},
 				[&]
 				{
-					const auto original_result = inventory_fetch_success_hook.invoke<char>(task);
-					return original_result;
+					return inventory_fetch_success_hook.invoke<char>(task);
 				},
 				[&]
 				{
 					refresh_supply_drop_inventory_cache(controller_index);
 				});
-			return result;
 		}
 	}
 
@@ -113,6 +108,7 @@ namespace demonware_loot
 			{
 				return;
 			}
+
 			inventory_fetch_success_hook.create(0x27B360_g, handle_inventory_fetch_success_stub);
 		}
 	};

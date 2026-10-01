@@ -4,7 +4,7 @@
 
 namespace order_progress
 {
-	// Stock reliable-command dispatch (main thread), for the owning local XUID.
+	// Main thread, for the owning local XUID
 	void receive(const demonware::reward_event_relay::batch& batch);
 	void disconnect();
 }

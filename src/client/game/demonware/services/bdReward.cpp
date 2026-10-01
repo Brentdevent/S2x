@@ -1,22 +1,46 @@
 #include <std_include.hpp>
 #include "../dw_include.hpp"
-#include "game/demonware/achievement_claim.hpp"
 
 #include "component/console/console.hpp"
-#include "component/hidden_challenges.hpp"
 #include "component/demonware/zombies_progression.hpp"
+#include "component/hidden_challenges.hpp"
+
 #include "game/game.hpp"
+#include "game/demonware/achievement_claim.hpp"
 #include "game/demonware/achievement_response.hpp"
+#include "game/demonware/hq_rewards.hpp"
 #include "game/demonware/reward_game_event.hpp"
 #include "game/demonware/reward_json.hpp"
+#include "game/demonware/reward_push.hpp"
 #include "game/demonware/reward_task4.hpp"
 #include "game/demonware/runtime_context.hpp"
-#include "game/demonware/hq_rewards.hpp"
 
 namespace demonware
 {
 	namespace
 	{
+		class empty_struct_result final : public bdTaskResult
+		{
+		public:
+			void serialize(byte_buffer* data) override
+			{
+				char empty{};
+				data->write_struct(&empty, 0);
+			}
+		};
+
+		class reward_event_result final : public bdTaskResult
+		{
+		public:
+			std::string json{};
+
+			void serialize(byte_buffer* data) override
+			{
+				data->write_int32(1);
+				data->write_string(this->json);
+			}
+		};
+
 		bool settle_local_events(service_server* server, const std::vector<reward_game_events::event>& events,
 			const std::uint64_t user)
 		{
@@ -24,65 +48,70 @@ namespace demonware
 			{
 				return true;
 			}
+
 			const auto catalog = loot_catalog::get_snapshot();
+			const auto now = static_cast<std::uint32_t>(time(nullptr));
+
 			for (const auto& event : events)
 			{
-				if (!zombies_progression::process(event, user))
+				std::string push{};
+				if (!zombies_progression::process(event, user) ||
+					!hq_rewards::process(event, user, now, catalog.get(), push))
 				{
 					return false;
 				}
-				std::string push;
-				if (!hq_rewards::process(event, user, static_cast<std::uint32_t>(time(nullptr)), catalog.get(), push))
+
+				if (!push.empty())
 				{
-					return false;
+					send_reward_push(server, BD_REWARD_ACHIEVEMENT_MESSAGE, user, push);
 				}
-				if (push.empty())
+			}
+
+			return true;
+		}
+
+		void submit_hidden_challenge_completions(const reward_game_events::user_event_batch& user,
+			const std::uint64_t local_user_id)
+		{
+			for (const auto& event : user.events)
+			{
+				std::uint32_t group{};
+				std::uint32_t challenge{};
+				if (!hidden_challenges::get_completion(event, group, challenge))
 				{
 					continue;
 				}
-				bdRewardEvent notification;
-				notification.push_type = 0x43;
-				notification.r2 = 1;
-				notification.user_id = user;
-				notification.platform1 = "steam";
-				notification.platform2 = "s2_steam";
-				notification.rewardEventType = 1;
-				notification.r7 = notification.r8 = 1;
-				notification.json_buffer = std::move(push);
-				byte_buffer data;
-				notification.serialize(&data);
-				server->create_message(BD_LOBBY_SERVICE_PUSH_MESSAGE).send(&data, true);
+
+				console::debug("[DW] bdReward: zombies challenge %u/%u for %llu\n", group, challenge, user.user_id);
+
+				if (local_user_id && user.user_id == local_user_id)
+				{
+					hidden_challenges::submit_completion(group, challenge);
+				}
 			}
-			return true;
 		}
 
 		void acknowledge_game_events(service_server* server, const std::uint8_t task)
 		{
-			class empty_result final : public bdTaskResult
-			{
-			public:
-				void serialize(byte_buffer* data) override
-				{
-					char empty{};
-					data->write_struct(&empty, 0);
-				}
-			};
-			// Tasks 11/12 use bdStructBufferTask. Count-framed replies fail SDK
-			// deserialization and requeue already delivered events (error 4).
+			// Struct-framed tasks; a count-framed reply makes the SDK requeue delivered events
 			auto reply = server->create_reply(task);
-			auto result = std::make_unique<empty_result>();
+			auto result = std::make_unique<empty_struct_result>();
 			reply.add(result);
 			reply.send_struct();
 		}
 
-		void submit_hidden_challenge_events(std::vector<reward_game_events::event>& events)
+		bool read_sync_request(byte_buffer* buffer, std::string& json)
 		{
-			for (auto& event : events)
-			{
-				hidden_challenges::submit_reward_game_event(std::move(event));
-			}
-		}
+			std::string context{};
+			std::uint16_t count{};
+			std::int32_t type{};
 
+			return buffer && buffer->read_string(&context, 16) && context == "s2_steam" &&
+				buffer->read_uint16(&count) && count == 1 &&
+				buffer->read_int32(&type) && type == 1 &&
+				buffer->read_string(&json, achievement_response::maximum_request_length) &&
+				buffer->has_only_zero_padding(16);
+		}
 	}
 
 	bdReward::bdReward() : service(139, "bdReward")
@@ -99,23 +128,17 @@ namespace demonware
 
 	void bdReward::incrementTime(service_server* server, byte_buffer* /*buffer*/) const
 	{
-		// TODO:
-		auto reply = server->create_reply(this->task_id());
-		reply.send();
+		server->create_reply(this->task_id()).send();
 	}
 
 	void bdReward::claimRewardRoll(service_server* server, byte_buffer* /*buffer*/) const
 	{
-		// TODO:
-		auto reply = server->create_reply(this->task_id());
-		reply.send();
+		server->create_reply(this->task_id()).send();
 	}
 
 	void bdReward::claimClientAchievements(service_server* server, byte_buffer* /*buffer*/) const
 	{
-		// TODO:
-		auto reply = server->create_reply(this->task_id());
-		reply.send();
+		server->create_reply(this->task_id()).send();
 	}
 
 	void bdReward::reportRewardEvents(service_server* server, byte_buffer* buffer) const
@@ -124,62 +147,45 @@ namespace demonware
 		{
 			return;
 		}
-		reward_task4::execution_context context;
-		context.dedicated = game::environment::is_dedicated(); // Immutable launch configuration.
+
 		const auto identity = runtime_context::get_snapshot();
+
+		reward_task4::execution_context context{};
+		context.dedicated = game::environment::is_dedicated();
 		context.user_id = identity ? identity->user_id : 0;
 		context.loot_rarity_scale = identity ? identity->loot_rarity_scale : 1.0f;
 		context.catalog = loot_catalog::get_snapshot();
 		context.modification_time = reward_json::modification_time();
-		(void)reward_task4::handle(server, buffer, context);
+
+		reward_task4::handle(server, buffer, context);
 	}
 
 	void bdReward::reportRewardGameEventsForUsers(service_server* server, byte_buffer* buffer) const
 	{
 		reward_game_events::report_for_users_request request{};
-		if (reward_game_events::parse_report_for_users_request(buffer, request))
+		if (!reward_game_events::parse_report_for_users_request(buffer, request))
 		{
-			const auto dedicated = game::environment::is_dedicated();
-			const auto identity = runtime_context::get_snapshot();
-			const auto local_user_id = dedicated || !identity ? 0 : identity->user_id;
-			for (const auto& user : request.users)
-			{
-				if (user.account_type != "steam")
-				{
-					continue;
-				}
-
-				if (user.user_id == local_user_id && !settle_local_events(server, user.events, local_user_id))
-				{
-					server->create_reply(this->task_id(), BD_REWARD_EVENTS_TRANSACTION_ERROR).send_struct();
-					return;
-				}
-				for (const auto& event : user.events)
-				{
-					std::uint32_t group{};
-					std::uint32_t challenge{};
-					if (!hidden_challenges::get_completion(event, group, challenge))
-					{
-						continue;
-					}
-
-					console::debug(
-						"[DW] bdReward: task '11' XUID %llu: zombies [3=%u, 4=%u]\n",
-						static_cast<unsigned long long>(user.user_id), group, challenge);
-					if (!dedicated && user.user_id == local_user_id)
-					{
-						hidden_challenges::submit_completion(group, challenge);
-					}
-					// Foreign users are delivered at native queue admission. Task 11
-					// retries may regenerate ClientTx, so must not emit another occurrence.
-				}
-			}
-		}
-		else
-		{
-			console::debug("[DW] bdReward: rejected a malformed task '11' request\n");
+			console::debug("[DW] bdReward: malformed game events for users\n");
 			server->create_reply(this->task_id(), BD_PARAM_PARSE_ERROR).send_struct();
 			return;
+		}
+
+		const auto local_user_id = runtime_context::get_local_user_id();
+
+		for (const auto& user : request.users)
+		{
+			if (user.account_type != "steam")
+			{
+				continue;
+			}
+
+			if (user.user_id == local_user_id && !settle_local_events(server, user.events, local_user_id))
+			{
+				server->create_reply(this->task_id(), BD_REWARD_EVENTS_TRANSACTION_ERROR).send_struct();
+				return;
+			}
+
+			submit_hidden_challenge_completions(user, local_user_id);
 		}
 
 		acknowledge_game_events(server, this->task_id());
@@ -187,53 +193,39 @@ namespace demonware
 
 	void bdReward::reportRewardEventsSync(service_server* server, byte_buffer* buffer) const
 	{
-		std::string context;
-		std::string json;
-		std::uint16_t count{};
-		std::int32_t type{};
-		if (!buffer || !buffer->read_string(&context, 16) || context != "s2_steam" ||
-			!buffer->read_uint16(&count) || count != 1 || !buffer->read_int32(&type) || type != 1 ||
-			!buffer->read_string(&json, achievement_response::maximum_request_length) ||
-			!buffer->has_only_zero_padding(16))
+		std::string json{};
+		if (!read_sync_request(buffer, json))
 		{
 			server->create_reply(this->task_id(), BD_PARAM_PARSE_ERROR).send();
 			return;
 		}
-		achievement_response::user_achievements_request request;
+
+		achievement_response::user_achievements_request request{};
 		std::uint64_t user_id{};
 		if (!achievement_response::parse_get_user_achievements_for_users_request(json, request, user_id))
 		{
 			server->create_reply(this->task_id(), BD_REWARD_EVENTS_DATA_ERROR).send();
 			return;
 		}
-		const auto identity = runtime_context::get_snapshot();
-		// This offline store belongs to the local player. A server must never
-		// project that player's achievements onto another connected account.
-		if (game::environment::is_dedicated() || !identity || identity->user_id != user_id)
+
+		const auto local_user_id = runtime_context::get_local_user_id();
+		if (!local_user_id || local_user_id != user_id)
 		{
 			server->create_reply(this->task_id(), BD_SERVICE_NOT_AVAILABLE).send();
 			return;
 		}
-		const auto response = achievement_response::make_get_user_achievements_for_users_response(
-			request, user_id, achievement_store::get_all());
+
+		const auto response = achievement_response::make_get_user_achievements_for_users_response(request, user_id,
+			achievement_store::get_all());
 		if (!response)
 		{
 			server->create_reply(this->task_id(), BD_REWARD_EVENTS_DATA_ERROR).send();
 			return;
 		}
-		class sync_result final : public bdTaskResult
-		{
-		public:
-			std::string json;
-			void serialize(byte_buffer* data) override
-			{
-				// 0xA3B7C0 reads an inner reward event: type 1 followed by JSON.
-				data->write_int32(1);
-				data->write_string(json);
-			}
-		};
-		auto result = std::make_unique<sync_result>();
+
+		auto result = std::make_unique<reward_event_result>();
 		result->json = *response;
+
 		auto reply = server->create_reply(this->task_id());
 		reply.add(result);
 		reply.send();
@@ -242,22 +234,22 @@ namespace demonware
 	void bdReward::reportRewardGameEvents(service_server* server, byte_buffer* buffer) const
 	{
 		reward_game_events::report_request request{};
-		if (reward_game_events::parse_report_request(buffer, request))
+		if (!reward_game_events::parse_report_request(buffer, request))
 		{
-			const auto identity = runtime_context::get_snapshot();
-			const auto user = game::environment::is_dedicated() || !identity ? 0 : identity->user_id;
-			if (!settle_local_events(server, request.events, user))
-			{
-				server->create_reply(this->task_id(), BD_REWARD_EVENTS_TRANSACTION_ERROR).send_struct();
-				return;
-			}
-			submit_hidden_challenge_events(request.events);
-		}
-		else
-		{
-			console::debug("[DW] bdReward: rejected a malformed task '12' request\n");
+			console::debug("[DW] bdReward: malformed game events\n");
 			server->create_reply(this->task_id(), BD_PARAM_PARSE_ERROR).send_struct();
 			return;
+		}
+
+		if (!settle_local_events(server, request.events, runtime_context::get_local_user_id()))
+		{
+			server->create_reply(this->task_id(), BD_REWARD_EVENTS_TRANSACTION_ERROR).send_struct();
+			return;
+		}
+
+		for (auto& event : request.events)
+		{
+			hidden_challenges::submit_reward_game_event(std::move(event));
 		}
 
 		acknowledge_game_events(server, this->task_id());

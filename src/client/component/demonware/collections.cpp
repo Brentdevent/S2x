@@ -15,6 +15,21 @@ namespace demonware_collections
 	namespace
 	{
 		using namespace demonware;
+
+		constexpr int max_table_rows = 100000;
+		constexpr int max_table_columns = 256;
+		constexpr std::size_t max_cell_length = 256;
+		constexpr std::uint32_t max_collection_items = 15;
+
+		constexpr int collections_min_columns = 3;
+		constexpr int collections_items_column = 3;
+
+		constexpr int stats_key_column = 18;
+		constexpr int stats_inventory_first_column = 35;
+		constexpr int stats_inventory_last_column = 38;
+		constexpr int stats_collection_column = 46;
+		constexpr int stats_reward_column = 47;
+
 		struct item_definition
 		{
 			std::uint32_t collection_id{};
@@ -26,7 +41,9 @@ namespace demonware_collections
 		{
 			std::vector<collection_catalog::collection> collections;
 			std::unordered_map<std::uint32_t, item_definition> items;
-			bool have_collections{}, have_stats{}, invalid{};
+			bool have_collections{};
+			bool have_stats{};
+			bool invalid{};
 		};
 
 		std::string_view cell(const game::StringTable* table, const int row, const int column)
@@ -36,11 +53,13 @@ namespace demonware_collections
 			{
 				throw std::runtime_error("Missing collection table cell");
 			}
-			const auto length = strnlen_s(text, 257);
-			if (length > 256)
+
+			const auto length = strnlen_s(text, max_cell_length + 1);
+			if (length > max_cell_length)
 			{
 				throw std::runtime_error("Oversized collection table cell");
 			}
+
 			return {text, length};
 		}
 
@@ -50,12 +69,78 @@ namespace demonware_collections
 			{
 				text.remove_prefix(2);
 			}
+
 			if (text.empty())
 			{
 				return false;
 			}
-			const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value, base);
-			return parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size();
+
+			const auto end = text.data() + text.size();
+			const auto parsed = std::from_chars(text.data(), end, value, base);
+			return parsed.ec == std::errc{} && parsed.ptr == end;
+		}
+
+		bool is_valid_table(const game::StringTable* table, const int min_columns_exclusive)
+		{
+			return table->values && table->rowCount > 0 && table->rowCount <= max_table_rows &&
+				table->columnCount <= max_table_columns && table->columnCount > min_columns_exclusive;
+		}
+
+		std::optional<collection_catalog::collection> read_collection_row(const game::StringTable* table, const int row)
+		{
+			collection_catalog::collection entry;
+			if (!number(cell(table, row, 0), entry.id) || !entry.id)
+			{
+				return std::nullopt;
+			}
+
+			std::uint32_t count{};
+			if (!number(cell(table, row, 1), entry.reward, 16) || !entry.reward)
+			{
+				return std::nullopt;
+			}
+
+			if (!number(cell(table, row, 2), count) || !count || count > max_collection_items ||
+				count > static_cast<std::uint32_t>(table->columnCount - collections_min_columns))
+			{
+				return std::nullopt;
+			}
+
+			for (std::uint32_t i = 0; i < count; ++i)
+			{
+				std::uint32_t id{};
+				if (!number(cell(table, row, collections_items_column + static_cast<int>(i)), id, 16) || !id ||
+					id == entry.reward || std::ranges::find(entry.items, id) != entry.items.end())
+				{
+					return std::nullopt;
+				}
+
+				entry.items.push_back(id);
+			}
+
+			return entry;
+		}
+
+		void read_item_row(const game::StringTable* table, const int row, table_copy& copy)
+		{
+			std::uint32_t id{};
+			const auto key = cell(table, row, stats_key_column);
+			if (!number(key, id, 16) || !loot_compatibility::matches_stock_item_guid_key(key, id))
+			{
+				return;
+			}
+
+			item_definition item;
+			number(cell(table, row, stats_collection_column), item.collection_id);
+			item.reward = cell(table, row, stats_reward_column) == "1";
+
+			// Native 0xD0980 / 0x27A310: these items require inventory
+			for (int column = stats_inventory_first_column; column <= stats_inventory_last_column; ++column)
+			{
+				item.inventory |= cell(table, row, column) == "1";
+			}
+
+			copy.items[id] = item;
 		}
 
 		void copy_table(const game::XAssetHeader header, void* context)
@@ -66,89 +151,79 @@ namespace demonware_collections
 			{
 				return;
 			}
-			const auto collections = !_stricmp(table->name, "mp/itemsCollections.csv");
-			const auto stats = !_stricmp(table->name, "mp/statstable.csv");
-			if (!collections && !stats)
+
+			const auto is_collections = !_stricmp(table->name, "mp/itemsCollections.csv");
+			const auto is_stats = !_stricmp(table->name, "mp/statstable.csv");
+			if (!is_collections && !is_stats)
 			{
 				return;
 			}
-			// DB_EnumXAssets_FastFile (0xA0B00) holds its reader lock throughout
-			// this callback. Copy scalars only; never call back into the asset DB.
+
+			auto& have_table = is_collections ? copy.have_collections : copy.have_stats;
+			const auto min_columns_exclusive = is_collections ? 2 : 47;
+
+			// DB_EnumXAssets_FastFile (0xA0B00) holds its reader lock during this callback
+			// Copy scalars only, never call back into the asset DB or unwind past the lock
 			try
 			{
-				if (!table->values || table->rowCount <= 0 || table->rowCount > 100000 ||
-					table->columnCount > 256 || table->columnCount <= (collections ? 2 : 47) ||
-					(collections ? copy.have_collections : copy.have_stats))
+				if (!is_valid_table(table, min_columns_exclusive) || have_table)
 				{
 					throw std::runtime_error("Invalid collection table");
 				}
-				(collections ? copy.have_collections : copy.have_stats) = true;
+
+				have_table = true;
+
 				for (int row = 0; row < table->rowCount; ++row)
 				{
-					if (collections)
+					if (is_collections)
 					{
-						collection_catalog::collection entry;
-						std::uint32_t count{};
-						if (!number(cell(table, row, 0), entry.id) || !entry.id)
+						auto entry = read_collection_row(table, row);
+						if (entry)
 						{
-							continue;
-						}
-						if (!number(cell(table, row, 1), entry.reward, 16) || !entry.reward ||
-							!number(cell(table, row, 2), count) || !count || count > 15 ||
-							count > static_cast<std::uint32_t>(table->columnCount - 3))
-						{
-							continue;
-						}
-						for (std::uint32_t i = 0; i < count; ++i)
-						{
-							std::uint32_t id{};
-							if (!number(cell(table, row, 3 + static_cast<int>(i)), id, 16) || !id ||
-								id == entry.reward || std::ranges::find(entry.items, id) != entry.items.end())
-							{
-								break;
-							}
-							entry.items.push_back(id);
-						}
-						if (entry.items.size() == count)
-						{
-							copy.collections.push_back(std::move(entry));
+							copy.collections.push_back(std::move(*entry));
 						}
 					}
 					else
 					{
-						std::uint32_t id{};
-						const auto key = cell(table, row, 18);
-						if (!number(key, id, 16) || !loot_compatibility::matches_stock_item_guid_key(key, id))
-						{
-							continue;
-						}
-						item_definition item;
-						number(cell(table, row, 46), item.collection_id);
-						item.reward = cell(table, row, 47) == "1";
-						// Native 0xD0980 / 0x27A310: these items require inventory.
-						for (int column = 35; column <= 38; ++column)
-						{
-							item.inventory |= cell(table, row, column) == "1";
-						}
-						copy.items[id] = item; // Match the stock reverse GUID lookup.
+						read_item_row(table, row, copy);
 					}
 				}
 			}
 			catch (const std::exception&)
 			{
 				copy.invalid = true;
-			} // Do not unwind past the engine lock.
+			}
+		}
+
+		bool is_collection_reward(const table_copy& copy, const collection_catalog::collection& entry)
+		{
+			const auto reward = copy.items.find(entry.reward);
+			return reward != copy.items.end() && reward->second.inventory &&
+				reward->second.reward && reward->second.collection_id == entry.id;
+		}
+
+		bool are_collection_members(const table_copy& copy, const collection_catalog::collection& entry)
+		{
+			return std::ranges::all_of(entry.items, [&](const auto id)
+			{
+				const auto found = copy.items.find(id);
+				return found != copy.items.end() && found->second.inventory &&
+					!found->second.reward && found->second.collection_id == entry.id;
+			});
 		}
 
 		void refresh()
 		{
 			static std::shared_ptr<const loot_catalog::catalog> attempted;
+
 			const auto source = loot_catalog::get_snapshot();
 			if (!source || source == attempted)
 			{
 				return;
 			}
+
 			attempted = source;
+
 			table_copy copy;
 			game::DB_EnumXAssets_FastFile(game::ASSET_TYPE_STRINGTABLE, copy_table, &copy, false);
 			if (copy.invalid || !copy.have_collections || !copy.have_stats ||
@@ -156,8 +231,10 @@ namespace demonware_collections
 			{
 				return;
 			}
+
 			collection_catalog::catalog result;
 			result.source = source;
+
 			std::unordered_set<std::uint32_t> ids;
 			for (auto& entry : copy.collections)
 			{
@@ -165,30 +242,22 @@ namespace demonware_collections
 				{
 					return;
 				}
-				const auto reward = copy.items.find(entry.reward);
-				if (reward == copy.items.end() || !reward->second.inventory ||
-					!reward->second.reward || reward->second.collection_id != entry.id)
+
+				if (!is_collection_reward(copy, entry) || !are_collection_members(copy, entry))
 				{
 					continue;
 				}
-				const auto valid = std::ranges::all_of(entry.items, [&](const auto id)
-				{
-					const auto found = copy.items.find(id);
-					return found != copy.items.end() && found->second.inventory &&
-						!found->second.reward && found->second.collection_id == entry.id;
-				});
-				if (!valid)
-				{
-					continue;
-				}
+
 				entry.rule = collection_catalog::rule_id(entry.id);
 				result.purchasable_items.insert(entry.items.begin(), entry.items.end());
 				result.collections.push_back(std::move(entry));
 			}
+
 #ifdef DEBUG
 			console::debug("[DW] collection catalog: collections=%zu purchasableItems=%zu\n",
 				result.collections.size(), result.purchasable_items.size());
 #endif
+
 			collection_catalog::publish(std::move(result));
 		}
 	}

@@ -1,19 +1,21 @@
 #include <std_include.hpp>
 #include "reward_json.hpp"
 
-#include <unordered_set>
-
 namespace demonware::reward_json
 {
-	bool bounded_ascii(const std::string_view value, const std::size_t maximum,
-		const bool allow_space)
+	bool bounded_ascii(const std::string_view value, const std::size_t maximum, const bool allow_space)
 	{
-		return !value.empty() && value.size() <= maximum &&
-			std::ranges::all_of(value, [allow_space](const char c)
-			{
-				const auto byte = static_cast<unsigned char>(c);
-				return byte >= (allow_space ? 0x20 : 0x21) && byte <= 0x7E;
-			});
+		if (value.empty() || value.size() > maximum)
+		{
+			return false;
+		}
+
+		const auto minimum = static_cast<unsigned char>(allow_space ? 0x20 : 0x21);
+		return std::ranges::all_of(value, [minimum](const char c)
+		{
+			const auto byte = static_cast<unsigned char>(c);
+			return byte >= minimum && byte <= 0x7E;
+		});
 	}
 
 	bool client_tx(const rapidjson::Value& value, std::string& result, const bool exact_length)
@@ -22,11 +24,13 @@ namespace demonware::reward_json
 		{
 			return false;
 		}
+
 		const std::string_view text{value.GetString(), value.GetStringLength()};
 		if (!bounded_ascii(text, 24) || (exact_length && text.size() != 24))
 		{
 			return false;
 		}
+
 		result.assign(text);
 		return true;
 	}
@@ -37,7 +41,8 @@ namespace demonware::reward_json
 		{
 			return false;
 		}
-		std::unordered_set<std::string_view> names;
+
+		std::unordered_set<std::string_view> names{};
 		for (auto member = object.MemberBegin(); member != object.MemberEnd(); ++member)
 		{
 			if (!names.emplace(member->name.GetString(), member->name.GetStringLength()).second)
@@ -45,59 +50,80 @@ namespace demonware::reward_json
 				return false;
 			}
 		}
+
 		return true;
 	}
 
-	bool common_fields(const rapidjson::Value& object, const std::string_view action,
-		std::string& transaction, const bool exact_transaction_length)
+	bool common_fields(const rapidjson::Value& object, const std::string_view action, std::string& transaction,
+		const bool exact_transaction_length)
 	{
-		return unique_members(object) && object.HasMember("Version") &&
-			object["Version"].IsInt() && object["Version"].GetInt() == 0 &&
-			object.HasMember("Action") && object["Action"].IsString() &&
-			std::string_view{object["Action"].GetString(), object["Action"].GetStringLength()} == action &&
-			object.HasMember("ClientTx") &&
-			client_tx(object["ClientTx"], transaction, exact_transaction_length);
+		if (!unique_members(object))
+		{
+			return false;
+		}
+
+		const auto version = object.FindMember("Version");
+		const auto name = object.FindMember("Action");
+		const auto client_transaction = object.FindMember("ClientTx");
+		if (version == object.MemberEnd() || !version->value.IsInt() || version->value.GetInt() != 0 ||
+			name == object.MemberEnd() || !name->value.IsString() ||
+			client_transaction == object.MemberEnd())
+		{
+			return false;
+		}
+
+		return std::string_view{name->value.GetString(), name->value.GetStringLength()} == action &&
+			client_tx(client_transaction->value, transaction, exact_transaction_length);
 	}
 
-	void add_string(rapidjson::Value& object, const char* name,
-		const std::string_view value, rapidjson::Document::AllocatorType& allocator)
-	{
-		object.AddMember(rapidjson::Value{name, allocator},
-			rapidjson::Value{value.data(), static_cast<rapidjson::SizeType>(value.size()), allocator},
-			allocator);
-	}
-
-	void add_detailed_inventory(rapidjson::Value& array,
-		const marketplace_store::inventory_record& record,
+	void add_string(rapidjson::Value& object, const char* name, const std::string_view value,
 		rapidjson::Document::AllocatorType& allocator)
 	{
-		rapidjson::Value item{rapidjson::kObjectType};
-		item.AddMember("item_id", record.item_id, allocator);
-		item.AddMember("collision_field", record.collision_field, allocator);
-		if (record.expiry_duration == 0)
+		object.AddMember(rapidjson::Value{name, allocator},
+			rapidjson::Value{value.data(), static_cast<rapidjson::SizeType>(value.size()), allocator}, allocator);
+	}
+
+	rapidjson::Value inventory_row(const marketplace_store::inventory_record& record,
+		rapidjson::Document::AllocatorType& allocator)
+	{
+		rapidjson::Value expiry{rapidjson::kNullType};
+		if (record.expiry_duration)
 		{
-			item.AddMember("expiry_duration", rapidjson::Value{rapidjson::kNullType}, allocator);
-		}
-		else
-		{
-			item.AddMember("expiry_duration", record.expiry_duration, allocator);
+			expiry.SetUint64(record.expiry_duration);
 		}
 
-		item.AddMember("item_quantity", record.quantity, allocator);
-		item.AddMember("mod_date_time", record.mod_date_time, allocator);
-		array.PushBack(item, allocator);
+		rapidjson::Value row{rapidjson::kObjectType};
+		row.AddMember("item_id", record.item_id, allocator);
+		row.AddMember("collision_field", record.collision_field, allocator);
+		row.AddMember("expiry_duration", expiry, allocator);
+		row.AddMember("item_quantity", record.quantity, allocator);
+		row.AddMember("mod_date_time", record.mod_date_time, allocator);
+		return row;
+	}
+
+	void add_detailed_inventory(rapidjson::Value& array, const marketplace_store::inventory_record& record,
+		rapidjson::Document::AllocatorType& allocator)
+	{
+		array.PushBack(inventory_row(record, allocator), allocator);
+	}
+
+	std::string encode(const rapidjson::Value& value)
+	{
+		rapidjson::StringBuffer buffer{};
+		rapidjson::Writer<rapidjson::StringBuffer> writer{buffer};
+		value.Accept(writer);
+
+		return {buffer.GetString(), buffer.GetSize()};
 	}
 
 	std::uint32_t modification_time()
 	{
-		const auto current = time(nullptr);
-		if (current <= 0)
+		const auto now = time(nullptr);
+		if (now <= 0)
 		{
 			return 0;
 		}
 
-		return static_cast<std::uint32_t>(std::min<std::uint64_t>(
-			static_cast<std::uint64_t>(current), std::numeric_limits<std::uint32_t>::max()));
+		return static_cast<std::uint32_t>(std::min<std::uint64_t>(now, std::numeric_limits<std::uint32_t>::max()));
 	}
-
 }

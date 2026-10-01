@@ -2,6 +2,6 @@
 
 namespace economy
 {
-	// Safe from service threads; the native paginated fetch runs on main.
+	// Safe from service threads, the native fetch runs on main
 	void request_inventory_refresh();
 }
