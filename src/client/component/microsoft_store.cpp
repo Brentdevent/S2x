@@ -6,9 +6,14 @@
 #include "console/console.hpp"
 
 #include "steam/steam.hpp"
+#include "resource.hpp"
 
 #include <utils/cryptography.hpp>
 #include <utils/hook.hpp>
+#include <utils/io.hpp>
+#include <utils/nt.hpp>
+
+#include <zlib.h>
 
 namespace microsoft_store
 {
@@ -29,9 +34,153 @@ namespace microsoft_store
 		static_assert(offsetof(xstore_game_license, is_active) == 0x12);
 		static_assert(offsetof(xstore_game_license, is_trial) == 0x15);
 
+		utils::hook::detour playlist_checksum_hook;
+		utils::hook::detour content_reset_hook;
+		std::uint32_t steam_playlist_checksum{};
+		std::uint32_t steam_playlist_version{};
+
 		const char* get_platform_stub()
 		{
 			return "steam";
+		}
+
+		std::uint32_t get_playlist_checksum_stub()
+		{
+			const auto checksum = playlist_checksum_hook.invoke<std::uint32_t>();
+			if (checksum == 0x1337 || checksum == 0x2002)
+			{
+				return checksum;
+			}
+
+			return steam_playlist_checksum;
+		}
+
+		std::uint32_t get_playlist_version_stub()
+		{
+			const auto version = *reinterpret_cast<std::uint32_t*>(0x14BEFB074_ms);
+			return version && steam_playlist_version ? steam_playlist_version : version;
+		}
+
+		std::uint32_t parse_playlist_version(const std::string& playlists)
+		{
+			if (playlists.size() < 4)
+			{
+				return 0;
+			}
+
+			const auto offset = *reinterpret_cast<const std::uint16_t*>(playlists.data() + 2);
+			if (offset >= playlists.size())
+			{
+				return 0;
+			}
+
+			char header[32]{};
+			z_stream stream{};
+			if (inflateInit(&stream) != Z_OK)
+			{
+				return 0;
+			}
+
+			stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(playlists.data() + offset));
+			stream.avail_in = static_cast<uInt>(playlists.size() - offset);
+			stream.next_out = reinterpret_cast<Bytef*>(header);
+			stream.avail_out = sizeof(header) - 1;
+			inflate(&stream, Z_SYNC_FLUSH);
+			inflateEnd(&stream);
+
+			std::uint32_t version{};
+			if (sscanf_s(header, "version %u", &version) != 1)
+			{
+				return 0;
+			}
+
+			return version;
+		}
+
+		void patch_steam_netcode_version()
+		{
+			// Use the TU26 build bits in both netcode version builders
+			utils::hook::set<std::uint32_t>(0x1406EFAED_ms, 0x344001E);
+			utils::hook::set<std::uint32_t>(0x1406EFB03_ms, 0x344001E);
+
+			utils::hook::set<std::uint32_t>(0x1406EFB36_ms, 0xFFFFFF1E);
+			utils::hook::set<std::uint8_t>(0x1406EFB4C_ms, 0x1E);
+			utils::hook::set<std::uint32_t>(0x1406EFB9F_ms, 0x3400000);
+
+			// Report the checksum of the TU26 playlists the Steam clients use
+			const auto playlists = utils::nt::load_resource(DW_PLAYLISTS);
+			steam_playlist_checksum = static_cast<std::uint32_t>(crc32(0,
+				reinterpret_cast<const Bytef*>(playlists.data()), static_cast<uInt>(playlists.size())));
+			playlist_checksum_hook.create(0x1405DAB50_ms, get_playlist_checksum_stub);
+
+			// Report the TU26 playlist version so hosts don't request a playlist download
+			steam_playlist_version = parse_playlist_version(playlists);
+			utils::hook::jump(0x1405E0D70_ms, get_playlist_version_stub);
+		}
+
+		void write_member_join_player_data_stub(void* party, void* msg, void* player_data)
+		{
+			utils::hook::invoke<void>(0x140411270_ms, party, msg, player_data);
+			utils::hook::invoke<void>(0x1400BCD50_ms, msg, 0);
+		}
+
+		void read_member_join_player_data_stub(void* party, void* msg, void* player_data, const std::uint64_t xuid)
+		{
+			utils::hook::invoke<void>(0x14040EC20_ms, party, msg, player_data, xuid);
+
+			const auto ticket_size = utils::hook::invoke<int>(0x1400BC1C0_ms, msg);
+			if (ticket_size > 0)
+			{
+				std::array<std::uint8_t, 0x400> ticket{};
+				utils::hook::invoke<void>(0x1400BBB70_ms, msg, ticket_size, ticket.data(),
+					static_cast<int>(ticket.size()));
+			}
+		}
+
+		void write_party_state_session_stub(void* msg, const void* data, const int size)
+		{
+			utils::hook::invoke<void>(0x1400BCAB0_ms, msg, data, size);
+
+			constexpr std::uint64_t steam_lobby_id{};
+			utils::hook::invoke<void>(0x1400BCAB0_ms, msg, &steam_lobby_id, static_cast<int>(sizeof(steam_lobby_id)));
+		}
+
+		void read_party_state_session_stub(void* msg, const int size, void* data, const int max_size)
+		{
+			utils::hook::invoke<void>(0x1400BBB70_ms, msg, size, data, max_size);
+
+			std::uint64_t steam_lobby_id{};
+			utils::hook::invoke<void>(0x1400BBB70_ms, msg, static_cast<int>(sizeof(steam_lobby_id)), &steam_lobby_id,
+				static_cast<int>(sizeof(steam_lobby_id)));
+		}
+
+		void register_steam_content_packs()
+		{
+			void* table{};
+			utils::hook::invoke<void>(0x1406EEB10_ms, "mp/ingamestore/s2_dlc_list.csv", &table);
+			if (!table)
+			{
+				return;
+			}
+
+			const auto rows = std::min(utils::hook::invoke<int>(0x1406EEB90_ms, table), 0x100);
+			for (auto row = 0; row < rows; ++row)
+			{
+				const auto* app_id = utils::hook::invoke<const char*>(0x1406EEB50_ms, table, row, 13);
+				if (!app_id || !*app_id)
+				{
+					continue;
+				}
+
+				const auto pack_id = std::atoi(utils::hook::invoke<const char*>(0x1406EEB50_ms, table, row, 0));
+				utils::hook::invoke<void>(0x1406F1450_ms, 0, pack_id, nullptr, 0, 0);
+			}
+		}
+
+		void content_reset_stub()
+		{
+			content_reset_hook.invoke<void>();
+			register_steam_content_packs();
 		}
 
 		HMODULE get_game_module(LPCSTR)
@@ -50,6 +199,20 @@ namespace microsoft_store
 			license->is_active = true;
 			license->is_trial = false;
 			return S_OK;
+		}
+
+		void report_fatal_error_stub(EXCEPTION_POINTERS*, const char* message, const bool terminate)
+		{
+			const std::string error = message ? message : "";
+			const auto stack = callstack::capture();
+
+			console::error("[Store] Fatal error: %s\n%s", error.data(), stack.data());
+			utils::io::write_file("minidumps/s2x-fatal-error.txt", error + "\r\n\r\nCall stack:\r\n" + stack);
+
+			if (terminate)
+			{
+				TerminateProcess(GetCurrentProcess(), 1);
+			}
 		}
 
 		void bd_log_stub(const char* status, const std::uint32_t error_code, const std::uint32_t transport_code,
@@ -171,6 +334,7 @@ namespace microsoft_store
 				return;
 			}
 
+			// Resolve the GDK host module lookups to the loaded game image
 			for (const auto address : {0x140714EA8_ms, 0x140714F3E_ms})
 			{
 				utils::hook::nop(address, 6);
@@ -178,16 +342,40 @@ namespace microsoft_store
 			}
 
 			utils::hook::call(0x14017D362_ms, query_game_license_result_stub);
+
+			// Treat every content pack as owned
 			utils::hook::set<std::uint32_t>(0x1406F19D0_ms, 0xC301B0);
+
 			utils::hook::call(0x140A81FCB_ms, bd_log_stub);
+			utils::hook::jump(0x1406BCFA0_ms, report_fatal_error_stub);
+
+			// Authenticate with Demonware through the Steam ticket flow
 			auth::patch();
 
+			// Identify as the Steam platform and title
 			utils::hook::jump(0x1401B0700_ms, get_platform_stub);
 			utils::hook::set<std::uint32_t>(0x1401B0751_ms, 5597);
 			utils::hook::copy_string(0x140B55250_ms, "s2_steam");
 			utils::hook::copy_string(0x140BBAD10_ms, "bhs_s2_steam");
+
+			// Skip the per-controller Store content pack enumeration
 			utils::hook::set(0x14022C026_ms, std::array<std::uint8_t, 5>{0x31, 0xC0, 0x90, 0x90, 0x90});
+
+			// Skip the COM security and WMI queries that stall startup
 			utils::hook::set(0x140AD893F_ms, std::array<std::uint8_t, 6>{0xE9, 0xCD, 0x01, 0x00, 0x00, 0x90});
+
+			patch_steam_netcode_version(); // matches TU26 netcode Steam latest does
+
+			// register the Steam DLC packs so DLC playlists and maps are allowed
+			content_reset_hook.create(0x1406F1790_ms, content_reset_stub);
+
+			// TU26 appends a Steam auth ticket to pa_memberjoin player data
+			utils::hook::call(0x1404213D2_ms, write_member_join_player_data_stub);
+			utils::hook::call(0x14041299A_ms, read_member_join_player_data_stub);
+
+			// ^ appends a Steam lobby id as well to the partystate session data
+			utils::hook::call(0x14041FBED_ms, write_party_state_session_stub);
+			utils::hook::call(0x14040351B_ms, read_party_state_session_stub);
 		}
 	};
 }
