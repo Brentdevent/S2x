@@ -3,6 +3,7 @@
 #include "loot_service.hpp"
 #include "loot_catalog.hpp"
 #include "loot_store.hpp"
+#include "achievement_store.hpp"
 
 #include "component/console/console.hpp"
 
@@ -16,6 +17,11 @@ namespace demonware::loot_service
 		constexpr std::size_t supply_drop_item_count = 3;
 		constexpr std::uint8_t currency_cod_points = 2;
 		constexpr std::uint32_t infinite_cod_points_balance = 999999;
+		constexpr std::uint8_t currency_armory_credits = 6;
+		constexpr std::uint32_t payroll_amount = 200;
+		constexpr std::uint64_t payroll_cooldown = 4 * 60 * 60;
+		constexpr auto payroll_achievement = "payroll_officer";
+		constexpr auto payroll_achievement_kind = 5;
 
 		std::mutex settings_mutex{};
 		settings current_settings{};
@@ -98,16 +104,37 @@ namespace demonware::loot_service
 				return serialize(make_response(action, client_transaction, false));
 			}
 
+			std::vector<std::uint32_t> candidates{drop->guid};
+			for (const std::string_view suffix : {"_testA", "_testB"})
+			{
+				if (name.ends_with(suffix))
+				{
+					if (const auto base = loot_catalog::find_drop_guid(name.substr(0, name.size() - suffix.size())))
+					{
+						candidates.push_back(*base);
+					}
+				}
+			}
+
 			std::map<std::uint32_t, std::uint32_t> changes{};
 			const auto saved = loot_store::mutate([&](loot_store::state& state)
 			{
-				const auto owned = state.items.find(drop->guid);
+				auto owned = state.items.end();
+				for (const auto guid : candidates)
+				{
+					owned = state.items.find(guid);
+					if (owned != state.items.end() && owned->second)
+					{
+						break;
+					}
+				}
+
 				if (owned == state.items.end() || !owned->second)
 				{
 					return false;
 				}
 
-				changes[drop->guid] = --owned->second;
+				changes[owned->first] = --owned->second;
 				if (!owned->second)
 				{
 					state.items.erase(owned);
@@ -123,6 +150,8 @@ namespace demonware::loot_service
 
 			if (!saved)
 			{
+				console::demonware("[DW] loot: supply drop '%.*s' not owned\n",
+					static_cast<int>(name.size()), name.data());
 				return serialize(make_response(action, client_transaction, false));
 			}
 
@@ -268,6 +297,75 @@ namespace demonware::loot_service
 
 		console::demonware("[DW] loot: purchased sku %u x%u (balance %u)\n", sku_id, quantity, result.balance);
 		return result;
+	}
+
+	std::optional<std::string> collect_payroll()
+	{
+		const auto now = static_cast<std::uint64_t>(time(nullptr));
+		achievement_record completed{};
+		const auto result = achievement_store::mutate(payroll_achievement, [&](achievement_record& record)
+		{
+			if (record.completion_timestamp && now < record.completion_timestamp + payroll_cooldown)
+			{
+				return false;
+			}
+
+			record.kind = payroll_achievement_kind;
+			record.progress = 1;
+			record.progress_target = 1;
+			record.fulfilled_times = record.completion_timestamp ? record.fulfilled_times + 1 : 1;
+			record.completion_timestamp = now;
+			record.status = achievement_status::finished;
+			completed = record;
+			return true;
+		});
+
+		if (result != achievement_store::mutation_result::updated)
+		{
+			console::demonware("[DW] loot: payroll not available\n");
+			return std::nullopt;
+		}
+
+		std::uint32_t balance_before{};
+		loot_store::mutate([&](loot_store::state& state)
+		{
+			auto& balance = state.currencies[currency_armory_credits];
+			balance_before = balance;
+			balance = add_capped(balance, payroll_amount);
+			return true;
+		});
+
+		rapidjson::Document response{};
+		response.SetObject();
+		auto& allocator = response.GetAllocator();
+		response.AddMember("kind", completed.kind, allocator);
+		response.AddMember("name", rapidjson::StringRef(payroll_achievement), allocator);
+		response.AddMember("requiresClaim", false, allocator);
+		response.AddMember("progress", completed.progress, allocator);
+		response.AddMember("progressTarget", completed.progress_target, allocator);
+		response.AddMember("fulfilledTimes", completed.fulfilled_times, allocator);
+		response.AddMember("completionTimestamp", completed.completion_timestamp, allocator);
+		response.AddMember("status", rapidjson::StringRef(get_achievement_status_name(completed.status)), allocator);
+		response.AddMember("reason", "completed", allocator);
+		response.AddMember("type", "ACHIEVEMENT", allocator);
+
+		rapidjson::Value currency{rapidjson::kObjectType};
+		currency.AddMember("currency_id", currency_armory_credits, allocator);
+		currency.AddMember("balance_delta", payroll_amount, allocator);
+		currency.AddMember("balance_before", balance_before, allocator);
+		rapidjson::Value currencies{rapidjson::kArrayType};
+		currencies.PushBack(currency, allocator);
+		rapidjson::Value inventory{rapidjson::kObjectType};
+		inventory.AddMember("currencies", currencies, allocator);
+		rapidjson::Value trigger{rapidjson::kObjectType};
+		trigger.AddMember("type", "GRANT_CURRENCY", allocator);
+		trigger.AddMember("inventory", inventory, allocator);
+		rapidjson::Value triggers{rapidjson::kArrayType};
+		triggers.PushBack(trigger, allocator);
+		response.AddMember("triggers", triggers, allocator);
+
+		console::demonware("[DW] loot: payroll granted %u Armory Credits\n", payroll_amount);
+		return serialize(response);
 	}
 
 	const std::vector<sku>& get_skus()

@@ -46,12 +46,13 @@ namespace demonware
 		}
 
 		void send_reward_response(service_server* server, const std::uint64_t user_id,
-			const std::string& context, const std::string& json)
+			const std::string& context, const std::string& json,
+			const std::uint32_t type = BD_REWARD_EVENT_MESSAGE)
 		{
 			// The native lobby push handler (0xA35FD0) dispatches this to
 			// AE_ProcessResponse. The task acknowledgement alone cannot do that.
 			byte_buffer message{};
-			message.write_uint32(BD_REWARD_EVENT_MESSAGE);
+			message.write_uint32(type);
 			message.write_ubyte(1); // Protocol version.
 			message.write_uint64(user_id);
 			message.write_string("steam");
@@ -61,6 +62,29 @@ namespace demonware
 			message.write_int32(1); // bdJSONData representation.
 			message.write_string(json);
 			server->create_message(BD_LOBBY_SERVICE_PUSH_MESSAGE).send(&message, true);
+		}
+
+		void handle_local_game_events(service_server* server,
+			const std::vector<reward_game_events::event>& events)
+		{
+			if (game::environment::is_dedicated())
+			{
+				return;
+			}
+
+			for (const auto& event : events)
+			{
+				if (event.name != "picked_up_payroll")
+				{
+					continue;
+				}
+
+				if (const auto response = loot_service::collect_payroll())
+				{
+					send_reward_response(server, steam::SteamUser()->GetSteamID().bits, {}, *response,
+						BD_REWARD_ACHIEVEMENT_MESSAGE);
+				}
+			}
 		}
 
 		void submit_hidden_challenge_events(std::vector<reward_game_events::event>& events)
@@ -173,6 +197,11 @@ namespace demonware
 					continue;
 				}
 
+				if (!dedicated && user.user_id == local_user_id)
+				{
+					handle_local_game_events(server, user.events);
+				}
+
 				for (const auto& event : user.events)
 				{
 					std::uint32_t group{};
@@ -217,6 +246,7 @@ namespace demonware
 		std::vector<reward_game_events::event> events{};
 		if (reward_game_events::parse_report_request(buffer, events))
 		{
+			handle_local_game_events(server, events);
 			submit_hidden_challenge_events(events);
 		}
 		else

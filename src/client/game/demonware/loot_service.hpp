@@ -34,6 +34,7 @@ namespace demonware::loot_service
 	};
 
 	std::optional<purchase_result> purchase(std::uint32_t sku_id, std::uint32_t quantity);
+	std::optional<std::string> collect_payroll();
 
 	std::optional<std::string> handle_action(std::string_view action, std::string_view client_transaction,
 		const rapidjson::Value& request);
