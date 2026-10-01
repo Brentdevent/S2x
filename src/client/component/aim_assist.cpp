@@ -29,8 +29,7 @@ namespace aim_assist
 				return;
 			}
 
-			// Stock dvar 387 already gates slowdown and lock-on in Multiplayer.
-			// Enable it by default and replicate the server's value to clients.
+			// enable dvar 387 & set replicated flags
 			utils::hook::call(0x5DE6EC_g, register_allow_aim_assist_stub);
 		}
 	};

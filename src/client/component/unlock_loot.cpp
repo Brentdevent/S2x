@@ -1,5 +1,6 @@
 #include <std_include.hpp>
 #include "loader/component_loader.hpp"
+#include "unlock_loot.hpp"
 
 #include "component/console/console.hpp"
 #include "game/zombies_inventory.hpp"
@@ -10,10 +11,10 @@
 
 namespace unlock_loot
 {
+	const game::dvar_t* cg_unlock_all_loot{};
+
 	namespace
 	{
-		const game::dvar_t* cg_unlock_all_loot{};
-
 		utils::hook::detour is_loot_item_unlocked_hook;
 		std::atomic_bool progression_override_reported{};
 
