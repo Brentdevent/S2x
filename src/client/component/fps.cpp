@@ -216,7 +216,9 @@ namespace fps
 			auto y = font->pixelHeight * 1.2f;
 			const auto draw = [&](const char* text, const float* color)
 			{
-				const auto x = placement->realViewportSize[0] - 10.0f - game::R_TextWidth(text, 0, font, 0, 0);
+				// Prepare the glow glyphs before the backend font pass, not during text drawing.
+				const auto width = game::R_TextWidthWithFlags(text, 0, font, 0, 0, font->pixelHeight, 0.0f, 1);
+				const auto x = placement->realViewportSize[0] - 10.0f - width;
 				game::R_AddCmdDrawText(text, std::numeric_limits<int>::max(), font, 0, 0, font->pixelHeight,
 					x, y, 1.0f, 1.0f, 0.0f, color, style);
 				y += font->pixelHeight * 1.2f;

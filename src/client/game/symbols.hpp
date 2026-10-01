@@ -18,6 +18,8 @@ namespace game
 
 	// 4th and 5th parameters are always 0, names are guessed.
 	WEAK symbol<float(const char* text, int maxChars, Font_s* font, uint8_t iconFontIndex, uint8_t iconFontFlags)> R_TextWidth{ 0x894240, 0x613360 };
+	WEAK symbol<float(const char* text, int maxChars, Font_s* font, uint8_t iconFontIndex, uint8_t iconFontFlags,
+		unsigned int pixelHeight, float tracking, int glyphFlags)> R_TextWidthWithFlags{ 0x8945F0, 0x613720 };
 	WEAK symbol<int(Font_s* font)> R_GetFontHeight{ 0x763500, 0x4CC130 };
 	WEAK symbol<void*(int style)> R_Font_GetLegacyFontStyle{ 0x893A90, 0x612BB0 };
 	WEAK symbol<void(float x, float y, float width, float height, float s0, float t0, float s1, float t1,
