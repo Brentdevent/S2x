@@ -1,16 +1,16 @@
 #pragma once
-#include "tcp_server.hpp"
+#include "http_server.hpp"
 #include "../reply.hpp"
 
 namespace demonware
 {
-	class auth3_server : public tcp_server
+	class auth3_server : public http_server
 	{
 	public:
-		using tcp_server::tcp_server;
+		using http_server::http_server;
 
 	private:
 		void send_reply(reply* data);
-		void handle(SOCKET socket, const std::string& packet) override;
+		void handle_request(const http_request& request) override;
 	};
 }

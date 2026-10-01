@@ -98,7 +98,7 @@ namespace game
 
 			if (!is_store_native())
 			{
-				return "Steam via S2x runtime";
+				return "Steam (S2x runtime)";
 			}
 
 			const auto& host = get_host_library();

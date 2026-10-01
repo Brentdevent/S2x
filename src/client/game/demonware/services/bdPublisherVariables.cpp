@@ -26,6 +26,11 @@ namespace demonware
 			{"mm_hub_tu26", 1, 12, DW_PUBLISHER_VARIABLES_MM_HUB},
 			{"mm_party_tu26", 1, 11, DW_PUBLISHER_VARIABLES_MM_PARTY},
 			{"qos_tu26", 1, 14, DW_PUBLISHER_VARIABLES_QOS},
+			{"mp_tu25", 1, 20, DW_PUBLISHER_VARIABLES_MP},
+			{"mm_game_tu25", 1, 12, DW_PUBLISHER_VARIABLES_MM_GAME},
+			{"mm_hub_tu25", 1, 12, DW_PUBLISHER_VARIABLES_MM_HUB},
+			{"mm_party_tu25", 1, 11, DW_PUBLISHER_VARIABLES_MM_PARTY},
+			{"qos_tu25", 1, 14, DW_PUBLISHER_VARIABLES_QOS},
 		};
 	}
 

@@ -11,6 +11,7 @@ namespace demonware
 		void startExchangeTransaction(service_server* server, byte_buffer* buffer) const;
 		void purchaseOnSteamInitialize(service_server* server, byte_buffer* buffer) const;
 		void purchaseOnSteamFinalize(service_server* server, byte_buffer* buffer) const;
+		void xboxProcessDurable(service_server* server, byte_buffer* buffer) const;
 		void getExpiredInventoryItems(service_server* server, byte_buffer* buffer) const;
 		void validateInventoryItemsToken(service_server* server, byte_buffer* buffer) const;
 		void steamProcessDurable(service_server* server, byte_buffer* buffer) const;
