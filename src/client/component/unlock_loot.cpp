@@ -2,8 +2,7 @@
 #include "loader/component_loader.hpp"
 #include "unlock_loot.hpp"
 
-#include "component/console/console.hpp"
-#include "game/zombies_inventory.hpp"
+#include "game/demonware/loot_catalog.hpp"
 
 #include "game/game.hpp"
 
@@ -16,23 +15,16 @@ namespace unlock_loot
 	namespace
 	{
 		utils::hook::detour is_loot_item_unlocked_hook;
-		std::atomic_bool progression_override_reported{};
 
 		bool is_loot_item_unlocked_stub(const unsigned int item_id)
 		{
 			if (cg_unlock_all_loot && cg_unlock_all_loot->current.enabled)
 			{
-				if (game::zombies_inventory::is_progression_item(item_id))
+				const auto catalog = demonware::loot_catalog::get_snapshot();
+				if (catalog && std::ranges::binary_search(catalog->permanent_customization, item_id))
 				{
-					if (!progression_override_reported.exchange(true))
-					{
-						console::debug("[unlock_loot] preserving Zombies progression-item ownership\n");
-					}
-
-					return is_loot_item_unlocked_hook.invoke<bool>(item_id);
+					return true;
 				}
-
-				return true;
 			}
 
 			return is_loot_item_unlocked_hook.invoke<bool>(item_id);
