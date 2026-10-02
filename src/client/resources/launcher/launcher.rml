@@ -1,0 +1,92 @@
+<rml>
+<head>
+    <title>S2x</title>
+    <link type="text/rcss" href="launcher.rcss" />
+</head>
+<body>
+    <div class="main-container">
+        <div class="nav">
+            <button id="nav-play" class="nav-link active" action="menu:play">Play</button>
+            <button id="nav-options" class="nav-link" action="menu:options">Options</button>
+            <button id="nav-about" class="nav-link" action="menu:about">About</button>
+        </div>
+
+        <div class="menus">
+            <div id="menu-play" class="panel active">
+                <div class="cards">
+                    <button id="singleplayer" class="card" action="play:singleplayer">
+                        <img src="singleplayer.png" />
+                        <div class="card-content"><span>Singleplayer</span><div class="card-action">Play</div></div>
+                    </button>
+                    <button id="multiplayer" class="card" action="play:multiplayer">
+                        <img src="multiplayer.png" />
+                        <div class="card-content"><span>Multiplayer</span><div class="card-action">Play</div></div>
+                    </button>
+                    <button id="zombies" class="card" action="play:zombies">
+                        <img src="zombies.png" />
+                        <div class="card-content"><span>Zombies</span><div class="card-action">Play</div></div>
+                    </button>
+                </div>
+            </div>
+
+            <div id="menu-options" class="panel">
+                <div class="option-row">
+                    <div class="option-text">
+                        <div class="option-title">Console type</div>
+                        <div class="option-desc">Console used for game output and commands.</div>
+                    </div>
+                    <div id="console-mode" class="dropdown">
+                        <button id="console-button" class="dropdown-button" action="dropdown">
+                            <span id="console-label">S2x console (default)</span><span class="arrow"></span>
+                        </button>
+                        <div class="dropdown-list">
+                            <button id="console-syscon" class="dropdown-item" action="console:syscon">S2x console (default)</button>
+                            <button id="console-terminal" class="dropdown-item" action="console:terminal">Enhanced terminal</button>
+                            <button id="console-disabled" class="dropdown-item" action="console:disabled">No console</button>
+                        </div>
+                    </div>
+                </div>
+                <button id="no-steam" class="option-row" action="toggle-steam">
+                    <div class="option-text">
+                        <div class="option-title">Launch without Steam</div>
+                        <div class="option-desc">Start S2x without initializing Steam integration.</div>
+                    </div>
+                    <span class="switch"><span class="switch-knob"></span></span>
+                </button>
+                <button id="no-update" class="option-row" action="toggle-update">
+                    <div class="option-text">
+                        <div class="option-title">Disable automatic updates</div>
+                        <div class="option-desc">Skip the update check at startup. Manual updates become your responsibility.</div>
+                    </div>
+                    <span class="switch"><span class="switch-knob"></span></span>
+                </button>
+            </div>
+
+            <div id="menu-about" class="panel">
+                <div class="about">
+                    <div class="about-logo">S<span>2</span>x</div>
+                    <p class="links">
+                        <button action="github">GitHub</button>
+                        <button action="discord">Discord</button>
+                    </p>
+                    <p>S2x is a custom client for Call of Duty&#174;: WWII, created as an independent community project.
+                        This project is provided for personal and educational use. Please use it responsibly.</p>
+                    <p>S2x does not condone piracy or the unauthorized distribution of game files.
+                        You must own a legitimate Steam copy of Call of Duty&#174;: WWII in order to use this client.</p>
+                    <p>S2x is not affiliated with, endorsed by, or sponsored by Activision, Sledgehammer Games,
+                        Call of Duty, or any related publishers, developers, or trademark holders. Call of Duty&#174;
+                        and Call of Duty&#174;: WWII are trademarks of their respective owners.</p>
+                    <p>The name S2x is a homage to the former X Labs projects and their work in the Call of Duty
+                        modding community. S2x is not affiliated with X Labs, and any references are made out of
+                        respect for their influence on this project.</p>
+                    <p><button id="licenses-button" class="text-link" action="menu:licenses">Licenses and notices</button></p>
+                </div>
+            </div>
+            <div id="menu-licenses" class="panel">
+                <button class="text-link" action="menu:about">Back to About</button>
+                <div id="licenses-text"></div>
+            </div>
+        </div>
+    </div>
+</body>
+</rml>

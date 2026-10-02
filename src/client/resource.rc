@@ -106,7 +106,15 @@ DW_PUBLISHER_VARIABLES_MM_HUB   RCDATA "resources/dw/publisher_variables/mm_hub_
 DW_PUBLISHER_VARIABLES_MM_PARTY RCDATA "resources/dw/publisher_variables/mm_party_tu26_1_11.json"
 DW_PUBLISHER_VARIABLES_QOS      RCDATA "resources/dw/publisher_variables/qos_tu26_1_14.json"
 
-LAUNCHER_MENU         RCDATA "resources/main.html"
+LAUNCHER_DOCUMENT     RCDATA "resources/launcher/launcher.rml"
+LAUNCHER_STYLES       RCDATA "resources/launcher/launcher.rcss"
+LAUNCHER_TITLE_FONT   RCDATA "resources/launcher/title.woff"
+LAUNCHER_BODY_FONT    RCDATA "../../deps/rmlui/Samples/assets/LatoLatin-Regular.ttf"
+LAUNCHER_BACKGROUND   RCDATA "resources/launcher/background.jpg"
+LAUNCHER_SINGLEPLAYER RCDATA "resources/launcher/singleplayer.png"
+LAUNCHER_MULTIPLAYER  RCDATA "resources/launcher/multiplayer.png"
+LAUNCHER_ZOMBIES      RCDATA "resources/launcher/zombies.png"
+LAUNCHER_LICENSES     RCDATA "resources/launcher/licenses.txt"
 
 #ifdef _DEBUG
 TLS_DLL               RCDATA "../../build/bin/x64/Debug/tlsdll.dll"
@@ -128,4 +136,3 @@ TLS_DLL               RCDATA "../../build/bin/x64/Release/tlsdll.dll"
 
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
-

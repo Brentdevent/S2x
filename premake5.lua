@@ -310,6 +310,7 @@ project "client"
 	dependson {"tlsdll"}
 
 	links {"common"}
+	rmlui.link()
 
 	prebuildcommands {"pushd %{_MAIN_SCRIPT_DIR}", "tools\\premake5 generate-buildinfo", "popd"}
 

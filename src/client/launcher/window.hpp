@@ -1,5 +1,5 @@
 #pragma once
-#pragma comment (lib, "dwmapi.lib")
+#pragma comment(lib, "dwmapi.lib")
 
 class window
 {
@@ -11,16 +11,14 @@ public:
 	virtual ~window();
 
 	void close();
+	void show();
+	uint32_t get_dpi() const;
 
 	operator HWND() const;
-
-	static void run();
 
 	LRESULT processor(UINT message, WPARAM w_param, LPARAM l_param);
 
 private:
-	uint32_t last_dpi_ = 96;
-
 	WNDCLASSEX wc_{};
 	HWND handle_ = nullptr;
 	std::string classname_;
