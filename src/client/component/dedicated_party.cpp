@@ -85,7 +85,7 @@ namespace dedicated_party
 		bool is_dedicated_game_session(game::SessionData* session)
 		{
 			return session && is_dedicated_game_lobby(
-				utils::hook::invoke<game::PartyData*>(0x6FDE30_g, session));
+				utils::hook::invoke<game::PartyData*>(game::select(0x6FDE30, 0x6893A0), session));
 		}
 
 		char party_host_start_party_stub(game::PartyData* party_data,
@@ -112,14 +112,14 @@ namespace dedicated_party
 				party_data->hostIndex = static_cast<std::uint8_t>(get_host_member_index());
 			}
 
-			utils::hook::invoke<void>(0x490E70_g, party_data, controller_index);
+			utils::hook::invoke<void>(game::select(0x490E70, 0x41C860), party_data, controller_index);
 		}
 
 		int party_join_capacity_stub(game::SessionData* session)
 		{
 			return is_dedicated_game_session(session)
 				? get_member_capacity(dedicated_party_state.player_capacity)
-				: utils::hook::invoke<int>(0x6FD030_g, session);
+				: utils::hook::invoke<int>(game::select(0x6FD030, 0x6885A0), session);
 		}
 
 		int party_member_allocation_limit_stub(game::SessionData* session)
@@ -128,7 +128,7 @@ namespace dedicated_party
 			// particular, do not fill the gap below the owner on a smaller server.
 			return is_dedicated_game_session(session)
 				? dedicated_party_state.player_capacity
-				: utils::hook::invoke<int>(0x6FD030_g, session);
+				: utils::hook::invoke<int>(game::select(0x6FD030, 0x6885A0), session);
 		}
 
 		bool party_is_team_member_stub(game::PartyData* party_data, const int member_index)
@@ -141,19 +141,19 @@ namespace dedicated_party
 				return false;
 			}
 
-			return utils::hook::invoke<bool>(0x481980_g, party_data, member_index);
+			return utils::hook::invoke<bool>(game::select(0x481980, 0x40D970), party_data, member_index);
 		}
 
 		int gscr_get_party_max_players_stub(game::PartyData* party_data)
 		{
 			return is_dedicated_game_lobby(party_data)
 				? dedicated_party_state.player_capacity
-				: utils::hook::invoke<int>(0x197110_g, party_data);
+				: utils::hook::invoke<int>(game::select(0x197110, 0x1739F0), party_data);
 		}
 
 		void sv_register_max_clients_stub(const int minimum)
 		{
-			utils::hook::invoke<void>(0x6DA7A0_g, minimum);
+			utils::hook::invoke<void>(game::select(0x6DA7A0, 0x665DE0), minimum);
 			if (is_active())
 			{
 				// SV_Startup re-registers the dvar before reading it for allocations.
@@ -176,7 +176,7 @@ namespace dedicated_party
 
 		bool party_join_is_blocked_by_match_limit_stub(const void* join_restrictions, const int reason)
 		{
-			const auto blocked = utils::hook::invoke<bool>(0x2A6C20_g, join_restrictions, reason);
+			const auto blocked = utils::hook::invoke<bool>(game::select(0x2A6C20, 0x255E20), join_restrictions, reason);
 			auto* game_lobby = dedicated_party_state.game_lobby;
 
 			// PartyHost's admission checks pass PartyData + 0x20 to the native
@@ -1279,35 +1279,35 @@ namespace dedicated_party
 				"party_matchStartDelay", 60, 0, 120, game::DVAR_FLAG_NONE);
 			map_rotate_requested = utils::flags::has_flag("+map_rotate");
 
-			party_host_start_party_hook.create(0x491DE0_g, party_host_start_party_stub);
-			utils::hook::call(0x4924A9_g, party_host_initialize_stub);
+			party_host_start_party_hook.create(game::select(0x491DE0, 0x41D710), party_host_start_party_stub);
+			utils::hook::call(game::select(0x4924A9, 0x41DDD9), party_host_initialize_stub);
 
 			// Native counts include the owner. Check the configured human limit plus
 			// that member for join probes, individual joins, and atomic party joins.
-			utils::hook::call(0x486A62_g, party_join_capacity_stub);
-			utils::hook::call(0x487037_g, party_join_capacity_stub);
-			utils::hook::call(0x488AFA_g, party_join_capacity_stub);
+			utils::hook::call(game::select(0x486A62, 0x4126D2), party_join_capacity_stub);
+			utils::hook::call(game::select(0x487037, 0x412A9F), party_join_capacity_stub);
+			utils::hook::call(game::select(0x488AFA, 0x4147FA), party_join_capacity_stub);
 
 			// PartyHost's group builder seeds the host group, then appends present
 			// members. Filter both sites so there is no empty host group either.
 			// Admission still pads by session capacity minus the native member count;
 			// both include the owner, so that padding already counts only vacant slots.
-			utils::hook::call(0x4939F8_g, party_is_team_member_stub);
-			utils::hook::call(0x493A27_g, party_is_team_member_stub);
+			utils::hook::call(game::select(0x4939F8, 0x41F328), party_is_team_member_stub);
+			utils::hook::call(game::select(0x493A27, 0x41F357), party_is_team_member_stub);
 
-			utils::hook::call(0x48AB77_g, party_member_allocation_limit_stub);
-			utils::hook::call(0x48AC47_g, party_member_allocation_limit_stub);
+			utils::hook::call(game::select(0x48AB77, 0x416627), party_member_allocation_limit_stub);
+			utils::hook::call(game::select(0x48AC47, 0x4166F7), party_member_allocation_limit_stub);
 
 			// Scripts use this value for gameplay (including bot population), where
 			// the dedicated owner must never count as an additional player slot.
-			utils::hook::call(0x5795DB_g, gscr_get_party_max_players_stub);
-			utils::hook::call(0x6DCDE4_g, sv_register_max_clients_stub);
+			utils::hook::call(game::select(0x5795DB, 0x50AC4B), gscr_get_party_max_players_stub);
+			utils::hook::call(game::select(0x6DCDE4, 0x668404), sv_register_max_clients_stub);
 
 			// Only relax the score/time-limit checks for our persistent hosted lobby.
 			// Stock emits pa_joinfailed 46/47 here (XBOXLIVE_CANTJOINSESSION_GAMELIMIT).
 			// Capacity, migration, paused-game and Zombies-wave checks remain native.
-			utils::hook::call(0x486A7F_g, party_join_is_blocked_by_match_limit_stub);
-			utils::hook::call(0x486A9C_g, party_join_is_blocked_by_match_limit_stub);
+			utils::hook::call(game::select(0x486A7F, 0x4126EF), party_join_is_blocked_by_match_limit_stub);
+			utils::hook::call(game::select(0x486A9C, 0x41270C), party_join_is_blocked_by_match_limit_stub);
 
 			scheduler::once([]
 			{
@@ -1321,19 +1321,19 @@ namespace dedicated_party
 				// leaving the virtual lobby, as the fallback when the normal local host
 				// check fails, and before requesting the match. Only MP stores its
 				// dedicated game lobby as public.
-				utils::hook::call(0x7F18C_g, xpartygo_private_match_stub);
-				utils::hook::call(0x7F1B7_g, xpartygo_private_match_stub);
-				utils::hook::call(0x7F1C3_g, xpartygo_private_match_stub);
+				utils::hook::call(game::select(0x7F18C, 0x6400C), xpartygo_private_match_stub);
+				utils::hook::call(game::select(0x7F1B7, 0x64037), xpartygo_private_match_stub);
+				utils::hook::call(game::select(0x7F1C3, 0x64043), xpartygo_private_match_stub);
 
 				// This is the final PartyHost_StartMatch call after public playlist
 				// setup. Reapply the MP rotation settings before it broadcasts go.
-				utils::hook::call(0x48B214_g, party_host_start_match_stub);
+				utils::hook::call(game::select(0x48B214, 0x416C8D), party_host_start_match_stub);
 			}
 
 			// PartyHost_Frame has separate public/private auto-start sites. Both stay
 			// gated until our dedicated intermission has elapsed.
-			utils::hook::call(0x48B605_g, party_host_auto_start_stub);
-			utils::hook::call(0x48B768_g, party_host_auto_start_stub);
+			utils::hook::call(game::select(0x48B605, 0x417092), party_host_auto_start_stub);
+			utils::hook::call(game::select(0x48B768, 0x4171F5), party_host_auto_start_stub);
 
 			command::add("endMatch", [](const command::params&)
 			{

@@ -2,7 +2,6 @@
 
 #include "loader/component_loader.hpp"
 #include "game.hpp"
-#include "store.hpp"
 
 #include <utils/finally.hpp>
 #include <utils/flags.hpp>
@@ -39,12 +38,34 @@ namespace game
 			return get_host_library().get_optional_header()->CheckSum == 0x01743a38;
 		}
 
+		constexpr std::uint32_t store_native_timestamp = 0x67467ACE;
+		constexpr std::uint32_t store_native_image_size = 0x12967000;
+
+		bool is_supported_store_binary(const std::uint32_t timestamp, const std::uint32_t image_size)
+		{
+			return timestamp == store_native_timestamp && image_size == store_native_image_size;
+		}
+
 		bool is_valid_store_native_binary()
 		{
 			const auto& host = get_host_library();
-			return store::is_supported_binary(host.get_nt_headers()->FileHeader.TimeDateStamp,
+			return is_supported_store_binary(host.get_nt_headers()->FileHeader.TimeDateStamp,
 				host.get_optional_header()->SizeOfImage);
 		}
+
+		constexpr size_t store_cgs_global_rva = 0x9E11A78;
+		constexpr size_t store_cgs_stride = 0x16F38;
+		constexpr size_t store_client_active_global_rva = 0x115ADA0;
+		constexpr size_t store_client_active_stride = 0x165A0;
+
+		const std::byte* read_store_global_array(const size_t global_rva, const size_t stride, const int index)
+		{
+			const auto* base = *reinterpret_cast<const std::byte* const*>(relocate(global_rva));
+			return base ? base + stride * static_cast<size_t>(index) : nullptr;
+		}
+
+		const symbol<const std::byte*(int localClientNum)> cg_get_local_client_static{ 0x461E0, 0 };
+		const symbol<const std::byte*(int localClientNum)> cl_get_local_client_active{ 0x795D0, 0 };
 	}
 
 	size_t get_base()
@@ -219,6 +240,33 @@ namespace game
 			: is_valid_singleplayer_binary();
 	}
 
+	bool is_supported_store_binary_file(const std::filesystem::path& path)
+	{
+		std::ifstream file(path, std::ios::binary);
+		if (!file)
+		{
+			return false;
+		}
+
+		IMAGE_DOS_HEADER dos_header{};
+		if (!file.read(reinterpret_cast<char*>(&dos_header), sizeof(dos_header))
+			|| dos_header.e_magic != IMAGE_DOS_SIGNATURE)
+		{
+			return false;
+		}
+
+		IMAGE_NT_HEADERS64 nt_headers{};
+		if (!file.seekg(dos_header.e_lfanew)
+			|| !file.read(reinterpret_cast<char*>(&nt_headers), sizeof(nt_headers))
+			|| nt_headers.Signature != IMAGE_NT_SIGNATURE
+			|| nt_headers.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+		{
+			return false;
+		}
+
+		return is_supported_store_binary(nt_headers.FileHeader.TimeDateStamp, nt_headers.OptionalHeader.SizeOfImage);
+	}
+
 	std::filesystem::path get_appdata_path()
 	{
 		static const auto appdata_path = []
@@ -246,7 +294,7 @@ namespace game
 		if (!game::environment::uses_multiplayer_binary())
 		{
 			// function is not inlined in SP
-			return utils::hook::invoke<bool>(0x1BDA30_g, localClientNum, text);
+			return utils::hook::invoke<bool>(select(0, 0, 0x1BDA30), localClientNum, text);
 		}
 
 		RtlEnterCriticalSection(193);
@@ -329,10 +377,30 @@ namespace game
 		if (!game::environment::uses_multiplayer_binary())
 		{
 			// function checks wether we're in the main menu or mission_select
-			return utils::hook::invoke<bool>(0x4B89B0_g);
+			return utils::hook::invoke<bool>(select(0, 0, 0x4B89B0));
 		}
 
 		return *game::virtualLobby_Loaded;
+	}
+
+	const std::byte* CG_GetLocalClientStatic(const int localClientNum)
+	{
+		if (environment::is_store_native())
+		{
+			return read_store_global_array(store_cgs_global_rva, store_cgs_stride, localClientNum);
+		}
+
+		return cg_get_local_client_static.call_safe(localClientNum);
+	}
+
+	const std::byte* CL_GetLocalClientActive(const int localClientNum)
+	{
+		if (environment::is_store_native())
+		{
+			return read_store_global_array(store_client_active_global_rva, store_client_active_stride, localClientNum);
+		}
+
+		return cl_get_local_client_active.call_safe(localClientNum);
 	}
 
 	namespace hks

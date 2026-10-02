@@ -297,7 +297,7 @@ namespace gsc
 
 		void gscr_post_load_scripts_stub()
 		{
-			utils::hook::invoke<void>(0x59C720_g);
+			utils::hook::invoke<void>(game::select(0x59C720, 0x527E60));
 
 			if (game::virtual_lobby_loaded())
 			{
@@ -334,7 +334,7 @@ namespace gsc
 				}
 			}
 
-			utils::hook::invoke<void>(0x5B79C0_g);
+			utils::hook::invoke<void>(game::select(0x5B79C0, 0x543100));
 		}
 
 		void g_scr_set_level_script_stub(game::ScriptFunctions* functions)
@@ -347,7 +347,7 @@ namespace gsc
 				}
 			}
 			
-			utils::hook::invoke<void>(0x3BDD70_g, functions);
+			utils::hook::invoke<void>(game::select(0x3BDD70, 0x368A30), functions);
 		}
 
 		void scr_load_level_singleplayer_stub()
@@ -364,7 +364,7 @@ namespace gsc
 				}
 			}
 
-			utils::hook::invoke<void>(0x3B2250_g);
+			utils::hook::invoke<void>(game::select(0x3B2250, 0x35CF10));
 
 			if (in_virtual_lobby)
 			{
@@ -379,7 +379,7 @@ namespace gsc
 
 		void scr_load_level_multiplayer_stub()
 		{
-			utils::hook::invoke<void>(0x5AF770_g);
+			utils::hook::invoke<void>(game::select(0x5AF770, 0x53AEB0));
 
 			if (game::virtual_lobby_loaded())
 			{
@@ -433,7 +433,7 @@ namespace gsc
 				return {{}, script_data};
 			});
 
-			utils::hook::invoke<void>(game::select(0x6856D0, 0x48BED0));
+			utils::hook::invoke<void>(game::select(0x6856D0, 0x610CA0, 0x48BED0));
 		}
 
 		void scr_end_load_scripts_stub()
@@ -441,7 +441,7 @@ namespace gsc
 			// Cleanup the compiler
 			gsc_ctx->cleanup();
 
-			utils::hook::invoke<void>(game::select(0x685800, 0x48C5C0));
+			utils::hook::invoke<void>(game::select(0x685800, 0x610DD0, 0x48C5C0));
 		}
 	}
 
@@ -475,17 +475,17 @@ namespace gsc
 		{
 			// Increase script mem size 
 			// Probably not needed but leaving it here in case we need it (address is for MP).
-			// utils::hook::set<std::uint64_t>(0xB76660_g, 0x800000ull);
+			// utils::hook::set<std::uint64_t>(game::select(0xB76660, 0x0), 0x800000ull);
 
 			// Load our scripts with an uncompressed stack
-			utils::hook::call(game::select(0x68F22C, 0x49594C), db_get_raw_buffer_stub);
+			utils::hook::call(game::select(0x68F22C, 0x61A7FC, 0x49594C), db_get_raw_buffer_stub);
 
-			utils::hook::call(game::select(0x5AE180, 0x38D665), scr_begin_load_scripts_stub); // GScr_LoadScripts
-			utils::hook::call(game::select(0x5AE5B3, 0x38D7B1), scr_end_load_scripts_stub); // GScr_LoadScripts
+			utils::hook::call(game::select(0x5AE180, 0x5398C0, 0x38D665), scr_begin_load_scripts_stub); // GScr_LoadScripts
+			utils::hook::call(game::select(0x5AE5B3, 0x539CF3, 0x38D7B1), scr_end_load_scripts_stub); // GScr_LoadScripts
 
 			// ProcessScript
-			utils::hook::call(game::select(0x68F1C7, 0x4958E7), find_script);
-			utils::hook::call(game::select(0x68F1D7, 0x4958F7), db_is_x_asset_default);
+			utils::hook::call(game::select(0x68F1C7, 0x61A797, 0x4958E7), find_script);
+			utils::hook::call(game::select(0x68F1D7, 0x61A7A7, 0x4958F7), db_is_x_asset_default);
 
 			// S2x compiler control; no stock developer_script counterpart is known.
 			// Enable developer script comments: 0 disabled, 1 full developer script, 2 only dev scripts required by art/lighting tweaks.
@@ -494,17 +494,17 @@ namespace gsc
 
 			if (!game::environment::uses_multiplayer_binary())
 			{
-				utils::hook::call(0x3BDD2F_g, g_scr_set_level_script_stub);
-				utils::hook::call(0x373C57_g, scr_load_level_singleplayer_stub);
+				utils::hook::call(game::select(0, 0, 0x3BDD2F), g_scr_set_level_script_stub);
+				utils::hook::call(game::select(0, 0, 0x373C57), scr_load_level_singleplayer_stub);
 			}
 			else
 			{
 				// GScr_LoadScripts
-				utils::hook::call(0x5AE5AE_g, gscr_post_load_scripts_stub);
+				utils::hook::call(game::select(0x5AE5AE, 0x539CEE), gscr_post_load_scripts_stub);
 
 				// Exec script handles
-				utils::hook::call(0x56084A_g, g_load_structs_stub);
-				utils::hook::call(0x560861_g, scr_load_level_multiplayer_stub);
+				utils::hook::call(game::select(0x56084A, 0x4EC01A), g_load_structs_stub);
+				utils::hook::call(game::select(0x560861, 0x4EC031), scr_load_level_multiplayer_stub);
 			}
 
 			scripting::on_shutdown([](const int clear_scripts) -> void

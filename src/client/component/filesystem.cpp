@@ -283,18 +283,18 @@ namespace filesystem
 
 			// Register the custom directories in the engine search path on every FS startup.
 			fs_startup_hook.create(game::FS_Startup, fs_startup_stub);
-			utils::hook::call(game::select(0x757FCD, 0x4C0A8D), register_custom_path_stub);
-			utils::hook::call(game::select(0x757FE0, 0x4C0AA0), register_custom_path_stub);
-			utils::hook::call(game::select(0x75803E, 0x4C0AFE), register_custom_path_stub);
-			utils::hook::call(game::select(0x75807D, 0x4C0B3D), register_custom_path_stub);
-			utils::hook::call(game::select(0x7580DB, 0x4C0B9B), register_custom_path_stub);
-			utils::hook::call(game::select(0x75811A, 0x4C0BDA), register_custom_path_stub);
+			utils::hook::call(game::select(0x757FCD, 0x6E362D, 0x4C0A8D), register_custom_path_stub);
+			utils::hook::call(game::select(0x757FE0, 0x6E3640, 0x4C0AA0), register_custom_path_stub);
+			utils::hook::call(game::select(0x75803E, 0x6E369E, 0x4C0AFE), register_custom_path_stub);
+			utils::hook::call(game::select(0x75807D, 0x6E36DD, 0x4C0B3D), register_custom_path_stub);
+			utils::hook::call(game::select(0x7580DB, 0x6E373B, 0x4C0B9B), register_custom_path_stub);
+			utils::hook::call(game::select(0x75811A, 0x6E377A, 0x4C0BDA), register_custom_path_stub);
 
 			// Initial FS startup has completed before component post-unpack callbacks run.
 			register_custom_path();
 
 			// Generic exec reads packaged RawFile assets first; allow loose configs as a fallback.
-			utils::hook::call(game::select(0x64AF66, 0x465864), read_raw_file_for_exec_stub);
+			utils::hook::call(game::select(0x64AF66, 0x5D66C6, 0x465864), read_raw_file_for_exec_stub);
 		}
 	};
 }

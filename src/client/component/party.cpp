@@ -53,7 +53,7 @@ namespace party
 		{
 			// Preserve the stock propagation from gclient::sessionTeam into the
 			// server character info before publishing the new PartyMember team.
-			const auto team = utils::hook::invoke<std::uint64_t>(0x547A60_g, client_num);
+			const auto team = utils::hook::invoke<std::uint64_t>(game::select(0x547A60, 0x4D3110), client_num);
 
 			if (can_change_assigned_team()
 				&& game::mp::SV_HasAssignedTeam_Internal(client_num))
@@ -243,9 +243,9 @@ namespace party
 				return;
 			}
 
-			const auto v27 = utils::hook::invoke<std::uintptr_t>(0x47D290_g, party);
-			const auto v28 = utils::hook::invoke<unsigned int>(0x470D50_g, v27);
-			const auto settings = utils::hook::invoke<std::uintptr_t>(0x924650_g, v28);
+			const auto v27 = utils::hook::invoke<std::uintptr_t>(game::select(0x47D290, 0x409310), party);
+			const auto v28 = utils::hook::invoke<unsigned int>(game::select(0x470D50, 0x3FD040), v27);
+			const auto settings = utils::hook::invoke<std::uintptr_t>(game::select(0x924650, 0x8845D0), v28);
 
 			if (!settings)
 			{
@@ -536,7 +536,7 @@ namespace party
 				return custom_match::is_valid_gametype(gametype);
 			}
 
-			return utils::hook::invoke<const char*>(0x6500E0_g, gametype.data()) != gametype.data();
+			return utils::hook::invoke<const char*>(game::select(0x6500E0, 0x5DB830), gametype.data()) != gametype.data();
 		}
 
 		bool sv_running()
@@ -1079,12 +1079,12 @@ namespace party
 			auto* lobby = game::Lobby_GetPartyData(0);
 			// Party_IsRunning is cleared during gameplay. The session remains
 			// joinable then too; use in-party plus host ownership, as stock does.
-			if (!lobby || !utils::hook::invoke<bool>(0x471200_g, lobby)
+			if (!lobby || !utils::hook::invoke<bool>(game::select(0x471200, 0x3FD4D0), lobby)
 				|| !game::Party_AreWeHost(lobby) || !is_unranked_private_match(lobby))
 			{
 				return false;
 			}
-			const auto* session = utils::hook::invoke<game::SessionData*>(0x470F50_g, lobby);
+			const auto* session = utils::hook::invoke<game::SessionData*>(game::select(0x470F50, 0x3FD240), lobby);
 			if (!session || !session->sessionId)
 			{
 				return false; // Host creation/teardown has not produced a usable session.
@@ -1101,7 +1101,7 @@ namespace party
 			info.session_id = id.data();
 			info.map_name = game::Party_GetMapName(lobby);
 			info.gametype = game::Party_GetGameType(lobby);
-			info.max_members = utils::hook::invoke<int>(0x197110_g, lobby);
+			info.max_members = utils::hook::invoke<int>(game::select(0x197110, 0x1739F0), lobby);
 			info.member_count = 0;
 			for (int member = 0; member < 48; ++member)
 			{
@@ -1393,8 +1393,8 @@ namespace party
 					// assigned by PartyHost_PreMatch. Permit the stock team_select GSC
 					// path to change it, then mirror that authoritative value back to
 					// PartyData so reconnects and lobby presentation stay consistent.
-					utils::hook::call(0x546128_g, has_assigned_team_stub);
-					utils::hook::call(0x546194_g, update_session_team_stub);
+					utils::hook::call(game::select(0x546128, 0x4D17D8), has_assigned_team_stub);
+					utils::hook::call(game::select(0x546194, 0x4D1844), update_session_team_stub);
 				}
 			}
 

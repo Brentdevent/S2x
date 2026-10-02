@@ -270,7 +270,7 @@ namespace gsc
 			}
 
 			console::warn("******* script runtime error ********\n");
-			const auto opcode_id = *reinterpret_cast<std::uint8_t*>(game::select(0xBB18F90, 0xAB9B190));
+			const auto opcode_id = *reinterpret_cast<std::uint8_t*>(game::select(0xBB18F90, 0xCE26210, 0xAB9B190));
 
 			const std::string error_suffix = gsc_error_msg.has_value() ? std::format(": {}", gsc_error_msg.value()) : std::string();
 
@@ -381,10 +381,10 @@ namespace gsc
 			scr_error_hook.create(game::Scr_Error, scr_error_stub);
 			scr_error2_hook.create(game::Scr_Error2, scr_error2_stub);
 
-			utils::hook::nop(game::select(0x6939DC, 0x49A28C), 14);
-			utils::hook::call(game::select(0x6939DC, 0x49A28C), vm_call_builtin_function);
+			utils::hook::nop(game::select(0x6939DC, 0x61EFAC, 0x49A28C), 14);
+			utils::hook::call(game::select(0x6939DC, 0x61EFAC, 0x49A28C), vm_call_builtin_function);
 
-			utils::hook::call(game::select(0x694BDC, 0x49B48C), vm_error_stub); // LargeLocalResetToMark
+			utils::hook::call(game::select(0x694BDC, 0x6201AC, 0x49B48C), vm_error_stub); // LargeLocalResetToMark
 		}
 	};
 }

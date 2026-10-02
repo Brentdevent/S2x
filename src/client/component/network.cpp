@@ -28,7 +28,7 @@ namespace network
 			}
 
 			const auto type = address->type;
-			const auto invalid_handle_index = *reinterpret_cast<const std::uint32_t*>(0xF9D514_g);
+			const auto invalid_handle_index = *reinterpret_cast<const std::uint32_t*>(game::select(0xF9D514, 0xFB3504));
 			return (type == game::NA_IP || type == game::NA_BROADCAST)
 				&& address->addrHandleIndex == invalid_handle_index;
 		}
@@ -57,8 +57,8 @@ namespace network
 
 		void enable_raw_reliable_messages()
 		{
-			const auto continue_scan = 0x76E882_g;
-			const auto reject_address = 0x76E93F_g;
+			const auto continue_scan = game::select(0x76E882, 0x6FA622);
+			const auto reject_address = game::select(0x76E93F, 0x6FA6DF);
 			const auto admission_stub = utils::hook::assemble([continue_scan, reject_address](utils::hook::assembler& a)
 			{
 				const auto admit = a.new_label();
@@ -78,15 +78,15 @@ namespace network
 				a.jmp(reinterpret_cast<void*>(reject_address));
 			});
 
-			utils::hook::nop(0x76E87C_g, 6);
-			utils::hook::jump(0x76E87C_g, admission_stub);
+			utils::hook::nop(game::select(0x76E87C, 0x6FA61C), 6);
+			utils::hook::jump(game::select(0x76E87C, 0x6FA61C), admission_stub);
 		}
 
 		void preserve_raw_session_addresses()
 		{
-			const auto preserve_address = 0x82821E_g;
-			const auto convert_to_loopback = 0x828208_g;
-			const auto get_invalid_handle_index = 0x800720_g;
+			const auto preserve_address = game::select(0x82821E, 0x78DC6E);
+			const auto convert_to_loopback = game::select(0x828208, 0x78DC58);
+			const auto get_invalid_handle_index = game::select(0x800720, 0x766070);
 			const auto stub = utils::hook::assemble(
 				[preserve_address, convert_to_loopback, get_invalid_handle_index](utils::hook::assembler& a)
 				{
@@ -110,8 +110,8 @@ namespace network
 					a.jmp(reinterpret_cast<void*>(preserve_address));
 				});
 
-			utils::hook::nop(0x8281F9_g, 15);
-			utils::hook::jump(0x8281F9_g, stub);
+			utils::hook::nop(game::select(0x8281F9, 0x78DC49), 15);
+			utils::hook::jump(game::select(0x8281F9, 0x78DC49), stub);
 		}
 
 		std::unordered_map<std::string, std::vector<callback>>& get_callbacks()
@@ -428,20 +428,20 @@ namespace network
 			sys_send_packet_hook.create(game::Sys_SendPacket, sys_send_packet_stub);
 
 			// Handle xuid without secure connection
-			utils::hook::nop(0x6DBDC0_g, 6);
+			utils::hook::nop(game::select(0x6DBDC0, 0x667400), 6);
 
 			// Don't establish secure connection
-			utils::hook::set<uint8_t>(0x49706C_g, 0xEB);
-			utils::hook::jump(0x6AFE3_g, 0x6B07D_g, true);
+			utils::hook::set<uint8_t>(game::select(0x49706C, 0x42290C), 0xEB);
+			utils::hook::jump(game::select(0x6AFE3, 0x54963), game::select(0x6B07D, 0x549FD), true);
 
 			// Skip onlinegame check EXE_ERR_UNREGISTERED_CONNECTION
-			utils::hook::set<uint8_t>(0xF39E4_g, 0xEB);
+			utils::hook::set<uint8_t>(game::select(0xF39E4, 0xD2744), 0xEB);
 
 			// Skip another onlinegame check (drops client EXE_TRANSMITERROR)
-			utils::hook::jump(0xF739E_g, 0xF73F7_g);
+			utils::hook::jump(game::select(0xF739E, 0xD5F4E), game::select(0xF73F7, 0xD5FA7));
 
 			// Disable built in "print" OOB command
-			utils::hook::set<std::uint8_t>(0x7023F_g, 0xEB);
+			utils::hook::set<std::uint8_t>(game::select(0x7023F, 0x59906), 0xEB);
 
 			if (!game::environment::is_dedicated())
 			{

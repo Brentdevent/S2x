@@ -139,7 +139,7 @@ namespace lagometer
 				return game::CG_ReadNextSnapshot(local_client_num);
 			}
 			
-			const auto* cgs = game::CG_GetLocalClientStatic.call_safe(local_client_num);
+			const auto* cgs = game::CG_GetLocalClientStatic(local_client_num);
 			if (!cgs)
 			{
 				return game::CG_ReadNextSnapshot(local_client_num);
@@ -257,9 +257,9 @@ namespace lagometer
 
 			cg_draw_lagometer = game::Dvar_RegisterBool("cg_drawLagometer", false, game::DVAR_FLAG_SAVED);
 			
-			utils::hook::call(0x6910B_g, process_snapshots);
-			utils::hook::call(0x43AE54_g, read_next_snapshot);
-			utils::hook::call(0x43AF21_g, read_next_snapshot);
+			utils::hook::call(game::select(0x6910B, 0x52A0B), process_snapshots);
+			utils::hook::call(game::select(0x43AE54, 0x3C645B), read_next_snapshot);
+			utils::hook::call(game::select(0x43AF21, 0x3C6511), read_next_snapshot);
 
 			scheduler::loop(draw_lagometer, scheduler::renderer);
 		}

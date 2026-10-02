@@ -182,7 +182,7 @@ namespace fps
 				return std::nullopt;
 			}
 
-			const auto* client = game::CL_GetLocalClientActive.call_safe(game::LOCAL_CLIENT_0);
+			const auto* client = game::CL_GetLocalClientActive(game::LOCAL_CLIENT_0);
 			if (!client)
 			{
 				return std::nullopt;
@@ -294,14 +294,14 @@ namespace fps
 				return;
 			}
 
-			utils::hook::call(game::select(0x41D874, 0x212827), register_draw_fps);
+			utils::hook::call(game::select(0x41D874, 0x3AAA24, 0x212827), register_draw_fps);
 			
 			if (game::environment::uses_multiplayer_binary())
 			{
 				cg_draw_ping = game::Dvar_RegisterBool("cg_drawPing", false, game::DVAR_FLAG_SAVED);
 
 				// Dvar_Command calls in MP Playlist_RunRules (0x6563D0).
-				for (const auto address : {0x65665E_g, 0x656922_g, 0x656BB2_g, 0x656E52_g})
+				for (const auto address : {game::select(0x65665E, 0x5E1DAE), game::select(0x656922, 0x5E2072), game::select(0x656BB2, 0x5E2302), game::select(0x656E52, 0x5E25A2)})
 				{
 					utils::hook::call(address, playlist_dvar_command);
 				}

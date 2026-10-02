@@ -15,7 +15,7 @@ namespace arxan::detail
 namespace game
 {
 	size_t get_base();
-	
+
 	namespace environment
 	{
 		enum class platform
@@ -65,20 +65,11 @@ namespace game
 	}
 
 	bool is_valid_binary();
-
-	namespace store
-	{
-		size_t resolve(size_t steam_rva);
-	}
+	bool is_supported_store_binary_file(const std::filesystem::path& path);
 
 	inline size_t relocate(const size_t val)
 	{
 		if (!val) return 0;
-
-		if (environment::is_store_native())
-		{
-			return store::resolve(val);
-		}
 
 		const auto base = get_base();
 		return base + val;
@@ -108,34 +99,38 @@ namespace game
 		return derelocate(reinterpret_cast<size_t>(val));
 	}
 
-	inline size_t select(const size_t mp_val, const size_t sp_val)
+	inline size_t select(const size_t steam_val, const size_t store_val)
 	{
-		return relocate(environment::uses_multiplayer_binary() ? mp_val : sp_val);
+		return relocate(environment::is_store_native() ? store_val : steam_val);
 	}
 
-	inline size_t select(const void* mp_val, const void* sp_val)
+	inline size_t select(const size_t steam_mp_val, const size_t store_mp_val, const size_t steam_sp_val)
 	{
-		return select(reinterpret_cast<size_t>(mp_val), reinterpret_cast<size_t>(sp_val));
+		return environment::uses_multiplayer_binary()
+			? select(steam_mp_val, store_mp_val)
+			: relocate(steam_sp_val);
 	}
 
 	template <typename T>
 	class base_symbol
 	{
 	public:
-		base_symbol(const size_t mp_address)
-			: mp_address_(mp_address)
+		base_symbol(const size_t steam_mp_address, const size_t store_mp_address)
+			: steam_mp_address_(steam_mp_address)
+			, store_mp_address_(store_mp_address)
 		{
 		}
 
-		base_symbol(const size_t mp_address, const size_t sp_address)
-			: mp_address_(mp_address)
-			, sp_address_(sp_address)
+		base_symbol(const size_t steam_mp_address, const size_t store_mp_address, const size_t steam_sp_address)
+			: steam_mp_address_(steam_mp_address)
+			, store_mp_address_(store_mp_address)
+			, steam_sp_address_(steam_sp_address)
 		{
 		}
 
 		T* get() const
 		{
-			return reinterpret_cast<T*>(select(this->mp_address_, this->sp_address_));
+			return reinterpret_cast<T*>(select(this->steam_mp_address_, this->store_mp_address_, this->steam_sp_address_));
 		}
 
 		operator T* () const
@@ -149,8 +144,9 @@ namespace game
 		}
 
 	private:
-		size_t mp_address_{};
-		size_t sp_address_{};
+		size_t steam_mp_address_{};
+		size_t store_mp_address_{};
+		size_t steam_sp_address_{};
 	};
 
 	template <typename T>
@@ -166,7 +162,7 @@ namespace game
 
 		using base_symbol<func_type>::base_symbol;
 
-		T call_safe(Args... args)
+		T call_safe(Args... args) const
 		{
 			if (environment::is_store_native())
 			{
@@ -190,15 +186,13 @@ namespace game
 
 	bool virtual_lobby_loaded();
 
+	const std::byte* CG_GetLocalClientStatic(int localClientNum);
+	const std::byte* CL_GetLocalClientActive(int localClientNum);
+
 	namespace hks
 	{
 		cclosure* cclosure_Create(lua_function func);
 	}
-}
-
-inline size_t operator"" _g(const size_t val)
-{
-	return game::relocate(val);
 }
 
 inline size_t operator"" _ms(const size_t val)

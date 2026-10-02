@@ -75,7 +75,7 @@ namespace dedicated_party_client
 
 			// Lobby_GetSessionData: the PartyData address is reused when the client
 			// leaves a server and creates a local lobby. Match the session itself.
-			const auto* session = utils::hook::invoke<game::SessionData*>(0x470F50_g, party_data);
+			const auto* session = utils::hook::invoke<game::SessionData*>(game::select(0x470F50, 0x3FD240), party_data);
 			if (!session)
 			{
 				return false;
@@ -104,10 +104,10 @@ namespace dedicated_party_client
 				// IP-based join activates the received party directly. Restore
 				// hub mode before PartyAtomic opens the stock lobby; its LUI predicates,
 				// Soldier screen, and virtual-lobby character scene all consume it.
-				utils::hook::invoke<void>(0x857A10_g, 1);
+				utils::hook::invoke<void>(game::select(0x857A10, 0x7B7A50), 1);
 			}
 
-			utils::hook::invoke<void>(0x47A720_g, party_data, controller_index, joining);
+			utils::hook::invoke<void>(game::select(0x47A720, 0x406830), party_data, controller_index, joining);
 		}
 
 		bool is_hosted_dedicated_game_lobby(game::PartyData* party_data)
@@ -125,7 +125,7 @@ namespace dedicated_party_client
 			}
 
 			return has_hosted_dedicated_session(party_data)
-				&& utils::hook::invoke<bool>(0x471200_g, party_data); // Lobby_IsInLobby
+				&& utils::hook::invoke<bool>(game::select(0x471200, 0x3FD4D0), party_data); // Lobby_IsInLobby
 		}
 
 		int get_hosted_dedicated_party_max_players()
@@ -142,8 +142,8 @@ namespace dedicated_party_client
 
 		int session_get_gameplay_member_xuids_stub(game::SessionData* session, std::uint64_t* xuids)
 		{
-			const auto count = utils::hook::invoke<int>(0x7B1E50_g, session, xuids);
-			auto* party_data = utils::hook::invoke<game::PartyData*>(0x6FDE30_g, session);
+			const auto count = utils::hook::invoke<int>(game::select(0x7B1E50, 0x718010), session, xuids);
+			auto* party_data = utils::hook::invoke<game::PartyData*>(game::select(0x6FDE30, 0x6893A0), session);
 			if (count <= 0 || !is_hosted_dedicated_game_lobby(party_data))
 			{
 				return count;
@@ -154,7 +154,7 @@ namespace dedicated_party_client
 			// range and must survive this scan so the party still has its host when
 			// the match ends. Filter only this gameplay roster, not the session.
 			const auto host_xuid = utils::hook::invoke<std::uint64_t>(
-				0x6FDE70_g, session, party_data->hostIndex);
+				game::select(0x6FDE70, 0x6893E0), session, party_data->hostIndex);
 			const auto* end = std::remove(xuids, xuids + count, host_xuid);
 			return static_cast<int>(end - xuids);
 		}
@@ -283,7 +283,7 @@ namespace dedicated_party_client
 		void session_modify_stub(const int controller_index, game::SessionData* session,
 			const int flags, int public_slots, const int private_slots, const int spectator_slots)
 		{
-			auto* party_data = utils::hook::invoke<game::PartyData*>(0x6FDE30_g, session);
+			auto* party_data = utils::hook::invoke<game::PartyData*>(game::select(0x6FDE30, 0x6893A0), session);
 			if (party_data == game::Lobby_GetPartyData(0)
 				&& (game::environment::is_dedicated()
 					? is_hosted_dedicated_game_lobby(party_data)
@@ -552,10 +552,10 @@ namespace dedicated_party_client
 					return false;
 				}
 
-				utils::hook::invoke<void>(0x6FD220_g, session);
-				utils::hook::invoke<void>(0x6FC830_g, session);
+				utils::hook::invoke<void>(game::select(0x6FD220, 0x688790), session);
+				utils::hook::invoke<void>(game::select(0x6FC830, 0x687DA0), session);
 				if (!utils::hook::invoke<bool>(
-					0x6FFD70_g, session, controller_index, online_connection_type,
+					game::select(0x6FFD70, 0x68B2F0), session, controller_index, online_connection_type,
 					session_info, 0, setup_member_capacity, a5))
 				{
 					console::error("Hosted dedicated lobby: native party session setup failed.\n");
@@ -869,9 +869,9 @@ namespace dedicated_party_client
 
 			// Party-to-game handoff and partystate receipt must exclude the owner
 			// when copying party capacity into the gameplay limit.
-			utils::hook::call(0x475139_g, party_set_gameplay_max_clients_stub);
-			utils::hook::call(0x47772C_g, party_set_gameplay_max_clients_stub);
-			session_modify_hook.create(0x6FE6A0_g, session_modify_stub);
+			utils::hook::call(game::select(0x475139, 0x401399), party_set_gameplay_max_clients_stub);
+			utils::hook::call(game::select(0x47772C, 0x403927), party_set_gameplay_max_clients_stub);
+			session_modify_hook.create(game::select(0x6FE6A0, 0x689C10), session_modify_stub);
 
 			if (game::environment::is_dedicated())
 			{
@@ -880,19 +880,19 @@ namespace dedicated_party_client
 				// match. Clamping it leaves too little memory for lobby SV_Startup
 				// and triggers Memory Error: 6 161. Keep native capacity restoration
 				// for an existing client allocation intact as well.
-				utils::hook::call(0x62538_g, party_set_gameplay_max_clients_stub);
-				utils::hook::call(0x625FE_g, party_set_gameplay_max_clients_stub);
+				utils::hook::call(game::select(0x62538, 0x5203C), party_set_gameplay_max_clients_stub);
+				utils::hook::call(game::select(0x625FE, 0x52101), party_set_gameplay_max_clients_stub);
 				return;
 			}
 
 			// Preserve the dedicated owner when CG reconciles gameplay configstrings.
-			utils::hook::call(0x436608_g, session_get_gameplay_member_xuids_stub);
+			utils::hook::call(game::select(0x436608, 0x3C1D23), session_get_gameplay_member_xuids_stub);
 			cl_connect_and_preload_map_hook.create(
 				game::CL_ConnectAndPreloadMap, cl_connect_and_preload_map_stub);
 			party_atomic_setup_potential_host_hook.create(
-				0x497EF0_g, party_atomic_setup_potential_host_stub);
+				game::select(0x497EF0, 0x423760), party_atomic_setup_potential_host_stub);
 
-			utils::hook::call(0x497767_g, party_atomic_activate_lobby_stub);
+			utils::hook::call(game::select(0x497767, 0x422FEF), party_atomic_activate_lobby_stub);
 
 			party_client_handle_go_hook.create(
 				game::PartyClient_HandleGo, party_client_handle_go_stub);

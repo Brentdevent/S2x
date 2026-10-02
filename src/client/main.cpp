@@ -11,7 +11,6 @@
 #include <utils/string.hpp>
 
 #include "game/game.hpp"
-#include "game/store.hpp"
 #include "launcher/launcher.hpp"
 #include "component/console/console.hpp"
 #include "component/updater.hpp"
@@ -187,25 +186,7 @@ namespace
 			&& game::environment::uses_multiplayer_binary()
 			&& !game::environment::is_dedicated()
 			&& !utils::flags::has_flag("-store_runtime")
-			&& game::store::is_supported_binary_file(application_directory / "s2_mp64_ship.exe");
-	}
-
-	void initialize_store_addresses()
-	{
-		const auto start = std::chrono::steady_clock::now();
-		const auto result = game::store::initialize();
-		const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-			std::chrono::steady_clock::now() - start);
-
-		console::info("[Store] %s %zu addresses in %lldms (%s)\n",
-			result.from_cache ? "Loaded" : "Scanned", result.resolved,
-			static_cast<long long>(duration.count()), result.cache_path.generic_string().data());
-
-		if (result.failed)
-		{
-			console::warn("[Store] %zu signatures did not resolve; features using them are unavailable.\n",
-				result.failed);
-		}
+			&& game::is_supported_store_binary_file(application_directory / "s2_mp64_ship.exe");
 	}
 
 	startup_options detect_startup_options()
@@ -417,11 +398,6 @@ int main()
 					"Please verify your game files through Steam and make sure the file is not blocked.",
 					binary_to_load.data()
 				));
-			}
-
-			if (game::environment::is_store_native())
-			{
-				initialize_store_addresses();
 			}
 
 			if (!game::is_valid_binary())

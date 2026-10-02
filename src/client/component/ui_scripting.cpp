@@ -627,10 +627,10 @@ namespace ui_scripting
 				return;
 			}
 			
-			utils::hook::call(game::select(0x309B7B, 0x17E16B), db_find_x_asset_header_stub);
-			utils::hook::call(game::select(0x309CBC, 0x17E2AC), db_find_x_asset_header_stub);
-			utils::hook::call(game::select(0x309CFF, 0x17E2EF), hks_load_stub);
-			utils::hook::call(game::select(0x2BA4B7, 0x12E877), hks_base_printf_stub);
+			utils::hook::call(game::select(0x309B7B, 0x2B8F5B, 0x17E16B), db_find_x_asset_header_stub);
+			utils::hook::call(game::select(0x309CBC, 0x2B909C, 0x17E2AC), db_find_x_asset_header_stub);
+			utils::hook::call(game::select(0x309CFF, 0x2B90DF, 0x17E2EF), hks_load_stub);
+			utils::hook::call(game::select(0x2BA4B7, 0x269897, 0x12E877), hks_base_printf_stub);
 
 			hks_package_require_hook.create(game::hks::package_require, hks_package_require_stub);
 			hks_start_hook.create(game::LUI_CoD_Init, hks_start_stub);

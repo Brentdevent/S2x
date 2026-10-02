@@ -754,13 +754,13 @@ namespace command
 		{
 			if (game::environment::uses_multiplayer_binary())
 			{
-				client_command_mp_hook.create(0x54EE80_g, client_command_mp_stub);
+				client_command_mp_hook.create(game::select(0x54EE80, 0x4DA5D0), client_command_mp_stub);
 				sv_cheats = game::Dvar_RegisterBool("sv_cheats", false, game::DVAR_FLAG_REPLICATED);
 				add_mp_developer_commands();
 			}
 			else
 			{
-				client_command_sp_hook.create(0x366270_g, client_command_sp_stub);
+				client_command_sp_hook.create(game::select(0, 0, 0x366270), client_command_sp_stub);
 				add_sp_developer_commands();
 			}
 

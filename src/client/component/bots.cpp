@@ -83,7 +83,7 @@ namespace bots
 			utils::hook::set(game::BG_AgentSystemEnabled, 0xC301B0);
 			
 			// Not sure, is LUA related (Might need additional patches since it also checks OnlineGame dvar outside this function)
-			utils::hook::set(0x388210_g, 0xC301B0);
+			utils::hook::set(game::select(0x388210, 0x332B40), 0xC301B0);
 
 			command::add("spawnBot", [](const command::params& params)
 			{

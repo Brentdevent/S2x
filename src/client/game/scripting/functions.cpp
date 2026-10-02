@@ -70,8 +70,8 @@ namespace scripting
 
 	script_function get_function_by_index(const std::uint32_t index)
 	{
-		static const auto function_table = reinterpret_cast<script_function*>(game::select(0xAC9BE40, 0x9D1E000));
-		static const auto method_table = reinterpret_cast<script_function*>(game::select(0xAC9DC70, 0x9D1FE30));
+		static const auto function_table = reinterpret_cast<script_function*>(game::select(0xAC9BE40, 0xBFA90C0, 0x9D1E000));
+		static const auto method_table = reinterpret_cast<script_function*>(game::select(0xAC9DC70, 0xBFAAEF0, 0x9D1FE30));
 
 		if (index >= 1 && index <= 0x3C6)
 		{

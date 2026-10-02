@@ -47,12 +47,12 @@ namespace branding
 			{
 				const auto* platform = game::environment::is_store_native() ? "MS" : "Steam";
 				const auto* mode = game::environment::is_zombies() ? "Zombies" : "Multiplayer";
-				utils::hook::copy_string(0xBA6040_g, utils::string::va("S2x (%s) - %s", platform, mode));
+				utils::hook::copy_string(game::select(0xBA6040, 0xBAC630), utils::string::va("S2x (%s) - %s", platform, mode));
 			}
 			else
 			{
-				utils::hook::call(0x511738_g, multi_byte_to_wide_char_stub);
-				utils::hook::nop(0x511738_g + 5, 1);
+				utils::hook::call(game::select(0, 0, 0x511738), multi_byte_to_wide_char_stub);
+				utils::hook::nop(game::select(0, 0, 0x511738) + 5, 1);
 			}
 		}
 	};

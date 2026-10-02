@@ -30,7 +30,7 @@ namespace aim_assist
 			}
 
 			// enable dvar 387 & set replicated flags
-			utils::hook::call(0x5DE6EC_g, register_allow_aim_assist_stub);
+			utils::hook::call(game::select(0x5DE6EC, 0x569E3C), register_allow_aim_assist_stub);
 		}
 	};
 }

@@ -968,18 +968,18 @@ namespace demonware
 			}
 
 			// Skip bdAuth::validateResponseSignature
-			utils::hook::set(game::select(0xA7ABA0, 0x7B3FF0), 0xC301B0); // bdRSAKey::importKey
-			utils::hook::set(game::select(0xA7ACC0, 0x7B4110), 0xC300000001B8); // bdRSAKey::verifySignatureSHA256
+			utils::hook::set(game::select(0xA7ABA0, 0xAA2D00, 0x7B3FF0), 0xC301B0); // bdRSAKey::importKey
+			utils::hook::set(game::select(0xA7ACC0, 0xAA2E20, 0x7B4110), 0xC300000001B8); // bdRSAKey::verifySignatureSHA256
 
 			if (!game::environment::is_store_native())
 			{
-				utils::hook::set<uint8_t>(game::select(0xA249F7, 0x77FC87) + 3, 0x0); // CURLOPT_SSL_VERIFYPEER
-				utils::hook::set<uint8_t>(game::select(0xA249E0, 0x77FC70) + 3, 0xAF); // CURLOPT_SSL_VERIFYHOST
+				utils::hook::set<uint8_t>(game::select(0xA249F7, 0x0, 0x77FC87) + 3, 0x0); // CURLOPT_SSL_VERIFYPEER
+				utils::hook::set<uint8_t>(game::select(0xA249E0, 0x0, 0x77FC70) + 3, 0xAF); // CURLOPT_SSL_VERIFYHOST
 			}
 
 			if (game::environment::uses_multiplayer_binary())
 			{
-				utils::hook::jump(0x200C90_g, online_data_qos_ready_stub);
+				utils::hook::jump(game::select(0x200C90, 0x1B0380), online_data_qos_ready_stub);
 			}
 
 			if (game::environment::is_store_native())
@@ -987,22 +987,22 @@ namespace demonware
 				return;
 			}
 
-			utils::hook::set<uint8_t>(game::select(0xC62D0C, 0x96FD8C) + 4, 0x0); // HTTPS -> HTTP
+			utils::hook::set<uint8_t>(game::select(0xC62D0C, 0xC7783C, 0x96FD8C) + 4, 0x0); // HTTPS -> HTTP
 
-			utils::hook::copy_string(game::select(0xC62F50, 0x96FA30), "http://prod.umbrella.demonware.net");
-			utils::hook::copy_string(game::select(0xC62F28, 0x96FA08), "http://cert.umbrella.demonware.net");
-			utils::hook::copy_string(game::select(0xC62F00, 0x96F9E0), "http://dev.umbrella.demonware.net");
-			utils::hook::copy_string(game::select(0xB4A998, 0x861958),
+			utils::hook::copy_string(game::select(0xC62F50, 0xC77A80, 0x96FA30), "http://prod.umbrella.demonware.net");
+			utils::hook::copy_string(game::select(0xC62F28, 0xC77A58, 0x96FA08), "http://cert.umbrella.demonware.net");
+			utils::hook::copy_string(game::select(0xC62F00, 0xC77A30, 0x96F9E0), "http://dev.umbrella.demonware.net");
+			utils::hook::copy_string(game::select(0xB4A998, 0xB512D8, 0x861958),
 				"http://prod.umbrella.demonware.net/v1.0/");
 
-			utils::hook::copy_string(game::select(0xB4AA88, 0x861A48), "http://prod.uno.demonware.net/v1.0/");
+			utils::hook::copy_string(game::select(0xB4AA88, 0xB51308, 0x861A48), "http://prod.uno.demonware.net/v1.0/");
 			if (game::environment::uses_multiplayer_binary())
 			{
-				utils::hook::copy_string(0xB4AB98_g,
+				utils::hook::copy_string(game::select(0xB4AB98, 0xB51330),
 					"http://pipes-prod-glutton.public.aws.demonware.net/v1.0");
 			}
 
-			utils::hook::copy_string(game::select(0xC63F90, 0x9705D0), "http://%s:%d/auth/");
+			utils::hook::copy_string(game::select(0xC63F90, 0xC78AC0, 0x9705D0), "http://%s:%d/auth/");
 		}
 
 		void pre_destroy() override

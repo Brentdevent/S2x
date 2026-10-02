@@ -166,7 +166,7 @@ namespace arxan::api_logger
 
 		void post_load() override
 		{
-			utils::hook::set(game::select(0xB1C688, 0x84D518), utils::hook::assemble(thunk_stub));
+			utils::hook::set(game::select(0xB1C688, 0x0, 0x84D518), utils::hook::assemble(thunk_stub));
 		}
 
 		component_priority priority() const override
