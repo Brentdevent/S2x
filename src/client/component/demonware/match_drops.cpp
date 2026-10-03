@@ -42,7 +42,7 @@ namespace match_drops
 
 		void present_award()
 		{
-			constexpr auto item = demonware::loot_compatibility::mp_supply_drop_tiers[0].item_id;
+			constexpr auto item = demonware::loot_compatibility::mp_rare_supply_drop_item_id;
 			for (auto& entry : *earned_items)
 			{
 				if (entry.id == item || !entry.id || !entry.quantity)

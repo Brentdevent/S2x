@@ -81,7 +81,7 @@ namespace demonware::match_drop_reward
 
 		// supplyDropTypes.csv: sd_mp_rare is inventory item 2. The existing grant
 		// transaction preserves metadata and atomically saves stock with its receipt.
-		return economy_tools::give_item(loot_compatibility::mp_supply_drop_tiers[0].item_id,
+		return economy_tools::give_item(loot_compatibility::mp_rare_supply_drop_item_id,
 			value.quantity, value.user, "matchdrop:" + utils::string::to_lower(value.match));
 	}
 }

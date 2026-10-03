@@ -7,21 +7,8 @@ namespace demonware::loot_compatibility
 	using loot_catalog::supply_drop;
 	using loot_catalog::supply_drop_slot;
 
-	struct mp_supply_drop_tier
-	{
-		int type{};
-		std::string_view backend_id{};
-		std::uint32_t item_id{};
-		int rarity_floor{};
-	};
-
-	// Native tier variants differ only in the first card's rarity floor
-	constexpr std::array<mp_supply_drop_tier, 3> mp_supply_drop_tiers
-	{{
-		{1, "sd_mp_rare", 2, 2},
-		{14, "sd_mp_legendary", 74, 3},
-		{13, "sd_mp_epic", 73, 4},
-	}};
+	// supplyDropTypes.csv: sd_mp_rare.
+	constexpr std::uint32_t mp_rare_supply_drop_item_id = 2;
 
 	inline std::optional<int> operation_index(const std::string_view operation)
 	{
