@@ -568,6 +568,7 @@ namespace custom_match
 		}
 
 		auto* party = game::Lobby_GetPartyData(0);
+
 		return party && !private_loadouts_stub(party);
 	}
 

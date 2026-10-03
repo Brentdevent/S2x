@@ -227,6 +227,7 @@ namespace reward_event_relay
 			{
 				return;
 			}
+
 			if (!args.size() || std::string_view{args[0]} != wire::command)
 			{
 				deploy_hook.invoke<void>(local_client);

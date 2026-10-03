@@ -40,23 +40,21 @@ namespace demonware::match_drop_reward
 		{
 			if (user && std::ranges::none_of(recipients, [user](const auto& entry) { return entry.user == user; }))
 			{
-				recipients.push_back({user, utils::string::to_lower(match), 0});
+				recipients.push_back({user, utils::string::to_lower(match), 1});
 			}
 		}
+
 		if (recipients.empty())
 		{
 			return {};
 		}
 
-		// Local host policy, not retail odds: one independent human recipient per
-		// crate. The configured total is shared by the lobby, with repeat winners.
+		// Local host policy: sample distinct players without replacement. Unused
+		// crates stay unawarded when the configured total exceeds the human count.
 		std::mt19937 random{utils::cryptography::random::get_integer()};
-		std::uniform_int_distribution<std::size_t> draw{0, recipients.size() - 1};
-		for (unsigned i = 0; i < total; ++i)
-		{
-			++recipients[draw(random)].quantity;
-		}
-		std::erase_if(recipients, [](const auto& entry) { return !entry.quantity; });
+		std::shuffle(recipients.begin(), recipients.end(), random);
+		recipients.resize(std::min<std::size_t>(total, recipients.size()));
+
 		return recipients;
 	}
 
@@ -69,6 +67,7 @@ namespace demonware::match_drop_reward
 		{
 			return {};
 		}
+
 		result.match = utils::string::to_lower(std::string{match});
 		return result;
 	}

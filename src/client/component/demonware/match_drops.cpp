@@ -9,6 +9,7 @@
 #include "game/game.hpp"
 #include "game/demonware/economy_tools.hpp"
 #include "game/demonware/loot_catalog.hpp"
+#include "game/demonware/loot_compatibility.hpp"
 #include "game/demonware/match_drop_reward.hpp"
 #include "game/demonware/runtime_context.hpp"
 
@@ -26,6 +27,32 @@ namespace match_drops
 		game::dvar_t* sv_match_supply_drops{};
 		std::unordered_map<std::string, reward::award> pending;
 
+		struct earned_item
+		{
+			std::uint32_t id;
+			std::int32_t quantity;
+		};
+		static_assert(sizeof(earned_item) == 8);
+		static_assert(offsetof(earned_item, quantity) == 4);
+
+		// Native end_mission GrantedItems (0x2AF3A0): ten {id, delta} rows per
+		// controller. Winners Circle reads these through EarnedSupplyDropByXuid
+		// and shares the result through SendWinnersCircleData. Inventory is separate.
+		game::symbol<std::array<earned_item, 10>> earned_items{0x87E3F00};
+
+		void present_award()
+		{
+			constexpr auto item = demonware::loot_compatibility::mp_supply_drop_tiers[0].item_id;
+			for (auto& entry : *earned_items)
+			{
+				if (entry.id == item || !entry.id || !entry.quantity)
+				{
+					entry = {item, 1};
+					return;
+				}
+			}
+		}
+
 		bool settle(const reward::award& award)
 		{
 			const auto identity = demonware::runtime_context::get_snapshot();
@@ -33,6 +60,7 @@ namespace match_drops
 			{
 				return false;
 			}
+
 			if (identity->user_id != award.user)
 			{
 				return true;
@@ -43,11 +71,14 @@ namespace match_drops
 			{
 				return false;
 			}
+
 			if (demonware::economy_tools::succeeded(result.status))
 			{
 				economy::request_inventory_refresh();
+
 				if (result.status == demonware::marketplace_store::transaction_status::committed)
 				{
+					present_award();
 					console::info("Match reward: %u Rare Supply Drop(s).\n", award.quantity);
 				}
 			}
@@ -56,6 +87,7 @@ namespace match_drops
 				console::error("Match reward rejected (%u); no inventory was changed.\n",
 					static_cast<unsigned>(result.status));
 			}
+
 			return true;
 		}
 
@@ -65,6 +97,7 @@ namespace match_drops
 			{
 				return;
 			}
+
 			if (pending.size() >= pending_award_limit || settle(award))
 			{
 				return;
@@ -73,6 +106,7 @@ namespace match_drops
 			// A received award survives returning to the lobby. Only unsaved awards
 			// need volatile retries; successful deliveries use the permanent receipt.
 			pending.emplace(award.match, award);
+
 			scheduler::schedule([match = award.match]
 			{
 				const auto found = pending.find(match);
@@ -80,10 +114,12 @@ namespace match_drops
 				{
 					return true;
 				}
+
 				if (!settle(found->second))
 				{
 					return false;
 				}
+
 				pending.erase(found);
 				return true;
 			}, scheduler::pipeline::main, 1s);
@@ -96,6 +132,7 @@ namespace match_drops
 			{
 				return;
 			}
+
 			const auto* gametype = game::Dvar_FindMalleableVar("g_gametype");
 			if (!gametype || !gametype->current.string || std::string_view{gametype->current.string} == "hub")
 			{
@@ -117,6 +154,7 @@ namespace match_drops
 				{
 					continue;
 				}
+
 				const auto end = client.guid + strnlen(client.guid, sizeof(client.guid));
 				std::uint64_t user{};
 				const auto parsed = std::from_chars(client.guid, end, user, 16);
@@ -138,11 +176,13 @@ namespace match_drops
 					scheduler::once([award] { queue(award); }, scheduler::pipeline::main);
 					continue;
 				}
+
 				const auto slot = game::Party_FindMemberByXUID(party, award.user);
 				if (slot == UINT8_MAX || slot >= *game::sv_maxclients)
 				{
 					continue;
 				}
+
 				game::SV_SendServerCommand(&clients[slot], game::SV_CMD_RELIABLE, "%s %llx %s %u",
 					reward::command, award.user, award.match.c_str(), award.quantity);
 			}
@@ -158,6 +198,7 @@ namespace match_drops
 			{
 				console::error("Match rewards failed: %s\n", error.what());
 			}
+
 			return game::PartyHost_EndMatch();
 		}
 	}
@@ -168,6 +209,7 @@ namespace match_drops
 		{
 			return false;
 		}
+
 		if (local_client || args.size() != 4 || game::environment::is_zombies())
 		{
 			return true;
@@ -181,6 +223,7 @@ namespace match_drops
 			// it on main, and capture the decoded value rather than command tokens.
 			scheduler::once([value = *award] { queue(value); }, scheduler::pipeline::main);
 		}
+
 		return true;
 	}
 
