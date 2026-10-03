@@ -180,6 +180,15 @@ namespace
 		bool dedicated{};
 	};
 
+	bool should_use_store_native_binary(const std::filesystem::path& application_directory)
+	{
+		return game::environment::is_microsoft_store()
+			&& game::environment::uses_multiplayer_binary()
+			&& !game::environment::is_dedicated()
+			&& !utils::flags::has_flag("-store_runtime")
+			&& game::is_supported_store_binary_file(application_directory / "s2_mp64_ship.exe");
+	}
+
 	startup_options detect_startup_options()
 	{
 		startup_options options{};
@@ -281,7 +290,9 @@ int main()
 				return 0;
 			}
 
-			const auto mp_binary = game::environment::is_microsoft_store()
+			game::environment::set_store_native(should_use_store_native_binary(application_directory));
+
+			const auto mp_binary = game::environment::is_microsoft_store() && !game::environment::is_store_native()
 				? "s2x_mp64_ship.exe"s
 				: "s2_mp64_ship.exe"s;
 			const auto sp_binary = game::environment::is_microsoft_store()
@@ -300,7 +311,7 @@ int main()
 			const auto updates_disabled = utils::flags::has_flag("-noupdate");
 			std::optional<std::string> store_runtime_update_warning{};
 
-			if (game::environment::is_microsoft_store() && !updates_disabled)
+			if (game::environment::is_microsoft_store() && !game::environment::is_store_native() && !updates_disabled)
 			{
 				try
 				{

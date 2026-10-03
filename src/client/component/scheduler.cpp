@@ -168,13 +168,13 @@ namespace scheduler
 		void post_unpack() override
 		{
 			// not sure about this one
-			r_end_frame_hook.create(game::select(0x8BBCD0, 0x63A970), r_end_frame_stub);
+			r_end_frame_hook.create(game::select(0x8BBCD0, 0x81BBF0, 0x63A970), r_end_frame_stub);
 
 			// Some random function in Com_Frame
-			main_frame_hook.create(game::select(0x92390, 0x46FEC0), main_frame_stub);
+			main_frame_hook.create(game::select(0x92390, 0x756A0, 0x46FEC0), main_frame_stub);
 
 			// Some random function in G_RunFrame
-			g_run_frame_hook.create(game::select(0x5398B0, 0x311D10), server_frame_stub);
+			g_run_frame_hook.create(game::select(0x5398B0, 0x4C4F60, 0x311D10), server_frame_stub);
 		}
 
 		void pre_destroy() override

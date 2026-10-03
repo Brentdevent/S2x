@@ -156,7 +156,7 @@ namespace custom_match
 
 		std::uint64_t get_session_id(game::PartyData* party)
 		{
-			const auto* session = utils::hook::invoke<game::SessionData*>(0x470F50_g, party);
+			const auto* session = utils::hook::invoke<game::SessionData*>(game::select(0x470F50, 0x3FD240), party);
 			return session ? session->sessionId : 0;
 		}
 
@@ -165,7 +165,7 @@ namespace custom_match
 			// Party_IsRunning also requires local host ownership; clients must use
 			// the stock in-party predicate instead. PartyData is reused across lobbies.
 			return party && party == game::Lobby_GetPartyData(0) && !game::is_local_play()
-				&& utils::hook::invoke<bool>(0x471200_g, party)
+				&& utils::hook::invoke<bool>(game::select(0x471200, 0x3FD4D0), party)
 				&& game::PartySettings_GetPrivateMatch(&party->settings) != 0
 				&& !game::PartySettings_GetRankedMatch(&party->settings);
 		}
@@ -190,7 +190,7 @@ namespace custom_match
 				settings = &game::Lobby_GetPartyData(0)->settings;
 			}
 
-			utils::hook::invoke<void>(0x1973B0_g, settings, map);
+			utils::hook::invoke<void>(game::select(0x1973B0, 0x173C90), settings, map);
 		}
 
 		void set_player_limit(game::PartyData* party)
@@ -231,7 +231,7 @@ namespace custom_match
 
 		void sv_register_max_clients_stub(const int minimum)
 		{
-			utils::hook::invoke<void>(0x6DA7A0_g, minimum);
+			utils::hook::invoke<void>(game::select(0x6DA7A0, 0x665DE0), minimum);
 
 			// Reapply after registration, before SV_Startup allocates its clients.
 			// Dedicated servers own this call site in their separate component.
@@ -315,7 +315,7 @@ namespace custom_match
 
 		bool private_loadouts_stub(game::PartyData* party)
 		{
-			return !has_progression(party) && utils::hook::invoke<bool>(0x4712A0_g, party);
+			return !has_progression(party) && utils::hook::invoke<bool>(game::select(0x4712A0, 0x3FD570), party);
 		}
 
 		int overhead_rank_private_match_stub(game::PartyData* party)
@@ -326,7 +326,7 @@ namespace custom_match
 			// Names may come from the social party (slot 2), but progression is
 			// always the active custom game session's selection (slot 0).
 			return has_progression(game::Lobby_GetPartyData(0))
-				? 0 : utils::hook::invoke<int>(0x197150_g, party);
+				? 0 : utils::hook::invoke<int>(game::select(0x197150, 0x173A30), party);
 		}
 
 		int progression_private_settings_stub(game::PartySettings* settings)
@@ -353,13 +353,13 @@ namespace custom_match
 			game::Dvar_SetBool(progression_preference, enabled);
 			set_session_mode(party, enabled);
 			// Republish the setting through the stock acknowledged PartyState stream.
-			utils::hook::invoke<void>(0x4938E0_g, party);
+			utils::hook::invoke<void>(game::select(0x4938E0, 0x41F210), party);
 			return true;
 		}
 
 		void* write_party_state_stub(game::msg_t* message, const void* data, const int size)
 		{
-			auto* result = utils::hook::invoke<void*>(0xDDAF0_g, message, data, size);
+			auto* result = utils::hook::invoke<void*>(game::select(0xDDAF0, 0xBCAB0), message, data, size);
 			auto* party = game::Lobby_GetPartyData(0);
 
 			if (!message->overflowed && message->data && message->cursize > 0
@@ -409,7 +409,7 @@ namespace custom_match
 				set_session_mode(party, read_party_state(party), true);
 			}
 
-			return utils::hook::invoke<char>(0x4749B0_g, party, client, from);
+			return utils::hook::invoke<char>(game::select(0x4749B0, 0x400C10), party, client, from);
 		}
 
 		const char* format_go_stub(const char* format, const int party_id, const int playlist,
@@ -432,7 +432,7 @@ namespace custom_match
 
 		int validate_go_host_stub(game::PartyData* party, game::netadr_s* from)
 		{
-			const auto valid = utils::hook::invoke<int>(0x479490_g, party, from);
+			const auto valid = utils::hook::invoke<int>(game::select(0x479490, 0x4055D0), party, from);
 
 			if (valid && is_custom_match(party) && !game::Party_AreWeHost(party)
 				&& std::string_view(game::Cmd_Argv(3)) == "1")
@@ -592,44 +592,44 @@ namespace custom_match
 
 			// LiveStorage_GetLoadoutStatsGroup and LiveStorage_IsUsingOnlineStats.
 			// The latter is also GSC's ranking-enabled predicate (_func_3AC).
-			utils::hook::call(0x654172_g, private_loadouts_stub);
-			utils::hook::call(0x654662_g, private_loadouts_stub);
+			utils::hook::call(game::select(0x654172, 0x5DF8C2), private_loadouts_stub);
+			utils::hook::call(game::select(0x654662, 0x5DFDB2), private_loadouts_stub);
 
 			// Select the matching stats packet mask, group and byte-range permissions.
 			// Do not change the actual private flag: rules, bots and the loading screen
 			// must continue to take the custom-match path, not the playlist path.
-			utils::hook::call(0x652E60_g, progression_private_settings_stub);
-			utils::hook::call(0x652FA6_g, progression_private_settings_stub);
-			utils::hook::call(0x6530CE_g, progression_private_settings_stub);
+			utils::hook::call(game::select(0x652E60, 0x5DE5B0), progression_private_settings_stub);
+			utils::hook::call(game::select(0x652FA6, 0x5DE6F6), progression_private_settings_stub);
+			utils::hook::call(game::select(0x6530CE, 0x5DE81E), progression_private_settings_stub);
 
 			// CharacterScene's overhead nameplate renderer (0x16E9A0) gates both
 			// the rank number and prestige icon on this private-party query. It
 			// runs each frame, so host/replicated toggles apply without rebuilding
 			// avatars. Retain all stock rank data, positioning and online/ZM gates.
-			utils::hook::call(0x16F054_g, overhead_rank_private_match_stub);
+			utils::hook::call(game::select(0x16F054, 0x14EC32), overhead_rank_private_match_stub);
 
 			// In-game overhead names use a separate caller (0x3C9B0), which passes
 			// PartySettings to 0x197140 before enabling the rank icon/number. Reuse
 			// the session-scoped settings override, not the lobby PartyData stub.
 			// Keep stock online, entity, spectator, training and rank-data checks.
-			utils::hook::call(0x3D2D3_g, progression_private_settings_stub);
+			utils::hook::call(game::select(0x3D2D3, 0x311A3), progression_private_settings_stub);
 
 			// Extend only the game lobby's existing host-authenticated state/launch
 			// messages. Public matchmaking and dedicated-server protocols are unchanged.
-			utils::hook::call(0x49043C_g, write_party_state_stub);
-			utils::hook::call(0x477AAA_g, finish_party_state_stub);
-			utils::hook::call(0x48F92E_g, format_go_stub);
-			utils::hook::call(0x472AE5_g, validate_go_host_stub);
-			utils::hook::call(0x6DCDE4_g, sv_register_max_clients_stub);
+			utils::hook::call(game::select(0x49043C, 0x41BEBC), write_party_state_stub);
+			utils::hook::call(game::select(0x477AAA, 0x403C9A), finish_party_state_stub);
+			utils::hook::call(game::select(0x48F92E, 0x41B28E), format_go_stub);
+			utils::hook::call(game::select(0x472AE5, 0x3FE7CC), validate_go_host_stub);
+			utils::hook::call(game::select(0x6DCDE4, 0x668404), sv_register_max_clients_stub);
 
 			start_private_match_hook.create(game::CL_Live_StartPrivateMatchHost, start_private_match_stub);
 
 			// Keep the stock rotation cursor, weights and match-end timing. Correct
 			// only its map destination, including checkbox add/select/remove paths.
-			utils::hook::call(0x924AB6_g, rotation_set_settings_map_stub);
-			utils::hook::call(0x924E46_g, rotation_set_settings_map_stub);
-			utils::hook::call(0x924C55_g, rotation_set_map_stub);
-			utils::hook::call(0x924DE3_g, rotation_set_map_stub);
+			utils::hook::call(game::select(0x924AB6, 0x884A36), rotation_set_settings_map_stub);
+			utils::hook::call(game::select(0x924E46, 0x884DC6), rotation_set_settings_map_stub);
+			utils::hook::call(game::select(0x924C55, 0x884BD5), rotation_set_map_stub);
+			utils::hook::call(game::select(0x924DE3, 0x884D63), rotation_set_map_stub);
 
 			ui_scripting::on_start(install_lui_functions);
 		}

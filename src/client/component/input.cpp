@@ -41,8 +41,8 @@ namespace input
 	public:
 		void post_unpack() override
 		{
-			cl_char_event_hook.create(game::select(0x45D960, 0x2656F0), cl_char_event_stub);
-			cl_key_event_hook.create(game::select(0x45DBC0, 0x265970), cl_key_event_stub);
+			cl_char_event_hook.create(game::select(0x45D960, 0x3E92A0, 0x2656F0), cl_char_event_stub);
+			cl_key_event_hook.create(game::select(0x45DBC0, 0x3E9500, 0x265970), cl_key_event_stub);
 		}
 	};
 }

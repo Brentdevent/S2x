@@ -134,31 +134,31 @@ namespace auth
 
 			if (!game::environment::uses_multiplayer_binary())
 			{
-				p(0x4E70DD_g, 0x4E70F6_g);
-				p(0x4E7BFB_g, 0x4E7C2E_g);
-				p(0x4E7F43_g, 0x4E7F86_g);
-				p(0x5BA2D5_g, 0x5BA301_g);
-				p(0x5BB8BD_g, 0x5BB90C_g);
-				p(0x5BBD6A_g, 0x5BBDBF_g);
-				p(0x5BC16B_g, 0x5BC1A1_g);
-				p(0x5C90F6_g, 0x5C9132_g);
+				p(game::select(0, 0, 0x4E70DD), game::select(0, 0, 0x4E70F6));
+				p(game::select(0, 0, 0x4E7BFB), game::select(0, 0, 0x4E7C2E));
+				p(game::select(0, 0, 0x4E7F43), game::select(0, 0, 0x4E7F86));
+				p(game::select(0, 0, 0x5BA2D5), game::select(0, 0, 0x5BA301));
+				p(game::select(0, 0, 0x5BB8BD), game::select(0, 0, 0x5BB90C));
+				p(game::select(0, 0, 0x5BBD6A), game::select(0, 0, 0x5BBDBF));
+				p(game::select(0, 0, 0x5BC16B), game::select(0, 0, 0x5BC1A1));
+				p(game::select(0, 0, 0x5C90F6), game::select(0, 0, 0x5C9132));
 			}
-			else
+			else if (!game::environment::is_store_native())
 			{
-				p(0x1908A_g, 0x190D9_g);
-				p(0x1A553_g, 0x1A598_g);
-				p(0x1B61B_g, 0x1B64E_g);
-				p(0x785ECD_g, 0x785EE6_g);
-				p(0x7869FB_g, 0x786A2E_g);
-				p(0x786D73_g, 0x786DB6_g);
-				p(0x82D4D0_g, 0x82D527_g);
-				p(0x82E576_g, 0x82E5BB_g);
-				p(0x82FD79_g, 0x82FDD0_g);
-				p(0x830312_g, 0x83036F_g);
-				p(0x830548_g, 0x830588_g);
-				p(0x830B7B_g, 0x830BB1_g);
-				p(0x84D9CC_g, 0x84DA21_g);
-				p(0x84E1B5_g, 0x84E1EA_g);
+				p(game::select(0x1908A, 0x0), game::select(0x190D9, 0x0));
+				p(game::select(0x1A553, 0x0), game::select(0x1A598, 0x0));
+				p(game::select(0x1B61B, 0x0), game::select(0x1B64E, 0x0));
+				p(game::select(0x785ECD, 0x0), game::select(0x785EE6, 0x0));
+				p(game::select(0x7869FB, 0x0), game::select(0x786A2E, 0x0));
+				p(game::select(0x786D73, 0x0), game::select(0x786DB6, 0x0));
+				p(game::select(0x82D4D0, 0x0), game::select(0x82D527, 0x0));
+				p(game::select(0x82E576, 0x0), game::select(0x82E5BB, 0x0));
+				p(game::select(0x82FD79, 0x0), game::select(0x82FDD0, 0x0));
+				p(game::select(0x830312, 0x0), game::select(0x83036F, 0x0));
+				p(game::select(0x830548, 0x0), game::select(0x830588, 0x0));
+				p(game::select(0x830B7B, 0x0), game::select(0x830BB1, 0x0));
+				p(game::select(0x84D9CC, 0x0), game::select(0x84DA21, 0x0));
+				p(game::select(0x84E1B5, 0x0), game::select(0x84E1EA, 0x0));
 			}
 
 			for (const auto& patch : patches)

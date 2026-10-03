@@ -60,7 +60,7 @@ namespace arxan::call_spoof
 		{
 			static const auto stub = []()
 			{
-				const auto placeholder = game::select(0x9FFD79, 0x76F2F5);
+				const auto placeholder = game::select(0x9FFD79, 0x0, 0x76F2F5);
 
 				utils::hook::set<uint8_t>(placeholder - 2, 0xFF);
 				utils::hook::nop(placeholder, 1);
@@ -97,6 +97,8 @@ namespace arxan::call_spoof
 	struct component final : generic_component
 	{
 	public:
+		static constexpr bool steam_binary_only = true;
+
 		void post_unpack() override
 		{
 			arxan::detail::callstack_proxy_addr = utils::hook::assemble(callstack_stub);

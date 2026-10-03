@@ -25,6 +25,7 @@ namespace demonware
 
 		this->map_publisher_resource("motd-.*\\.txt", DW_MOTD);
 		// this->map_publisher_resource("ffotd-.*\\.ff", DW_FASTFILE);
+		this->map_publisher_resource("playlists_tu25\\.aggr", DW_PLAYLISTS_TU25);
 		this->map_publisher_resource("playlists(_.+)?\\.aggr", DW_PLAYLISTS);
 		this->map_publisher_resource("dwtaskconfig", DW_TASKCONFIG);
 		this->map_publisher_resource("metplayerdata", DW_PLAYERDATA);

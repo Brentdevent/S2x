@@ -51,12 +51,12 @@ namespace unlock_loot
 		{
 			if (game::environment::is_dedicated())
 			{
-				utils::hook::jump(0xD0980_g, loot_item_unlocked);
+				utils::hook::jump(game::select(0xD0980, 0xB04E0), loot_item_unlocked);
 				return;
 			}
 
 			cg_unlock_all_loot = game::Dvar_RegisterBool("cg_unlockall_loot", false, game::DVAR_FLAG_SAVED);
-			is_loot_item_unlocked_hook.create(0xD0980_g, is_loot_item_unlocked_stub);
+			is_loot_item_unlocked_hook.create(game::select(0xD0980, 0xB04E0), is_loot_item_unlocked_stub);
 		}
 	};
 }

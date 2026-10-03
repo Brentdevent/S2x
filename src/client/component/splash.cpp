@@ -63,7 +63,7 @@ namespace splash
 		{
 			if (game::environment::is_dedicated())
 			{
-				utils::hook::set<std::uint8_t>(0x7B12C0_g, 0xC3);
+				utils::hook::set<std::uint8_t>(game::select(0x7B12C0, 0x0), 0xC3);
 			}
 		}
 	};

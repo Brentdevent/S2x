@@ -100,16 +100,16 @@ namespace unlock_items
 		{
 			if (game::environment::is_dedicated())
 			{
-				utils::hook::jump(0xD0B10_g, item_unlocked);
-				utils::hook::jump(0xD1050_g, item_unlocked);
+				utils::hook::jump(game::select(0xD0B10, 0xB0670), item_unlocked);
+				utils::hook::jump(game::select(0xD1050, 0xB0BB0), item_unlocked);
 				return;
 			}
 
 			cg_unlock_all_items = game::Dvar_RegisterBool("cg_unlockall_items", false, game::DVAR_FLAG_SAVED);
 
-			live_storage_is_item_unlocked_from_table_hook.create(0xD0B10_g,
+			live_storage_is_item_unlocked_from_table_hook.create(game::select(0xD0B10, 0xB0670),
 				live_storage_is_item_unlocked_from_table_stub);
-			live_storage_is_item_unlocked_from_table_local_client_hook.create(0xD1050_g,
+			live_storage_is_item_unlocked_from_table_local_client_hook.create(game::select(0xD1050, 0xB0BB0),
 				live_storage_is_item_unlocked_from_table_local_client_stub);
 		}
 	};

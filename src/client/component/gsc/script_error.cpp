@@ -109,8 +109,8 @@ namespace gsc
 		{
 			scr_emit_function_hook.create(game::Scr_EmitFunction, &scr_emit_function_stub);
 
-			utils::hook::call(game::select(0x684DB3, 0x48B5D3), compile_error_stub); // LinkFile
-			utils::hook::call(game::select(0x684E89, 0x48B6A9), find_variable_stub); // Scr_EmitFunction
+			utils::hook::call(game::select(0x684DB3, 0x610383, 0x48B5D3), compile_error_stub); // LinkFile
+			utils::hook::call(game::select(0x684E89, 0x610459, 0x48B6A9), find_variable_stub); // Scr_EmitFunction
 		}
 
 		void pre_destroy() override

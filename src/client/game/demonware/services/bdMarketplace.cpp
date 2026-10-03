@@ -8,6 +8,7 @@ namespace demonware
 		this->register_task(42, &bdMarketplace::startExchangeTransaction);
 		this->register_task(43, &bdMarketplace::purchaseOnSteamInitialize);
 		this->register_task(44, &bdMarketplace::purchaseOnSteamFinalize);
+		this->register_task(46, &bdMarketplace::xboxProcessDurable);
 		this->register_task(49, &bdMarketplace::getExpiredInventoryItems);
 		this->register_task(58, &bdMarketplace::validateInventoryItemsToken);
 		this->register_task(60, &bdMarketplace::steamProcessDurable);
@@ -39,6 +40,12 @@ namespace demonware
 	void bdMarketplace::purchaseOnSteamFinalize(service_server* server, byte_buffer* /*buffer*/) const
 	{
 		// TODO:
+		auto reply = server->create_reply(this->task_id());
+		reply.send();
+	}
+
+	void bdMarketplace::xboxProcessDurable(service_server* server, byte_buffer* /*buffer*/) const
+	{
 		auto reply = server->create_reply(this->task_id());
 		reply.send();
 	}

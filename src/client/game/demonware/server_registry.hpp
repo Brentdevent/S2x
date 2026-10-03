@@ -21,6 +21,12 @@ namespace demonware
 			servers_[address] = std::move(server);
 		}
 
+		void alias(const std::string& name, const std::string& target)
+		{
+			aliases_[utils::cryptography::jenkins_one_at_a_time::compute(name)] =
+				utils::cryptography::jenkins_one_at_a_time::compute(target);
+		}
+
 		void for_each(const std::function<void(T&)>& callback) const
 		{
 			for (auto& server : servers_)
@@ -37,7 +43,8 @@ namespace demonware
 
 		T* find(const uint32_t address)
 		{
-			const auto it = servers_.find(address);
+			const auto alias = aliases_.find(address);
+			const auto it = servers_.find(alias == aliases_.end() ? address : alias->second);
 			if (it == servers_.end())
 			{
 				return nullptr;
@@ -56,5 +63,6 @@ namespace demonware
 
 	private:
 		std::unordered_map<uint32_t, std::unique_ptr<T>> servers_;
+		std::unordered_map<uint32_t, uint32_t> aliases_;
 	};
 }

@@ -35,7 +35,14 @@ namespace patches
 		void post_thread_setup() override
 		{
 			// Intentionally allow multiple clients and dedicated servers in every build and mode.
-			utils::hook::set(0x78A5F0_g, 0xC301B0);
+			if (game::environment::is_store_native())
+			{
+				utils::hook::jump(0x140716192_ms, 0x1407162AB_ms);
+			}
+			else
+			{
+				utils::hook::set(game::select(0x78A5F0, 0x0), 0xC301B0);
+			}
 		}
 
 		void post_unpack() override
@@ -43,10 +50,10 @@ namespace patches
 			// Skip intro's
 			game::Dvar_RegisterBool("2665", true, game::DVAR_FLAG_NONE);   
 
-			validate_fastfile_checksums_hook.create(0xF7F90_g, validate_fastfile_checksums_stub);
+			validate_fastfile_checksums_hook.create(game::select(0xF7F90, 0xD6B40), validate_fastfile_checksums_stub);
 
 			// unlock safeArea_*
-			utils::hook::jump(0x46E271_g, 0x46E2B7_g);
+			utils::hook::jump(game::select(0x46E271, 0x3FA21E), game::select(0x46E2B7, 0x3FA264));
 			dvars::override::register_float("safeArea_adjusted_horizontal", 1.0f, 0.0f, 1.0f, game::DVAR_FLAG_SAVED);
 			dvars::override::register_float("safeArea_adjusted_vertical", 1.0f, 0.0f, 1.0f, game::DVAR_FLAG_SAVED);
 			dvars::override::register_float("safeArea_horizontal", 1.0f, 0.0f, 1.0f, game::DVAR_FLAG_SAVED);

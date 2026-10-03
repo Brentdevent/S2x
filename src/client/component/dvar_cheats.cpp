@@ -21,11 +21,11 @@ namespace dvar_cheats
 			a.call_aligned(dvars::override::is_local);
 			a.test(al, al);
 			a.jz(stock);
-			a.jmp(0x12E708_g); // Native epilogue, including the saved RBP restore.
+			a.jmp(game::select(0x12E708, 0x10E068)); // Native epilogue, including the saved RBP restore.
 
 			a.bind(stock);
 			a.lea(r9, ptr(rsp, 0x450)); // Replaced instruction at 0x12E69C.
-			a.jmp(0x12E6A4_g);
+			a.jmp(game::select(0x12E6A4, 0x10E004));
 		}
 
 		void player_cmd_set_client_dvars(utils::hook::assembler& a)
@@ -38,12 +38,12 @@ namespace dvar_cheats
 			a.call_aligned(dvars::override::is_local);
 			a.test(al, al);
 			a.jz(stock);
-			a.jmp(0x12E971_g); // Advance to the next pair and retain the existing buffer.
+			a.jmp(game::select(0x12E971, 0x10E2D1)); // Advance to the next pair and retain the existing buffer.
 
 			a.bind(stock);
 			a.mov(rcx, rdi);
-			a.call(0xAF9D0_g); // Replaced Dvar_FindMalleableVar thunk call at 0x12E82A.
-			a.jmp(0x12E82F_g);
+			a.call(game::select(0xAF9D0, 0x8F800)); // Replaced Dvar_FindMalleableVar thunk call at 0x12E82A.
+			a.jmp(game::select(0x12E82F, 0x10E18F));
 		}
 	}
 
@@ -54,10 +54,10 @@ namespace dvar_cheats
 		{
 			// Stock setclientdvar(s) would raise a script error for local dvars'
 			// missing NETWORK flag/index, on listen and dedicated servers.
-			utils::hook::nop(0x12E69C_g, 8);
-			utils::hook::jump(0x12E69C_g, utils::hook::assemble(player_cmd_set_client_dvar));
-			utils::hook::nop(0x12E827_g, 8);
-			utils::hook::jump(0x12E827_g, utils::hook::assemble(player_cmd_set_client_dvars));
+			utils::hook::nop(game::select(0x12E69C, 0x10DFFC), 8);
+			utils::hook::jump(game::select(0x12E69C, 0x10DFFC), utils::hook::assemble(player_cmd_set_client_dvar));
+			utils::hook::nop(game::select(0x12E827, 0x10E187), 8);
+			utils::hook::jump(game::select(0x12E827, 0x10E187), utils::hook::assemble(player_cmd_set_client_dvars));
 		}
 	};
 }

@@ -6,6 +6,7 @@
 #include "scheduler.hpp"
 
 #include <utils/hook.hpp>
+#include <utils/string.hpp>
 
 namespace branding
 {
@@ -35,22 +36,23 @@ namespace branding
 		{
 			scheduler::loop(draw_branding, scheduler::renderer);
 
+			scheduler::once([]
+			{
+				static const auto binary = game::environment::get_binary_string();
+				game::Dvar_RegisterString("s2x_runtime", binary.data(), game::DVAR_FLAG_WRITE);
+			}, scheduler::main);
+
 			// Change window title prefix
 			if (game::environment::uses_multiplayer_binary())
 			{
-				if (game::environment::is_zombies())
-				{
-					utils::hook::copy_string(0xBA6040_g, "S2x - Zombies");
-				}
-				else
-				{
-					utils::hook::copy_string(0xBA6040_g, "S2x - Multiplayer");
-				}
+				const auto* platform = game::environment::is_store_native() ? "MS" : "Steam";
+				const auto* mode = game::environment::is_zombies() ? "Zombies" : "Multiplayer";
+				utils::hook::copy_string(game::select(0xBA6040, 0xBAC630), utils::string::va("S2x (%s) - %s", platform, mode));
 			}
 			else
 			{
-				utils::hook::call(0x511738_g, multi_byte_to_wide_char_stub);
-				utils::hook::nop(0x511738_g + 5, 1);
+				utils::hook::call(game::select(0, 0, 0x511738), multi_byte_to_wide_char_stub);
+				utils::hook::nop(game::select(0, 0, 0x511738) + 5, 1);
 			}
 		}
 	};

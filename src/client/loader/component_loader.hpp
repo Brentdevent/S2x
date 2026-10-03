@@ -5,7 +5,7 @@ namespace component_loader
 {
 	using registration_functor = std::function<std::unique_ptr<generic_component>()>;
 
-	void register_component(registration_functor functor, component_type type);
+	void register_component(registration_functor functor, component_type type, bool steam_binary_only);
 
 	bool activate(bool singleplayer);
 	bool post_load();
@@ -34,7 +34,7 @@ namespace component_loader
 			register_component([]
 			{
 				return std::make_unique<T>();
-			}, T::type);
+			}, T::type, T::steam_binary_only);
 		}
 	};
 };

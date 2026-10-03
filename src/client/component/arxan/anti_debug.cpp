@@ -639,6 +639,8 @@ namespace arxan::anti_debug
 	struct component final : generic_component
 	{
 	public:
+		static constexpr bool steam_binary_only = true;
+
 		void post_load() override
 		{
 			// Process-lifetime event: it intentionally remains unsignaled so the initialized
@@ -665,9 +667,11 @@ namespace arxan::anti_debug
 
 			const auto nt_query_system_information = ntdll.get_proc<void*>("NtQuerySystemInformation");
 			nt_query_system_information_hook.create(nt_query_system_information, nt_query_system_information_stub);
+			nt_query_system_information_hook.enable();
 			nt_query_system_information_hook.move();
 
 			nt_query_information_process_hook.create(ntdll.get_proc<void*>("NtQueryInformationProcess"), nt_query_information_process_stub);
+			nt_query_information_process_hook.enable();
 
 			utils::hook::copy(this->window_text_buffer_, GetWindowTextA, sizeof(this->window_text_buffer_));
 			utils::hook::jump(GetWindowTextA, get_window_text_a_stub, true, true);
@@ -708,10 +712,12 @@ namespace arxan::anti_debug
 				throw std::runtime_error("Unable to locate the NTDLL executable section for game startup");
 			}
 			nt_set_information_thread_hook.create(nt_set_information_thread, nt_set_information_thread_stub);
+			nt_set_information_thread_hook.enable();
 			nt_set_information_thread_hook.move();
 
 			const auto nt_query_information_thread = ntdll.get_proc<void*>("NtQueryInformationThread");
 			nt_query_information_thread_hook.create(nt_query_information_thread, nt_query_information_thread_stub);
+			nt_query_information_thread_hook.enable();
 			nt_query_information_thread_hook.move();
 
 			auto* virtual_alloc_func = utils::nt::library("kernel32.dll").get_proc<void*>("VirtualAlloc");

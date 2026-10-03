@@ -272,6 +272,35 @@ namespace utils::hook
 		this->clear();
 	}
 
+	namespace
+	{
+		thread_local int detour_batch_depth = 0;
+	}
+
+	detour_batch::detour_batch()
+	{
+		(void)initialize_min_hook();
+		++detour_batch_depth;
+	}
+
+	detour_batch::~detour_batch()
+	{
+		if (--detour_batch_depth == 0)
+		{
+			MH_ApplyQueued();
+		}
+	}
+
+	void detour::queue_enable()
+	{
+		MH_QueueEnableHook(this->place_);
+	}
+
+	void detour::queue_disable()
+	{
+		MH_QueueDisableHook(this->place_);
+	}
+
 	void detour::enable()
 	{
 		MH_EnableHook(this->place_);
@@ -298,7 +327,14 @@ namespace utils::hook
 			throw std::runtime_error(string::va("Unable to create hook at location: %p", this->place_));
 		}
 
-		this->enable();
+		if (detour_batch_depth > 0)
+		{
+			this->queue_enable();
+		}
+		else
+		{
+			this->enable();
+		}
 	}
 
 	void detour::create(const size_t place, void* target)

@@ -65,13 +65,10 @@ namespace demonware
 		this->send(data->data());
 	}
 
-	void auth3_server::handle(const SOCKET /*socket*/, const std::string& packet)
+	void auth3_server::handle_request(const http_request& request)
 	{
-		if (packet.starts_with("POST /auth/"))
-		{
-			console::demonware("[DW]: [auth]: user requested authentication.\n");
-			return;
-		}
+		console::demonware("[DW]: [auth]: user requested authentication.\n");
+		const auto& packet = request.body;
 
 		unsigned int title_id = 0;
 		unsigned int iv_seed = 0;
