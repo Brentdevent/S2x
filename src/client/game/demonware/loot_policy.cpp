@@ -84,21 +84,42 @@ namespace demonware::loot_policy
 			});
 		}
 
-		bool matches_operation(const loot_item& item, const std::string_view operation)
+		bool matches_type(const loot_item& item, const int type)
 		{
-			// Stock InventoryOperations in inventoryutils.lua; GetItemOperationIndex
-			// reads these numeric identities from StatsTable's Operation column.
-			return operation.empty() || (operation == "winter" && item.operation == 1) ||
-				(operation == "resistance" && item.operation == 2);
+			// SupplyDropLootItemTypes / QuarterMasterUtils.LootTypeIcons. These
+			// bindings filter the existing local collectible pool, not all inventory.
+			constexpr std::array weapon_groups{"weapon_assault", "weapon_smg", "weapon_heavy", "weapon_sniper",
+				"weapon_shotgun", "weapon_pistol", "weapon_projectile"};
+			constexpr std::array division_types{1, 3, 4, 2, 5, 6};
+			if (type >= 10 && type <= 16)
+			{
+				return item.group == weapon_groups[type - 10];
+			}
+
+			if (type >= 17 && type <= 22)
+			{
+				return item.group == "uniforms" && item.division == division_types[type - 17];
+			}
+
+			switch (type)
+			{
+			case 0: return true;
+			case 1: return item.group == "weapon_class_camo";
+			case 2: return item.group == "costume" && ((item.item_id >> 20) & 0xF) == 6;
+			case 3: return item.group == "uniforms";
+			case 4: return item.group == "weapon_other" || std::ranges::find(weapon_groups, item.group) != weapon_groups.end();
+			case 5: return item.group == "weapon_other";
+			case 6: return item.group == "weapon_charm";
+			case 7: return item.group == "emote";
+			case 8: return item.group == "site_reticle";
+			case 9: return item.group == "face_camo";
+			case 25: return item.group == "uniforms" && item.division == 7;
+			case 26: return item.group == "uniforms" && item.division == 8;
+			default: return false;
+			}
 		}
 
-		bool has_dupe_protection(const supply_drop& drop)
-		{
-			// Supported bribes protect every slot; mixed protected/unprotected shapes remain unsupported.
-			return std::ranges::any_of(drop.slots, &supply_drop_slot::dupe_protection);
-		}
-
-		bool is_eligible(const loot_item& item, const catalog& source, const supply_drop& drop,
+		bool is_eligible(const loot_item& item, const catalog& source,
 			const marketplace_store::transaction& transaction, const pawn_catalog::catalog* pawning)
 		{
 			if (item.item_id > static_cast<std::uint32_t>(std::numeric_limits<int>::max()))
@@ -114,7 +135,7 @@ namespace demonware::loot_policy
 
 			// Owned cosmetics stay eligible only when the native pawn catalog can settle the duplicate
 			return pawning && pawning->source.get() == &source && pawning->items.contains(item.item_id) &&
-				supply_drop_inventory::can_stack(*owned) && !has_dupe_protection(drop);
+				supply_drop_inventory::can_stack(*owned);
 		}
 
 		const std::array<unsigned, rarity_count>& base_weights(const bool common, const int floor)
@@ -164,7 +185,7 @@ namespace demonware::loot_policy
 
 		std::erase_if(result, [&](const loot_item& item)
 		{
-			return !is_eligible(item, source, drop, transaction, pawning.get());
+			return !is_eligible(item, source, transaction, pawning.get());
 		});
 
 		return result;
@@ -241,8 +262,16 @@ namespace demonware::loot_policy
 		return std::nullopt;
 	}
 
+	bool matches_slot(const loot_item& item, const supply_drop_slot& slot)
+	{
+		return matches_type(item, slot.type) &&
+			(slot.operation.empty() || (item.operation &&
+				item.operation == loot_compatibility::operation_index(slot.operation)));
+	}
+
 	std::optional<std::vector<loot_item>> select_supply_drop_items(const supply_drop& drop,
-		std::vector<loot_item> candidates, std::uint64_t random_state, const float rarity_scale)
+		std::vector<loot_item> candidates, const marketplace_store::transaction& transaction,
+		std::uint64_t random_state, const float rarity_scale)
 	{
 		if (!loot_compatibility::is_confirmed_mp_supply_drop(drop))
 		{
@@ -256,10 +285,10 @@ namespace demonware::loot_policy
 			auto slot_candidates = candidates;
 			std::erase_if(slot_candidates, [&](const loot_item& item)
 			{
-				return !matches_operation(item, slot.operation);
+				return !matches_slot(item, slot) || (slot.dupe_protection && transaction.get_inventory(item.item_id));
 			});
 
-			// Event cards use the existing local improved weights, without adding a rarity guarantee.
+			// Native slot guarantees reuse the existing local rarity weights.
 			const auto weights = rarity_weights(drop.type == 0, slot.rarity, rarity_scale);
 			const auto index = select_card(slot_candidates, weights, random_state);
 			if (!index)

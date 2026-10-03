@@ -22,6 +22,7 @@ namespace demonware::loot_catalog
 		std::uint32_t item_id{};
 		bool contains_zm_consumables{};
 		std::array<supply_drop_slot, 3> slots{};
+		bool menu_available{};
 
 		bool operator==(const supply_drop&) const = default;
 	};
@@ -32,6 +33,7 @@ namespace demonware::loot_catalog
 		int rarity{};
 		int collection_id{};
 		std::optional<int> operation{};
+		std::optional<int> division{};
 		std::string group{};
 		std::string reference{};
 		std::string ignore{};
@@ -160,6 +162,10 @@ namespace demonware::loot_catalog
 		}
 
 		drop.backend_id.assign(cells[backend_id_column]);
+		// Visible/ShouldShowSplash distinguish player-facing crates from login
+		// rewards and internal test rows; compatibility handles Legendary separately.
+		drop.menu_available = !cells[2].empty() && !cells[7].empty() && !cells[9].empty() &&
+			(cells[6] == "1" || cells[8] == "1");
 
 		for (std::size_t index = 0; index < drop.slots.size(); ++index)
 		{

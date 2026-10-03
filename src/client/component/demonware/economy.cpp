@@ -10,6 +10,7 @@
 #include "game/demonware/economy_tools.hpp"
 #include "game/demonware/loot_catalog.hpp"
 #include "game/demonware/loot_compatibility.hpp"
+#include "game/demonware/loot_policy.hpp"
 #include "game/demonware/runtime_context.hpp"
 #include "game/demonware/zombies_loot_policy.hpp"
 
@@ -385,14 +386,28 @@ namespace economy
 			});
 		}
 
-		const char* drop_status(const loot_catalog::supply_drop& drop)
+		const char* drop_status(const loot_catalog::supply_drop& drop, const loot_catalog::catalog& catalog)
 		{
-			if (loot_compatibility::is_confirmed_mp_supply_drop(drop) || zombies_loot_policy::supports(drop))
+			if (loot_compatibility::is_confirmed_mp_supply_drop(drop))
+			{
+				const auto pool = loot_policy::rule_candidates(catalog, &drop);
+				const auto populated = std::ranges::all_of(drop.slots, [&](const auto& slot)
+				{
+					return std::ranges::any_of(pool, [&](const auto& item)
+					{
+						return item.rarity + 1 >= slot.rarity && loot_policy::matches_slot(item, slot);
+					});
+				});
+
+				return populated ? "supported/openable" : "known unsupported: empty local reward pool";
+			}
+
+			if (zombies_loot_policy::supports(drop))
 			{
 				return "supported/openable";
 			}
 
-			return is_complex_drop(drop) ? "deliberately omitted: targeted/event/no-duplicate" : "known unsupported";
+			return is_complex_drop(drop) ? "deliberately omitted: unrecognized slot rules" : "known unsupported";
 		}
 
 		std::string item_line(const loot_catalog::item_definition& row, const marketplace_store::snapshot& state)
@@ -435,7 +450,7 @@ namespace economy
 				line << format_id(drop.item_id) << " | qty " << quantity(state, drop.item_id) << " | ";
 			}
 
-			line << "supply_drop | " << drop.backend_id << " | " << drop_status(drop);
+			line << "supply_drop | " << drop.backend_id << " | " << drop_status(drop, catalog);
 			return line.str();
 		}
 
@@ -471,7 +486,7 @@ namespace economy
 				const auto drop = std::ranges::find(catalog->supply_drops, id, &loot_catalog::supply_drop::item_id);
 				if (drop != catalog->supply_drops.end())
 				{
-					line += std::string(" | supply_drop | ") + drop->backend_id + " | " + drop_status(*drop);
+					line += std::string(" | supply_drop | ") + drop->backend_id + " | " + drop_status(*drop, *catalog);
 				}
 
 				if (matches(*options, line) && seen.insert(id).second)

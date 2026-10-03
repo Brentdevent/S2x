@@ -210,7 +210,7 @@ namespace demonware::reward_supply_drop
 				const auto selected = zombies
 					? zombies_loot_policy::select(*catalog, *drop, transaction, seed, rarity_scale)
 					: loot_policy::select_supply_drop_items(*drop, loot_policy::eligible_items(*catalog, *drop, transaction),
-						seed, rarity_scale);
+						transaction, seed, rarity_scale);
 
 				if (!selected || !std::ranges::all_of(*selected, [&](const auto& item) { return is_presentable(item, zombies); }))
 				{

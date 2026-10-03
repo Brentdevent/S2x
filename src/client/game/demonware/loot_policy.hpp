@@ -17,7 +17,9 @@ namespace demonware::loot_policy
 
 	std::optional<std::vector<loot_catalog::loot_item>> select_supply_drop_items(
 		const loot_catalog::supply_drop& drop, std::vector<loot_catalog::loot_item> candidates,
-		std::uint64_t random_state, float rarity_scale = 1.0f);
+		const marketplace_store::transaction& transaction, std::uint64_t random_state, float rarity_scale = 1.0f);
+
+	bool matches_slot(const loot_catalog::loot_item& item, const loot_catalog::supply_drop_slot& slot);
 
 	std::array<unsigned, 5> rarity_weights(bool common, int floor, float scale);
 

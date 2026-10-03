@@ -23,63 +23,38 @@ namespace demonware::loot_compatibility
 		{13, "sd_mp_epic", 73, 4},
 	}};
 
-	struct mp_event_drop
+	inline std::optional<int> operation_index(const std::string_view operation)
 	{
-		int type{};
-		std::string_view backend_id{};
-		std::uint32_t item_id{};
-		std::string_view operation{};
-		bool bribe{};
-	};
+		// Stock InventoryOperations / StatsTable.Operation.
+		constexpr std::array names{"overlord", "winter", "resistance", "escalation", "confrontation",
+			"liberation", "special", "undead", "summer", "halloween", "season2", "season2part2", "season2part3"};
+		const auto found = std::ranges::find(names, operation);
+		if (found == names.end())
+		{
+			return std::nullopt;
+		}
 
-	// Exact native supplyDropTypes.csv shapes: event drops guarantee one event
-	// card; these two bribes guarantee three distinct, unowned event cards.
-	constexpr std::array<mp_event_drop, 4> mp_event_drops
-	{{
-		{15, "sd_mp_winter", 75, "winter", false},
-		{16, "sd_mp_winter_bribe", 76, "winter", true},
-		{17, "sd_mp_resist", 77, "resistance", false},
-		{18, "sd_mp_resist_bribe", 78, "resistance", true},
-	}};
+		return static_cast<int>(found - names.begin());
+	}
 
 	inline bool is_confirmed_mp_supply_drop(const supply_drop& drop)
 	{
-		const supply_drop_slot unrestricted{};
-
-		if (drop.contains_zm_consumables)
+		// The native table owns slot composition. Membership/odds remain S2x
+		// policy; new slot types must be understood before they can be opened.
+		const auto legendary = drop.type == 14 && drop.item_id == 74 && drop.backend_id == "sd_mp_legendary" &&
+			drop.slots == std::array{supply_drop_slot{3, 0, {}, false}, supply_drop_slot{}, supply_drop_slot{}};
+		if (drop.contains_zm_consumables || !drop.backend_id.starts_with("sd_mp") ||
+			(!drop.menu_available && !legendary))
 		{
 			return false;
 		}
 
-		for (const auto& event : mp_event_drops)
+		return std::ranges::all_of(drop.slots, [](const supply_drop_slot& slot)
 		{
-			if (drop.type == event.type && drop.backend_id == event.backend_id && drop.item_id == event.item_id)
-			{
-				const supply_drop_slot restricted{0, 0, std::string{event.operation}, event.bribe};
-				const auto other = event.bribe ? restricted : unrestricted;
-				return drop.slots == std::array{restricted, other, other};
-			}
-		}
-
-		if (drop.slots[1] != unrestricted || drop.slots[2] != unrestricted)
-		{
-			return false;
-		}
-
-		if (drop.type == 0 && drop.backend_id == "sd_mp" && drop.item_id == 1)
-		{
-			return drop.slots[0] == unrestricted;
-		}
-
-		for (const auto& tier : mp_supply_drop_tiers)
-		{
-			if (drop.type == tier.type && drop.backend_id == tier.backend_id && drop.item_id == tier.item_id)
-			{
-				return drop.slots[0] == supply_drop_slot{tier.rarity_floor, 0, {}, false};
-			}
-		}
-
-		return false;
+			const auto type_supported = (slot.type >= 0 && slot.type <= 22) || slot.type == 25 || slot.type == 26;
+			return type_supported && slot.rarity >= 0 && slot.rarity <= 5 &&
+				(slot.operation.empty() || operation_index(slot.operation).has_value());
+		});
 	}
 
 	// Inventory_IsItemGuidHidden formats an unpadded lowercase "0x%x" key and compares it case-insensitively

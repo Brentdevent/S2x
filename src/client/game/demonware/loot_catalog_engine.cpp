@@ -43,6 +43,7 @@ namespace demonware::loot_catalog_engine
 		constexpr int stats_entitlement_column = 37;
 		constexpr int stats_collection_column = 46;
 		constexpr int stats_collection_reward_column = 47;
+		constexpr int stats_division_column = 48;
 		constexpr int stats_operation_column = 52;
 		constexpr int stats_production_level_column = 56;
 
@@ -62,13 +63,14 @@ namespace demonware::loot_catalog_engine
 			stats_entitlement_column,
 			stats_collection_column,
 			stats_collection_reward_column,
+			stats_division_column,
 			stats_operation_column,
 			stats_production_level_column,
 		};
 
 		using stats_cells = std::array<std::string_view, stats_columns.size()>;
 
-		constexpr std::array supply_drop_columns{1, 4, 5, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23};
+		constexpr std::array supply_drop_columns{1, 2, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23};
 
 		// socialScoreTable only has localized reward labels, so the item bindings come from retail kind-5 descriptors
 		constexpr std::array<std::uint32_t, 20> social_rank_items
@@ -473,6 +475,12 @@ namespace demonware::loot_catalog_engine
 				{
 					item.operation = parsed;
 				}
+			}
+
+			int division{};
+			if (parse_integer(cell<stats_division_column>(cells), division) && division >= 0)
+			{
+				item.division = division;
 			}
 
 			// Weapon grades share a reference, so each row keeps its own GUID instead of BG_GetItemGUIDFromReference

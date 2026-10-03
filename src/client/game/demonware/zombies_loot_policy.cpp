@@ -46,7 +46,7 @@ namespace demonware::zombies_loot_policy
 	bool supports(const supply_drop& drop)
 	{
 		const supply_drop_slot any{}, pack{0, 24, {}, false}, rare{2, 0, {}, false};
-		const supply_drop_slot epic{4, 0, {}, false};
+		const supply_drop_slot epic{4, 0, {}, false}, heroic{5, 0, {}, true};
 		const supply_drop_slot consumable{0, 23, {}, false}, rare_consumable{2, 23, {}, false};
 		// Exact native supplyDropTypes.csv descriptors. Slot type 24 expands to
 		// three cards; it is not booster-pack type 24 (an unrelated MP bribe).
@@ -57,6 +57,10 @@ namespace demonware::zombies_loot_policy
 		if (drop.type == 3 && drop.backend_id == "sd_zombie_rare" && drop.item_id == 6)
 		{
 			return drop.contains_zm_consumables && drop.slots == std::array{rare, pack, any};
+		}
+		if (drop.type == 11 && drop.backend_id == "sd_zombie_heroic" && drop.item_id == 71)
+		{
+			return drop.contains_zm_consumables && drop.slots == std::array{heroic, pack, any};
 		}
 		if (drop.type == 19 && drop.backend_id == "sd_zombie_epic" && drop.item_id == 79)
 		{
@@ -89,7 +93,16 @@ namespace demonware::zombies_loot_policy
 		std::vector<loot_item> result;
 		for (const auto& slot : drop.slots)
 		{
-			auto& pool = slot.type ? consumable_pool : cosmetic_pool;
+			auto pool = slot.type ? consumable_pool : cosmetic_pool;
+			if (!slot.type)
+			{
+				std::erase_if(pool, [&](const loot_item& item)
+				{
+					return !loot_policy::matches_slot(item, slot) ||
+						(slot.dupe_protection && transaction.get_inventory(item.item_id));
+				});
+			}
+
 			const auto count = slot.type == 24 ? 3 : 1;
 			const auto weights = loot_policy::rarity_weights(drop.type == 2, slot.rarity, rarity_scale);
 			for (int card = 0; card < count; ++card)
@@ -104,7 +117,10 @@ namespace demonware::zombies_loot_policy
 				// distinct within the pack and use the existing native pawn path.
 				if (!slot.type)
 				{
-					pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(*index));
+					std::erase_if(cosmetic_pool, [&](const loot_item& item)
+					{
+						return item.item_id == result.back().item_id;
+					});
 				}
 			}
 		}
