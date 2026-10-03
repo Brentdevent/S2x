@@ -3,6 +3,7 @@
 #include "utils/nt.hpp"
 #include "utils/io.hpp"
 #include "utils/hook.hpp"
+#include <exdispid.h>
 
 
 namespace
@@ -117,6 +118,14 @@ html_frame::html_frame()
 	setup_ole();
 }
 
+html_frame::~html_frame()
+{
+	if (this->browser_events_ && this->browser_events_cookie_)
+	{
+		this->browser_events_->Unadvise(this->browser_events_cookie_);
+	}
+}
+
 HRESULT html_frame::GetHostInfo(DOCHOSTUIINFO* pInfo)
 {
 	pInfo->cbSize = sizeof(DOCHOSTUIINFO);
@@ -134,7 +143,7 @@ HRESULT html_frame::GetWindow(HWND* lphwnd)
 
 HRESULT html_frame::QueryInterface(REFIID riid, void** ppvObject)
 {
-	if (IsEqualGUID(riid, IID_IDispatch))
+	if (IsEqualGUID(riid, IID_IDispatch) || IsEqualGUID(riid, DIID_DWebBrowserEvents2))
 	{
 		*ppvObject = static_cast<IDispatch*>(this);
 		return S_OK;
@@ -283,6 +292,14 @@ void html_frame::initialize_browser()
 	this->browser_object_->SetClientSite(this);
 	this->browser_object_->SetHostNames(L"Hostname", nullptr);
 
+	CComPtr<IConnectionPointContainer> connection_points;
+	if (FAILED(this->browser_object_.QueryInterface(&connection_points))
+		|| FAILED(connection_points->FindConnectionPoint(DIID_DWebBrowserEvents2, &this->browser_events_))
+		|| FAILED(this->browser_events_->Advise(static_cast<IDispatch*>(this), &this->browser_events_cookie_)))
+	{
+		throw std::runtime_error("Unable to register browser navigation events");
+	}
+
 	RECT rect;
 	GetClientRect(this->get_window(), &rect);
 	OleSetContainedObject(this->browser_object_, TRUE);
@@ -386,6 +403,11 @@ void html_frame::register_callback(const std::string& name, const std::function<
 	this->callbacks_.emplace_back(name, callback);
 }
 
+void html_frame::register_navigation_callback(const std::wstring& url, const std::function<void()>& callback)
+{
+	this->navigation_callbacks_[url] = callback;
+}
+
 HRESULT html_frame::GetIDsOfNames(const IID& /*riid*/, LPOLESTR* rgszNames, UINT cNames, LCID /*lcid*/,
                                   DISPID* rgDispId)
 {
@@ -404,6 +426,34 @@ HRESULT html_frame::Invoke(const DISPID dispIdMember, const IID& /*riid*/, LCID 
                            DISPPARAMS* pDispParams,
                            VARIANT* pVarResult, EXCEPINFO* /*pExcepInfo*/, UINT* /*puArgErr*/)
 {
+	if (dispIdMember == DISPID_BEFORENAVIGATE2)
+	{
+		if (!pDispParams || pDispParams->cArgs != 7 || !pDispParams->rgvarg)
+		{
+			return DISP_E_BADPARAMCOUNT;
+		}
+
+		// COM arguments are reversed: Cancel is first and URL is sixth.
+		auto& cancel = pDispParams->rgvarg[0];
+		CComVariant url;
+		if (cancel.vt != (VT_BOOL | VT_BYREF) || !cancel.pboolVal
+			|| FAILED(VariantCopyInd(&url, &pDispParams->rgvarg[5])) || url.vt != VT_BSTR)
+		{
+			return DISP_E_TYPEMISMATCH;
+		}
+
+		const auto callback = this->navigation_callbacks_.find(
+			std::wstring(url.bstrVal ? url.bstrVal : L"", SysStringLen(url.bstrVal)));
+		if (callback != this->navigation_callbacks_.end())
+		{
+			// Consume the link before invoking code that may close the launcher.
+			*cancel.pboolVal = VARIANT_TRUE;
+			callback->second();
+		}
+
+		return S_OK;
+	}
+
 	std::vector<html_argument> params{};
 	for (auto i = pDispParams->cArgs; i > 0; --i)
 	{

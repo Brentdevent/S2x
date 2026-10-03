@@ -260,7 +260,7 @@ namespace network
 					std::system_category().message(WSAGetLastError()).data()
 				);
 
-				return 0;
+				return SOCKET_ERROR;
 			}
 
 			return result;

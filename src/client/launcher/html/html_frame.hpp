@@ -1,4 +1,5 @@
 #pragma once
+#include <unordered_map>
 #include "ole_in_place_frame.hpp"
 #include "ole_in_place_site.hpp"
 #include "doc_host_ui_handler.hpp"
@@ -24,7 +25,7 @@ public:
 	html_frame(html_frame&&) = delete;
 	html_frame& operator=(html_frame&&) = delete;
 
-	~html_frame() override = default;
+	~html_frame() override;
 
 	void initialize(HWND window);
 
@@ -45,6 +46,7 @@ public:
 	html_argument invoke_callback(int id, const std::vector<html_argument>& params) const;
 
 	void register_callback(const std::string& name, const std::function<CComVariant(const std::vector<html_argument>&)>& callback);
+	void register_navigation_callback(const std::wstring& url, const std::function<void()>& callback);
 
 	HRESULT STDMETHODCALLTYPE QueryInterface(
 		REFIID riid,
@@ -53,8 +55,11 @@ public:
 private:
 	HWND window_ = nullptr;
 	CComPtr<IOleObject> browser_object_;
+	CComPtr<IConnectionPoint> browser_events_;
+	DWORD browser_events_cookie_ = 0;
 
 	std::vector<std::pair<std::string, std::function<html_argument(const std::vector<html_argument>&)>>> callbacks_;
+	std::unordered_map<std::wstring, std::function<void()>> navigation_callbacks_;
 
 	void create_browser();
 	void initialize_browser();

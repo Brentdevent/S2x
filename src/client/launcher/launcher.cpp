@@ -25,6 +25,22 @@ launcher::launcher() :
 
 void launcher::create_main_menu()
 {
+	// Mode selection must also work when the embedded browser cannot run scripts.
+	this->main_window_.get_html_frame()->register_navigation_callback(L"s2x:singleplayer", [this]
+	{
+		this->select_mode(game::environment::mode::singleplayer);
+	});
+	
+	this->main_window_.get_html_frame()->register_navigation_callback(L"s2x:multiplayer", [this]
+	{
+		this->select_mode(game::environment::mode::multiplayer);
+	});
+
+	this->main_window_.get_html_frame()->register_navigation_callback(L"s2x:zombies", [this]
+	{
+		this->select_mode(game::environment::mode::zombies);
+	});
+
 	this->main_window_.get_html_frame()->register_callback(
 		"openUrl", [](const std::vector<html_argument>& params) -> CComVariant
 		{
