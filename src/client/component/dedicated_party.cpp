@@ -156,9 +156,14 @@ namespace dedicated_party
 			utils::hook::invoke<void>(0x6DA7A0_g, minimum);
 			if (is_active())
 			{
-				// SV_Startup re-registers the dvar before reading it for allocations.
-				// Reapply the human limit after that registration as well as at handoff.
+				// SV_Startup will allocate using this player limit. Clear the modified flag
+				// so the first round restart does not reload the map and reset the match.
 				game::Dvar_SetIntByName("sv_maxclients", dedicated_party_state.player_capacity);
+
+				if (auto* max_clients = game::Dvar_FindMalleableVar("sv_maxclients"))
+				{
+					game::Dvar_ClearModified(max_clients);
+				}
 			}
 		}
 
