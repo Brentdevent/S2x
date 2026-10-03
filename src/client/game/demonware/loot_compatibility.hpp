@@ -23,11 +23,45 @@ namespace demonware::loot_compatibility
 		{13, "sd_mp_epic", 73, 4},
 	}};
 
+	struct mp_event_drop
+	{
+		int type{};
+		std::string_view backend_id{};
+		std::uint32_t item_id{};
+		std::string_view operation{};
+		bool bribe{};
+	};
+
+	// Exact native supplyDropTypes.csv shapes: event drops guarantee one event
+	// card; these two bribes guarantee three distinct, unowned event cards.
+	constexpr std::array<mp_event_drop, 4> mp_event_drops
+	{{
+		{15, "sd_mp_winter", 75, "winter", false},
+		{16, "sd_mp_winter_bribe", 76, "winter", true},
+		{17, "sd_mp_resist", 77, "resistance", false},
+		{18, "sd_mp_resist_bribe", 78, "resistance", true},
+	}};
+
 	inline bool is_confirmed_mp_supply_drop(const supply_drop& drop)
 	{
 		const supply_drop_slot unrestricted{};
 
-		if (drop.contains_zm_consumables || drop.slots[1] != unrestricted || drop.slots[2] != unrestricted)
+		if (drop.contains_zm_consumables)
+		{
+			return false;
+		}
+
+		for (const auto& event : mp_event_drops)
+		{
+			if (drop.type == event.type && drop.backend_id == event.backend_id && drop.item_id == event.item_id)
+			{
+				const supply_drop_slot restricted{0, 0, std::string{event.operation}, event.bribe};
+				const auto other = event.bribe ? restricted : unrestricted;
+				return drop.slots == std::array{restricted, other, other};
+			}
+		}
+
+		if (drop.slots[1] != unrestricted || drop.slots[2] != unrestricted)
 		{
 			return false;
 		}

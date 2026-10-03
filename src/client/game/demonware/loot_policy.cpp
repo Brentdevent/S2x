@@ -84,8 +84,17 @@ namespace demonware::loot_policy
 			});
 		}
 
+		bool matches_operation(const loot_item& item, const std::string_view operation)
+		{
+			// Stock InventoryOperations in inventoryutils.lua; GetItemOperationIndex
+			// reads these numeric identities from StatsTable's Operation column.
+			return operation.empty() || (operation == "winter" && item.operation == 1) ||
+				(operation == "resistance" && item.operation == 2);
+		}
+
 		bool has_dupe_protection(const supply_drop& drop)
 		{
+			// Supported bribes protect every slot; mixed protected/unprotected shapes remain unsupported.
 			return std::ranges::any_of(drop.slots, &supply_drop_slot::dupe_protection);
 		}
 
@@ -244,16 +253,25 @@ namespace demonware::loot_policy
 
 		for (const auto& slot : drop.slots)
 		{
-			const auto weights = rarity_weights(drop.type == 0, slot.rarity, rarity_scale);
+			auto slot_candidates = candidates;
+			std::erase_if(slot_candidates, [&](const loot_item& item)
+			{
+				return !matches_operation(item, slot.operation);
+			});
 
-			const auto index = select_card(candidates, weights, random_state);
+			// Event cards use the existing local improved weights, without adding a rarity guarantee.
+			const auto weights = rarity_weights(drop.type == 0, slot.rarity, rarity_scale);
+			const auto index = select_card(slot_candidates, weights, random_state);
 			if (!index)
 			{
 				return std::nullopt;
 			}
 
-			selected.push_back(std::move(candidates[*index]));
-			candidates.erase(candidates.begin() + static_cast<std::ptrdiff_t>(*index));
+			selected.push_back(std::move(slot_candidates[*index]));
+			std::erase_if(candidates, [&](const loot_item& item)
+			{
+				return item.item_id == selected.back().item_id;
+			});
 		}
 
 		return selected;
