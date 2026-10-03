@@ -560,6 +560,17 @@ namespace custom_match
 		}
 	}
 
+	bool progression_enabled()
+	{
+		if (game::environment::is_dedicated())
+		{
+			return true;
+		}
+
+		auto* party = game::Lobby_GetPartyData(0);
+		return party && !private_loadouts_stub(party);
+	}
+
 	bool is_valid_gametype(const std::string_view gametype)
 	{
 		const auto name = utils::string::to_lower(std::string{gametype});

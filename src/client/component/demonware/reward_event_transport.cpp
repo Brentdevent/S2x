@@ -2,6 +2,7 @@
 #include "loader/component_loader.hpp"
 #include "reward_event_transport.hpp"
 #include "order_tracking.hpp"
+#include "match_drops.hpp"
 #include "component/command.hpp"
 #include "component/network.hpp"
 #include "component/scheduler.hpp"
@@ -222,6 +223,10 @@ namespace reward_event_relay
 		void deploy(const unsigned int local_client)
 		{
 			const command::params args;
+			if (match_drops::receive(local_client, args))
+			{
+				return;
+			}
 			if (!args.size() || std::string_view{args[0]} != wire::command)
 			{
 				deploy_hook.invoke<void>(local_client);
