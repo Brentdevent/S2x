@@ -6,6 +6,7 @@
 #include "network.hpp"
 #include "party.hpp"
 #include "scheduler.hpp"
+#include "server_commands.hpp"
 
 #include "game/game.hpp"
 
@@ -15,6 +16,15 @@ namespace server_commands
 {
 	namespace
 	{
+		constexpr auto rcon_timeout = 1s;
+
+		game::dvar_t* rcon_password{};
+
+		std::recursive_mutex redirect_mutex;
+		bool redirecting{};
+		game::netadr_s redirect_target{};
+		std::string redirect_buffer{};
+
 		constexpr auto client_zombie = 1;
 		constexpr auto client_connected = 3;
 		constexpr auto client_active = 5;
@@ -229,6 +239,166 @@ namespace server_commands
 			output += '\n';
 			console::dispatch_message(console::print_type_info, output);
 		}
+
+		bool setup_redirect(const game::netadr_s& target)
+		{
+			std::lock_guard _(redirect_mutex);
+			if (redirecting)
+			{
+				return false;
+			}
+
+			redirecting = true;
+			redirect_target = target;
+			redirect_buffer.clear();
+			return true;
+		}
+
+		void clear_redirect()
+		{
+			game::netadr_s target{};
+			std::string buffer{};
+
+			{
+				std::lock_guard _(redirect_mutex);
+				target = redirect_target;
+				buffer = std::move(redirect_buffer);
+				redirecting = false;
+				redirect_target = {};
+				redirect_buffer.clear();
+			}
+
+			network::send(target, "print", buffer, '\n');
+		}
+
+		void finish_redirect()
+		{
+			const auto deadline = std::chrono::steady_clock::now() + rcon_timeout;
+			auto first_frame = true;
+
+			scheduler::schedule([deadline, first_frame]() mutable
+			{
+				if (first_frame)
+				{
+					first_frame = false;
+					return scheduler::cond_continue;
+				}
+
+				if (game::cmd_textArray[0].cmdsize > 0 && std::chrono::steady_clock::now() < deadline)
+				{
+					return scheduler::cond_continue;
+				}
+
+				clear_redirect();
+				return scheduler::cond_end;
+			}, scheduler::main);
+		}
+
+		void handle_rcon(const game::netadr_s& address, const std::string_view& data)
+		{
+			const auto separator = data.find(' ');
+			if (separator == std::string_view::npos)
+			{
+				network::send(address, "print", "Invalid RCon request", '\n');
+				return;
+			}
+
+			const auto password = data.substr(0, separator);
+			auto rcon_command = std::string{data.substr(separator + 1)};
+			while (!rcon_command.empty() && (rcon_command.back() == '\0' || rcon_command.back() == '\n'
+				|| rcon_command.back() == '\r'))
+			{
+				rcon_command.pop_back();
+			}
+
+			if (rcon_command.empty() || !rcon_password || !rcon_password->current.string
+				|| !*rcon_password->current.string)
+			{
+				return;
+			}
+
+			if (password != rcon_password->current.string)
+			{
+				network::send(address, "print", "Invalid rcon password", '\n');
+				console::error("Invalid rcon password from %s\n", network::net_adr_to_string(address));
+				return;
+			}
+
+			console::info("RCon from %s: %s\n", network::net_adr_to_string(address), rcon_command.data());
+
+			if (!setup_redirect(address))
+			{
+				network::send(address, "print", "", '\n');
+				return;
+			}
+
+			rcon_command.push_back('\n');
+			game::Cbuf_AddText(0, rcon_command.data());
+			finish_redirect();
+		}
+
+		void rcon(const command::params& params)
+		{
+			static std::string password{};
+
+			if (params.size() < 2)
+			{
+				console::info("Usage: rcon login <password> | rcon logout | rcon <command>\n");
+				return;
+			}
+
+			const std::string_view operation = params[1];
+			if (operation == "login")
+			{
+				if (params.size() < 3)
+				{
+					return;
+				}
+
+				password = params.join(2);
+				return;
+			}
+
+			if (operation == "logout")
+			{
+				password.clear();
+				return;
+			}
+
+			const auto data = params.join(1);
+			if (game::is_server_running())
+			{
+				game::Cbuf_AddText(0, (data + "\n").data());
+				return;
+			}
+
+			if (password.empty())
+			{
+				console::info("You must login first to use RCon\n");
+				return;
+			}
+
+			const auto& target = party::get_target();
+			if (target.type <= game::NA_BAD || !game::CL_IsLocalClientInGame(0))
+			{
+				console::warn("You need to be connected to a server!\n");
+				return;
+			}
+
+			network::send(target, "rcon", password + " " + data);
+		}
+	}
+
+	bool message_redirect(const std::string& message)
+	{
+		std::lock_guard _(redirect_mutex);
+		if (!redirecting)
+		{
+			return false;
+		}
+
+		redirect_buffer.append(message);
+		return true;
 	}
 
 	class component final : public multiplayer_component
@@ -239,6 +409,20 @@ namespace server_commands
 			command::add("status", status);
 			command::add("clientkick", clientkick);
 			command::add("kick", kick);
+
+			if (game::environment::is_dedicated())
+			{
+				scheduler::once([]
+				{
+					rcon_password = game::Dvar_RegisterString("rcon_password", "", game::DVAR_FLAG_NONE);
+				}, scheduler::pipeline::main);
+
+				network::on("rcon", handle_rcon);
+			}
+			else
+			{
+				command::add("rcon", rcon);
+			}
 		}
 	};
 }
