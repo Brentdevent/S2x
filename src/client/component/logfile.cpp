@@ -9,6 +9,7 @@
 #include "game/game.hpp"
 
 #include "component/gsc/script_extension.hpp"
+#include "component/gsc/script_loading.hpp"
 
 #include <utils/hook.hpp>
 #include <utils/io.hpp>
@@ -41,20 +42,29 @@ namespace logfile
 				return;
 			}
 
-			char va_buffer[0x400]{};
-
 			va_list ap;
 			va_start(ap, fmt);
-			vsprintf_s(va_buffer, fmt, ap);
+			const auto length = _vscprintf(fmt, ap);
+			va_end(ap);
+
+			if (length < 0)
+			{
+				return;
+			}
+
+			std::string buffer(static_cast<std::size_t>(length), '\0');
+
+			va_start(ap, fmt);
+			vsnprintf(buffer.data(), buffer.size() + 1, fmt, ap);
 			va_end(ap);
 
 			const auto time = static_cast<int>(std::max<std::int64_t>(0, *game::mp::svs_time - level_start_time) / 1000);
 
-			utils::io::write_file(g_log->current.string, utils::string::va("%3i:%i%i %s",
+			utils::io::write_file(g_log->current.string, std::format("{:3}:{}{} {}",
 				time / 60,
 				time % 60 / 10,
 				time % 60 % 10,
-				va_buffer
+				buffer
 			), true);
 		}
 
@@ -72,7 +82,7 @@ namespace logfile
 
 		void log_say(const int client_num, const command::params_sv& params)
 		{
-			const std::string_view cmd = params[0];
+			const auto cmd = utils::string::to_lower(params[0]);
 			if ((cmd != "say" && cmd != "say_team") || client_num < 0 || client_num >= *game::sv_maxclients)
 			{
 				return;
@@ -92,7 +102,7 @@ namespace logfile
 
 			const auto& client = clients[client_num];
 			g_log_printf("%s;%s;%i;%s;%s\n",
-				params[0],
+				cmd.data(),
 				client.guid,
 				client_num,
 				client.name,
@@ -193,7 +203,7 @@ namespace logfile
 
 			gsc::override_function("logprint", scr_log_print);
 
-			scripting::on_init([]
+			gsc::on_before_main([]
 			{
 				level_start_time = *game::mp::svs_time;
 				game_running = true;
