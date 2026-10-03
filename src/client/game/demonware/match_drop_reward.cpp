@@ -1,7 +1,6 @@
 #include <std_include.hpp>
 #include "match_drop_reward.hpp"
 #include "economy_tools.hpp"
-#include "loot_compatibility.hpp"
 
 #include <utils/cryptography.hpp>
 #include <utils/string.hpp>
@@ -13,6 +12,32 @@ namespace demonware::match_drop_reward
 {
 	namespace
 	{
+		struct drop_option
+		{
+			std::uint32_t item_id;
+			unsigned weight;
+		};
+
+		// Local match-reward weights, not retail odds. IDs are from supplyDropTypes.csv.
+		// Only repeatable MP drops: no Common, Zombies or duplicate-protected bribes.
+		constexpr std::array<drop_option, 6> drop_pool
+		{{
+			{2, 60},  // Rare
+			{75, 10}, // Winter Siege
+			{77, 10}, // Resistance
+			{94, 10}, // Blitzkrieg
+			{74, 7},  // Legendary
+			{73, 3},  // Epic
+		}};
+
+		bool valid_item(const std::uint32_t item_id)
+		{
+			return std::ranges::any_of(drop_pool, [item_id](const auto& drop)
+			{
+				return drop.item_id == item_id;
+			});
+		}
+
 		bool valid_match(const std::string_view match)
 		{
 			return match.size() == 32 && match.find_first_not_of("0123456789abcdefABCDEF") == std::string_view::npos;
@@ -40,7 +65,7 @@ namespace demonware::match_drop_reward
 		{
 			if (user && std::ranges::none_of(recipients, [user](const auto& entry) { return entry.user == user; }))
 			{
-				recipients.push_back({user, utils::string::to_lower(match), 1});
+				recipients.push_back({user, utils::string::to_lower(match)});
 			}
 		}
 
@@ -55,15 +80,37 @@ namespace demonware::match_drop_reward
 		std::shuffle(recipients.begin(), recipients.end(), random);
 		recipients.resize(std::min<std::size_t>(total, recipients.size()));
 
+		unsigned total_weight{};
+		for (const auto& drop : drop_pool)
+		{
+			total_weight += drop.weight;
+		}
+
+		std::uniform_int_distribution<unsigned> selection{0, total_weight - 1};
+		for (auto& recipient : recipients)
+		{
+			auto roll = selection(random);
+			for (const auto& drop : drop_pool)
+			{
+				if (roll < drop.weight)
+				{
+					recipient.item_id = drop.item_id;
+					break;
+				}
+
+				roll -= drop.weight;
+			}
+		}
+
 		return recipients;
 	}
 
 	std::optional<award> parse(const std::string_view user, const std::string_view match,
-		const std::string_view quantity)
+		const std::string_view item_id)
 	{
 		award result;
 		if (user.empty() || user.size() > 16 || !number(user, result.user, 16) || !valid_match(match) ||
-			!number(quantity, result.quantity, 10) || result.quantity > maximum_drops)
+			item_id.empty() || item_id.size() > 10 || !number(item_id, result.item_id, 10) || !valid_item(result.item_id))
 		{
 			return {};
 		}
@@ -74,14 +121,14 @@ namespace demonware::match_drop_reward
 
 	marketplace_store::transaction_result grant(const award& value)
 	{
-		if (!value.user || !value.quantity || value.quantity > maximum_drops || !valid_match(value.match))
+		if (!value.user || !valid_item(value.item_id) || !valid_match(value.match))
 		{
 			return {};
 		}
 
-		// supplyDropTypes.csv: sd_mp_rare is inventory item 2. The existing grant
-		// transaction preserves metadata and atomically saves stock with its receipt.
-		return economy_tools::give_item(loot_compatibility::mp_rare_supply_drop_item_id,
-			value.quantity, value.user, "matchdrop:" + utils::string::to_lower(value.match));
+		// Persist the host's choice once. The grant fingerprint includes the item ID,
+		// so changing the crate on a replay conflicts instead of awarding it again.
+		return economy_tools::give_item(value.item_id, 1, value.user,
+			"matchdrop:" + utils::string::to_lower(value.match));
 	}
 }

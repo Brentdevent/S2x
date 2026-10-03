@@ -9,7 +9,6 @@
 #include "game/game.hpp"
 #include "game/demonware/economy_tools.hpp"
 #include "game/demonware/loot_catalog.hpp"
-#include "game/demonware/loot_compatibility.hpp"
 #include "game/demonware/match_drop_reward.hpp"
 #include "game/demonware/runtime_context.hpp"
 
@@ -40,9 +39,8 @@ namespace match_drops
 		// and shares the result through SendWinnersCircleData. Inventory is separate.
 		game::symbol<std::array<earned_item, 10>> earned_items{0x87E3F00};
 
-		void present_award()
+		void present_award(const std::uint32_t item)
 		{
-			constexpr auto item = demonware::loot_compatibility::mp_rare_supply_drop_item_id;
 			for (auto& entry : *earned_items)
 			{
 				if (entry.id == item || !entry.id || !entry.quantity)
@@ -78,8 +76,8 @@ namespace match_drops
 
 				if (result.status == demonware::marketplace_store::transaction_status::committed)
 				{
-					present_award();
-					console::info("Match reward: %u Rare Supply Drop(s).\n", award.quantity);
+					present_award(award.item_id);
+					console::info("Match reward: 1 Supply Drop (item %u).\n", award.item_id);
 				}
 			}
 			else
@@ -184,7 +182,7 @@ namespace match_drops
 				}
 
 				game::SV_SendServerCommand(&clients[slot], game::SV_CMD_RELIABLE, "%s %llx %s %u",
-					reward::command, award.user, award.match.c_str(), award.quantity);
+					reward::command, award.user, award.match.c_str(), award.item_id);
 			}
 		}
 

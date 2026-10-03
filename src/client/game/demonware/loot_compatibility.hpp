@@ -7,9 +7,6 @@ namespace demonware::loot_compatibility
 	using loot_catalog::supply_drop;
 	using loot_catalog::supply_drop_slot;
 
-	// supplyDropTypes.csv: sd_mp_rare.
-	constexpr std::uint32_t mp_rare_supply_drop_item_id = 2;
-
 	inline std::optional<int> operation_index(const std::string_view operation)
 	{
 		// Stock InventoryOperations / StatsTable.Operation.
