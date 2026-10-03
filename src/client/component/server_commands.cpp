@@ -240,6 +240,68 @@ namespace server_commands
 			console::dispatch_message(console::print_type_info, output);
 		}
 
+		void send_print(const game::netadr_s& target, const std::string& text)
+		{
+			constexpr std::size_t max_packet_size = 0x4EE;
+			constexpr std::size_t max_chunk_size = max_packet_size - (sizeof("\xFF\xFF\xFF\xFF" "print\n") - 1);
+
+			if (text.size() <= max_chunk_size)
+			{
+				network::send(target, "print", text, '\n');
+				return;
+			}
+
+			std::size_t offset = 0;
+			while (offset < text.size())
+			{
+				auto length = std::min(max_chunk_size, text.size() - offset);
+				if (offset + length < text.size())
+				{
+					const auto newline = text.rfind('\n', offset + length - 1);
+					if (newline != std::string::npos && newline >= offset)
+					{
+						length = newline - offset + 1;
+					}
+				}
+
+				network::send(target, "print", text.substr(offset, length), '\n');
+				offset += length;
+			}
+		}
+
+		std::string join_args(const command::params& params, const int index)
+		{
+			std::string result{};
+
+			for (auto i = index; i < params.size(); ++i)
+			{
+				const std::string_view arg = params[i];
+				if (i > index)
+				{
+					result.push_back(' ');
+				}
+
+				if (arg.empty() || arg.find_first_of(" \t;") != std::string_view::npos)
+				{
+					result.push_back('"');
+					result.append(arg);
+					result.push_back('"');
+				}
+				else
+				{
+					result.append(arg);
+				}
+			}
+
+			return result;
+		}
+
+		bool is_redirecting()
+		{
+			std::lock_guard _(redirect_mutex);
+			return redirecting;
+		}
+
 		bool setup_redirect(const game::netadr_s& target)
 		{
 			std::lock_guard _(redirect_mutex);
@@ -268,7 +330,7 @@ namespace server_commands
 				redirect_buffer.clear();
 			}
 
-			network::send(target, "print", buffer, '\n');
+			send_print(target, buffer);
 		}
 
 		void finish_redirect()
@@ -324,11 +386,17 @@ namespace server_commands
 				return;
 			}
 
+			if (is_redirecting())
+			{
+				network::send(address, "print", "RCon is busy, try again", '\n');
+				return;
+			}
+
 			console::info("RCon from %s: %s\n", network::net_adr_to_string(address), rcon_command.data());
 
 			if (!setup_redirect(address))
 			{
-				network::send(address, "print", "", '\n');
+				network::send(address, "print", "RCon is busy, try again", '\n');
 				return;
 			}
 
@@ -365,7 +433,7 @@ namespace server_commands
 				return;
 			}
 
-			const auto data = params.join(1);
+			const auto data = join_args(params, 1);
 			if (game::is_server_running())
 			{
 				game::Cbuf_AddText(0, (data + "\n").data());
