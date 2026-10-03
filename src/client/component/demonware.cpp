@@ -4,6 +4,8 @@
 #include <utils/hook.hpp>
 #include <utils/thread.hpp>
 
+#include "component/console/console.hpp"
+
 #include "game/game.hpp"
 #include "game/demonware/servers/lobby_server.hpp"
 #include "game/demonware/servers/auth3_server.hpp"
@@ -12,6 +14,7 @@
 #include "game/demonware/servers/uno_server.hpp"
 #include "game/demonware/servers/glutton_server.hpp"
 #include "game/demonware/server_registry.hpp"
+#include "game/demonware/marketplace_catalog.hpp"
 
 #include "master_server.hpp"
 
@@ -543,6 +546,29 @@ namespace demonware
 
 		void post_unpack() override
 		{
+			// Validate and publish the immutable captured Marketplace catalog before
+			// the Demonware worker can service task 99 or 111. Resource parsing never
+			// runs concurrently with a request and no engine/TLS function is involved.
+			marketplace_catalog::initialize_embedded();
+			const auto& catalog = marketplace_catalog::get_embedded();
+			if (catalog.status == marketplace_catalog::load_status::ready && catalog.value)
+			{
+				console::demonware(
+					"[DW] captured Marketplace catalog ready (SKUs=%zu, products=%zu)\n",
+					catalog.value->skus().size(), catalog.value->products().size());
+			}
+			else if (catalog.status == marketplace_catalog::load_status::missing)
+			{
+				console::error(
+					"[DW] captured Marketplace catalog missing; tasks 99/111 will fail closed (%s)\n",
+					catalog.error.c_str());
+			}
+			else
+			{
+				console::error(
+					"[DW] captured Marketplace catalog invalid; tasks 99/111 will fail closed (%s)\n",
+					catalog.error.c_str());
+			}
 			server_thread = utils::thread::create_named_thread("Demonware", server_main);
 
 			// Skip bdAuth::validateResponseSignature

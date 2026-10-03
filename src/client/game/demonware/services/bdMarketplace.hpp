@@ -12,16 +12,22 @@ namespace demonware
 		void purchaseOnSteamInitialize(service_server* server, byte_buffer* buffer) const;
 		void purchaseOnSteamFinalize(service_server* server, byte_buffer* buffer) const;
 		void getExpiredInventoryItems(service_server* server, byte_buffer* buffer) const;
+		void deleteInventoryItems(service_server* server, byte_buffer* buffer) const;
 		void validateInventoryItemsToken(service_server* server, byte_buffer* buffer) const;
 		void steamProcessDurable(service_server* server, byte_buffer* buffer) const;
 		void steamProcessDurableV2(service_server* server, byte_buffer* buffer) const;
+		void consumeInventoryItems(service_server* server, byte_buffer* buffer) const;
 		void purchaseSkus(service_server* server, byte_buffer* buffer) const;
+		void purchaseSkusV3(service_server* server, byte_buffer* buffer) const;
+		void getProducts(service_server* server, byte_buffer* buffer) const;
 		void getBalance(service_server* server, byte_buffer* buffer) const;
 		void getBalanceV2(service_server* server, byte_buffer* buffer) const;
 		void getInventoryPaginated(service_server* server, byte_buffer* buffer) const;
+		void putInventoryItemsData(service_server* server, byte_buffer* buffer) const;
 		void putPlayersInventoryItems(service_server* server, byte_buffer* buffer) const;
 		void pawnItems(service_server* server, byte_buffer* buffer) const;
 		void getEntitlements(service_server* server, byte_buffer* buffer) const;
 		void getSkusPaginated(service_server* server, byte_buffer* buffer) const;
+		void applyConversionRule(service_server* server, byte_buffer* buffer) const;
 	};
 }

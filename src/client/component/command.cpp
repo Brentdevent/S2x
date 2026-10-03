@@ -393,6 +393,100 @@ namespace command
 			}
 		}
 
+		std::string escape_csv(const char* value)
+		{
+			const std::string_view text = value ? value : "";
+			if (text.find_first_of(",\"\r\n") == std::string_view::npos)
+			{
+				return std::string(text);
+			}
+
+			std::string result = "\"";
+			for (const auto c : text)
+			{
+				if (c == '"')
+				{
+					result.push_back('"');
+				}
+
+				result.push_back(c);
+			}
+
+			result.push_back('"');
+			return result;
+		}
+
+		void dump_string_tables(const params& arguments)
+		{
+			const std::string filter = arguments.size() >= 2 ? arguments[1] : "";
+			std::vector<const game::StringTable*> tables{};
+			game::DB_EnumXAssets_FastFile(game::ASSET_TYPE_STRINGTABLE, [](const game::XAssetHeader header, void* data)
+			{
+				static_cast<std::vector<const game::StringTable*>*>(data)->push_back(header.stringTable);
+			}, &tables, true);
+
+			auto count = 0;
+			for (const auto* table : tables)
+			{
+				if (!table || !table->name || (!filter.empty()
+					&& !utils::string::match_compare(filter, table->name, false)))
+				{
+					continue;
+				}
+
+				std::string buffer{};
+				for (auto row = 0; row < table->rowCount; ++row)
+				{
+					for (auto column = 0; column < table->columnCount; ++column)
+					{
+						if (column)
+						{
+							buffer.push_back(',');
+						}
+
+						buffer.append(escape_csv(table->values[row * table->columnCount + column].string));
+					}
+
+					buffer.append("\r\n");
+				}
+
+				utils::io::write_file(std::format("s2x/dump/stringtables/{}", table->name), buffer);
+				++count;
+			}
+
+			console::info("Dumped %i stringtables to s2x/dump/stringtables\n", count);
+		}
+
+		void dump_localization(const params& arguments)
+		{
+			const std::string filter = arguments.size() >= 2 ? arguments[1] : "";
+			std::vector<const game::LocalizeEntry*> entries{};
+			game::DB_EnumXAssets_FastFile(game::ASSET_TYPE_LOCALIZE, [](const game::XAssetHeader header, void* data)
+			{
+				static_cast<std::vector<const game::LocalizeEntry*>*>(data)->push_back(header.localize);
+			}, &entries, true);
+
+			std::string buffer{};
+			auto count = 0;
+			for (const auto* entry : entries)
+			{
+				if (!entry || !entry->name || (!filter.empty()
+					&& !utils::string::match_compare(filter, entry->name, false)))
+				{
+					continue;
+				}
+
+				buffer.append(escape_csv(entry->name));
+				buffer.push_back(',');
+				buffer.append(escape_csv(entry->value));
+				buffer.append("\r\n");
+				++count;
+			}
+
+			utils::io::write_file("s2x/dump/localization.csv", buffer);
+			console::info("Dumped %i localized strings to s2x/dump/localization.csv\n", count);
+		}
+
 		void dump_commands(const params& arguments)
 		{
 			console::info("================================ COMMAND DUMP =====================================\n");
@@ -437,6 +531,8 @@ namespace command
 		{
 			command::add("listassetpool", list_asset_pool);
 			command::add("commandDump", dump_commands);
+			command::add("dumpStringtables", dump_string_tables);
+			command::add("dumpLocalization", dump_localization);
 		}
 
 		void add_sp_developer_commands()

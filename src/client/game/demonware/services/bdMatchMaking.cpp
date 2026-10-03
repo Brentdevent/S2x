@@ -1,7 +1,7 @@
 #include <std_include.hpp>
 #include "../dw_include.hpp"
 
-#include "steam/steam.hpp"
+#include "game/demonware/runtime_context.hpp"
 
 namespace demonware
 {
@@ -27,8 +27,14 @@ namespace demonware
 
 	void bdMatchMaking::createSession(service_server* server, byte_buffer* /*buffer*/) const
 	{
+		const auto identity = runtime_context::get_snapshot();
+		if (!identity)
+		{
+			server->create_reply(this->task_id(), BD_SERVICE_NOT_AVAILABLE).send();
+			return;
+		}
 		auto id = std::make_unique<bdSessionID>();
-		id->session_id = steam::SteamUser()->GetSteamID().bits;
+		id->session_id = identity->user_id;
 
 		auto reply = server->create_reply(this->task_id());
 		reply.add(id);
@@ -70,8 +76,14 @@ namespace demonware
 
 	void bdMatchMaking::getPerformanceValues(service_server* server, byte_buffer* /*buffer*/) const
 	{
+		const auto identity = runtime_context::get_snapshot();
+		if (!identity)
+		{
+			server->create_reply(this->task_id(), BD_SERVICE_NOT_AVAILABLE).send();
+			return;
+		}
 		auto result = std::make_unique<bdPerformanceValue>();
-		result->user_id = steam::SteamUser()->GetSteamID().bits;
+		result->user_id = identity->user_id;
 		result->performance = 10.0f;
 
 		auto reply = server->create_reply(this->task_id());

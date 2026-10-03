@@ -2,6 +2,7 @@
 
 namespace demonware
 {
+	void reset_key_derivation();
 	void derive_keys_s1();
 	void queue_packet_to_hash(const std::string& packet);
 	void set_session_key(const std::string& key);
