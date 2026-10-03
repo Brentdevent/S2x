@@ -269,31 +269,42 @@ namespace server_commands
 			}
 		}
 
-		std::string join_args(const command::params& params, const int index)
+		std::string get_command_args_text(const command::params& params)
 		{
-			std::string result{};
-
-			for (auto i = index; i < params.size(); ++i)
+			const auto nesting = game::cmd_args->nesting;
+			const auto* text = nesting >= 0 && nesting < game::CMD_MAX_NESTING ? game::cmd_args->text[nesting] : nullptr;
+			if (!text)
 			{
-				const std::string_view arg = params[i];
-				if (i > index)
-				{
-					result.push_back(' ');
-				}
-
-				if (arg.empty() || arg.find_first_of(" \t;") != std::string_view::npos)
-				{
-					result.push_back('"');
-					result.append(arg);
-					result.push_back('"');
-				}
-				else
-				{
-					result.append(arg);
-				}
+				return params.join(1);
 			}
 
-			return result;
+			std::string_view view = text;
+			const auto is_space = [](const char c)
+			{
+				return c == ' ' || c == '\t';
+			};
+
+			while (!view.empty() && is_space(view.front()))
+			{
+				view.remove_prefix(1);
+			}
+
+			while (!view.empty() && !is_space(view.front()))
+			{
+				view.remove_prefix(1);
+			}
+
+			while (!view.empty() && is_space(view.front()))
+			{
+				view.remove_prefix(1);
+			}
+
+			while (!view.empty() && (view.back() == '\n' || view.back() == '\r'))
+			{
+				view.remove_suffix(1);
+			}
+
+			return std::string{view};
 		}
 
 		bool is_redirecting()
@@ -433,7 +444,7 @@ namespace server_commands
 				return;
 			}
 
-			const auto data = join_args(params, 1);
+			const auto data = get_command_args_text(params);
 			if (game::is_server_running())
 			{
 				game::Cbuf_AddText(0, (data + "\n").data());

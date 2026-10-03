@@ -352,7 +352,11 @@ namespace game
 		int controllerIndex[8];
 		int argc[8];
 		const char** argv[8];
+		const char* text[8];
 	};
+	static_assert(offsetof(CmdArgs, argc) == 0x44);
+	static_assert(offsetof(CmdArgs, argv) == 0x68);
+	static_assert(offsetof(CmdArgs, text) == 0xA8);
 
 	struct cmd_function_s
 	{
