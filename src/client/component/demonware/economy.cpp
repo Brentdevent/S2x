@@ -184,9 +184,9 @@ namespace economy
 		void install_store_functions()
 		{
 			const auto engine = ui_scripting::get_globals().get("Engine").as<ui_scripting::table>();
-			engine["S2xCodPointBundles"] = get_cod_point_bundles;
-			engine["S2xEconomyTransaction"] = new_transaction;
-			engine["S2xTopUpCodPoints"] = top_up_cod_points;
+			engine["Economy_GetCodPointBundles"] = get_cod_point_bundles;
+			engine["Economy_CreateTransactionId"] = new_transaction;
+			engine["Economy_TopUpCodPoints"] = top_up_cod_points;
 		}
 
 		bool parse_give_arguments(const command::params& args, const bool item, std::uint32_t& id, std::uint32_t& amount)

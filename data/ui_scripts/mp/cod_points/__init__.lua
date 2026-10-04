@@ -37,10 +37,10 @@ LUI.MenuBuilder.registerPopupType( "s2x_cod_points", function ( menu, options )
 	local committed, finished = false, false
 	local denominations = {}
 	local tiles = {}
-	for _, bundle in ipairs( Engine.S2xCodPointBundles() ) do
+	for _, bundle in ipairs( Engine.Economy_GetCodPointBundles() ) do
 		if not denominations[bundle.amount] then
 			denominations[bundle.amount] = true
-			local transaction = Engine.S2xEconomyTransaction()
+			local transaction = Engine.Economy_CreateTransactionId()
 			local index = #tiles
 			local tile = LUI.MenuBuilder.BuildRegisteredType( "StoreItemButton", properties )
 			tile.id = "cp_" .. bundle.id
@@ -66,7 +66,7 @@ LUI.MenuBuilder.registerPopupType( "s2x_cod_points", function ( menu, options )
 						if committed or finished then
 							return
 						end
-						if Engine.S2xTopUpCodPoints( bundle.id, transaction ) then
+						if Engine.Economy_TopUpCodPoints( bundle.id, transaction ) then
 							committed = true
 						else
 							-- Failed saves retain this attempt ID; reopening after success
@@ -112,7 +112,7 @@ LUI.FlowManager.RequestAddMenu = function ( element, name, ... )
 		-- Keep the native CP entry offline even if its catalog is temporarily
 		-- unavailable. Never fall through to platform checkout on that path.
 		if string.match( options.linkedItem, "^%d+codpointsB?$" ) then
-			local bundles = Engine.S2xCodPointBundles()
+			local bundles = Engine.Economy_GetCodPointBundles()
 			if #bundles == 0 then
 				return stock_add_menu( element, "generic_confirmation_popup", false, args[2], false, {
 					popup_title = Engine.Localize( "MENU_ERROR" ),
