@@ -20,6 +20,7 @@ namespace demonware::achievement_orders
 		using reward_json::find_member;
 
 		constexpr std::size_t kind_count = 14;
+		constexpr std::size_t maximum_rotation_resource_length = 256 * 1024;
 		constexpr std::uint64_t day = 24 * 60 * 60;
 		constexpr std::uint64_t reset_offset = 17 * 60 * 60;
 
@@ -206,7 +207,7 @@ namespace demonware::achievement_orders
 		std::optional<std::vector<rotation_group>> load_rotations()
 		{
 			const auto data = utils::nt::load_resource(DW_ACHIEVEMENT_OFFERS);
-			if (data.empty() || data.size() > achievement_response::maximum_response_length)
+			if (data.empty() || data.size() > maximum_rotation_resource_length)
 			{
 				return std::nullopt;
 			}

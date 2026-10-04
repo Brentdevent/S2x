@@ -1,5 +1,5 @@
 {
-  "policy": "S2x curated local rotations, not the retail ordering algorithm. Daily Orders and Contracts reset at 17:00 UTC; Weekly Orders reset Tuesday at 17:00 UTC. Each mode offers 6 Daily, 3 Weekly and 9 Contracts, with 3 active per category. Captured targets/reward promises are retained, including backend overrides of table defaults. Entries marked local_rare_zombies_drop use native table targets/predicates/tokens/timers and a local reward of one Rare Zombies Drop; their retail reward values were not recovered. Descriptions and objective evaluation use native tables. Cohort/randomizer-gated MP variants are excluded so stock menus show the same set for every player. Ungated native replacements marked local_200_armory_credits award 200 Armory Credits; their retail reward values were not recovered. MP Special Orders use one daily offer and one active slot; accepted Orders have no expiry. The curated cycle contains ten one-time base-weapon unlocks and twenty-nine repeatable bribe offers. Targets come from native tables, and bribe types/bundle quantities follow native reward text; an unquantified single-bribe offer grants one. Base-weapon and bribe item mappings are marked local_base_weapon/local_native_bribe because the original backend product descriptors were not recovered. Bribes may be accepted again only in a later offered period. Historical reissues, unsupported St. Patrick's bribes, unnamed premium-bribe rewards, Zombies Special Orders and non-match-count objectives are omitted.",
+  "policy": "S2x curated local rotations, not the retail ordering algorithm. Daily Orders and Contracts reset at 17:00 UTC; Weekly Orders reset Tuesday at 17:00 UTC. Each mode offers 6 Daily, 3 Weekly and 9 Contracts, with 3 active per category. Captured targets/reward promises are retained, including backend overrides of table defaults. Entries marked local_rare_zombies_drop use native table targets/predicates/tokens/timers and a local reward of one Rare Zombies Drop; their retail reward values were not recovered. Descriptions and objective evaluation use native tables. Cohort/randomizer-gated MP variants are excluded so stock menus show the same set for every player. Ungated native replacements marked local_200_armory_credits award 200 Armory Credits; their retail reward values were not recovered. MP Special Orders use one daily offer and one active slot; accepted Orders have no expiry. The curated cycle contains ten one-time base-weapon unlocks and twenty-nine repeatable bribe offers. Targets come from native tables, and bribe types/bundle quantities follow native reward text; an unquantified single-bribe offer grants one. Base-weapon and bribe item mappings are marked local_base_weapon/local_native_bribe because the original backend product descriptors were not recovered. Bribes may be accepted again only in a later offered period. Historical reissues, unsupported St. Patrick's bribes, unnamed premium-bribe rewards, Zombies Special Orders and non-match-count objectives are omitted. Expanded ungated native daily/weekly definitions retain their table targets and predicates. Where retail rewards are unavailable, local_200_armory_credits grants 200 Armory Credits and local_rare_mp_drop/local_rare_zombies_drop grants one Rare Supply Drop for the corresponding mode. Fixed MP rotations contain 36 Daily Orders across six days and 15 Weekly Orders across five weeks; Zombies rotations contain 24 Daily Orders across four days and 9 Weekly Orders across six curated weeks. No scheduling randomness is used.",
   "offers": {
     "daily_ch_karloot2_1": {
       "kind": 1,
@@ -2161,6 +2161,782 @@
           }
         }
       ]
+    },
+    "daily_ch_smg_kills": {
+      "kind": 1,
+      "progressTarget": 15,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_lmg_kills": {
+      "kind": 1,
+      "progressTarget": 15,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_shotgun_kills": {
+      "kind": 1,
+      "progressTarget": 15,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_pistol_kills": {
+      "kind": 1,
+      "progressTarget": 10,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_launcher_kills": {
+      "kind": 1,
+      "progressTarget": 10,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_sniper_kills": {
+      "kind": 1,
+      "progressTarget": 15,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_sniper_headshots": {
+      "kind": 1,
+      "progressTarget": 10,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_lmg_headshots": {
+      "kind": 1,
+      "progressTarget": 10,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_dive_kill": {
+      "kind": 1,
+      "progressTarget": 1,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_equipment_kills": {
+      "kind": 1,
+      "progressTarget": 5,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_armored_skill": {
+      "kind": 1,
+      "progressTarget": 10,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_sniper_skill": {
+      "kind": 1,
+      "progressTarget": 10,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_crouch_prone_kills": {
+      "kind": 1,
+      "progressTarget": 15,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_anti_crouch_prone": {
+      "kind": 1,
+      "progressTarget": 10,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_bullet_pen_kills": {
+      "kind": 1,
+      "progressTarget": 10,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_stick_kills": {
+      "kind": 1,
+      "progressTarget": 5,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_backfire_kills": {
+      "kind": 1,
+      "progressTarget": 5,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_kingslayer_kills": {
+      "kind": 1,
+      "progressTarget": 5,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_longshot_medals": {
+      "kind": 1,
+      "progressTarget": 10,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_throwback_kills": {
+      "kind": 1,
+      "progressTarget": 5,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_no_rifle_infantry": {
+      "kind": 1,
+      "progressTarget": 25,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_no_smg_airborne": {
+      "kind": 1,
+      "progressTarget": 25,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_ch_no_lmg_armored": {
+      "kind": 1,
+      "progressTarget": 25,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "weekly_ch_infantry_kills": {
+      "kind": 2,
+      "progressTarget": 200,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_ch_armored_kills": {
+      "kind": 2,
+      "progressTarget": 200,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_ch_mountain_kills": {
+      "kind": 2,
+      "progressTarget": 200,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_ch_expeditionary_kills": {
+      "kind": 2,
+      "progressTarget": 200,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_ch_fire_kills": {
+      "kind": 2,
+      "progressTarget": 75,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_ch_long_range_kills": {
+      "kind": 2,
+      "progressTarget": 30,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_ch_pistol_kills_dlc1": {
+      "kind": 2,
+      "progressTarget": 100,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_ch_pistol_headshots_dlc1": {
+      "kind": 2,
+      "progressTarget": 50,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_ch_resistance_kills_dlc1": {
+      "kind": 2,
+      "progressTarget": 200,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_ch_kills": {
+      "kind": 2,
+      "progressTarget": 500,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_ch_resistance_skill_dlc1": {
+      "kind": 2,
+      "progressTarget": 75,
+      "rewardPolicy": "local_rare_mp_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 2,
+            "items": [
+              {
+                "id": 2,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_shotguns_1": {
+      "kind": 8,
+      "progressTarget": 125,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_lmgs_1": {
+      "kind": 8,
+      "progressTarget": 225,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_kills_pistols_upgraded_1": {
+      "kind": 8,
+      "progressTarget": 225,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_kills_traps_1": {
+      "kind": 8,
+      "progressTarget": 300,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_wustling_melee_only": {
+      "kind": 8,
+      "progressTarget": 5,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_empty_clip": {
+      "kind": 8,
+      "progressTarget": 3,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_wustling_betty_charge": {
+      "kind": 8,
+      "progressTarget": 2,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_kills_bombers_clean": {
+      "kind": 8,
+      "progressTarget": 10,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_bomber_bomb_kills": {
+      "kind": 8,
+      "progressTarget": 30,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_throwing_knifes_1": {
+      "kind": 8,
+      "progressTarget": 20,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_headshots_2": {
+      "kind": 8,
+      "progressTarget": 175,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "daily_zm_ch_kills_upgraded_2": {
+      "kind": 8,
+      "progressTarget": 425,
+      "rewardPolicy": "local_200_armory_credits",
+      "successRewards": [
+        {
+          "type": "grant_currency",
+          "currency": {
+            "id": 6,
+            "amount": 200
+          }
+        }
+      ]
+    },
+    "weekly_zm_ch_kills_1": {
+      "kind": 9,
+      "progressTarget": 2750,
+      "rewardPolicy": "local_rare_zombies_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 6,
+            "items": [
+              {
+                "id": 6,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "weekly_zm_ch_ripsaw_kills_no_heavy": {
+      "kind": 9,
+      "progressTarget": 250,
+      "rewardPolicy": "local_rare_zombies_drop",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 6,
+            "items": [
+              {
+                "id": 6,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
     }
   },
   "rotations": [
@@ -2293,27 +3069,51 @@
       "sets": [
         [
           "daily_ch_kills",
-          "daily_ch_assault_kills",
+          "daily_ch_smg_kills",
+          "daily_ch_sniper_headshots",
           "daily_ch_payback_kills",
-          "daily_ch_karloot0_1",
-          "daily_ch_brenloot1_1",
-          "daily_ch_theater_watch"
+          "daily_ch_equipment_kills",
+          "daily_ch_brenloot1_1"
         ],
         [
+          "daily_ch_assault_kills",
           "daily_ch_headshots",
-          "daily_ch_shovel_kills",
-          "daily_ch_karloot2_1",
-          "daily_ch_winchesterloot3_2",
-          "daily_ch_no_sniper_mountain",
-          "daily_ch_payback_kills"
+          "daily_ch_lmg_kills",
+          "daily_ch_dive_kill",
+          "daily_ch_stick_kills",
+          "daily_ch_karloot2_1"
         ],
         [
-          "daily_ch_tactical_kills",
+          "daily_ch_shotgun_kills",
+          "daily_ch_pistol_kills",
+          "daily_ch_shovel_kills",
+          "daily_ch_crouch_prone_kills",
+          "daily_ch_kingslayer_kills",
+          "daily_ch_winchesterloot3_2"
+        ],
+        [
+          "daily_ch_sniper_kills",
           "daily_ch_assault_headshots",
-          "daily_ch_karloot0_1",
-          "daily_ch_brenloot1_1",
-          "daily_ch_no_sniper_mountain",
-          "daily_ch_theater_watch"
+          "daily_ch_tactical_kills",
+          "daily_ch_bullet_pen_kills",
+          "daily_ch_backfire_kills",
+          "daily_ch_no_smg_airborne"
+        ],
+        [
+          "daily_ch_launcher_kills",
+          "daily_ch_lmg_headshots",
+          "daily_ch_anti_crouch_prone",
+          "daily_ch_longshot_medals",
+          "daily_ch_armored_skill",
+          "daily_ch_karloot0_1"
+        ],
+        [
+          "daily_ch_sniper_skill",
+          "daily_ch_throwback_kills",
+          "daily_ch_no_lmg_armored",
+          "daily_ch_theater_watch",
+          "daily_ch_no_rifle_infantry",
+          "daily_ch_no_sniper_mountain"
         ]
       ]
     },
@@ -2322,14 +3122,29 @@
       "activationLimit": 3,
       "sets": [
         [
-          "weekly_ch_cav_assists",
-          "weekly_ch_explosive_kills",
-          "weekly_ch_ab_warwins"
+          "weekly_ch_kills",
+          "weekly_ch_infantry_kills",
+          "weekly_ch_explosive_kills"
         ],
         [
           "weekly_ch_airborne_kills",
-          "weekly_ch_explosive_kills",
+          "weekly_ch_pistol_kills_dlc1",
           "weekly_ch_cav_assists"
+        ],
+        [
+          "weekly_ch_armored_kills",
+          "weekly_ch_long_range_kills",
+          "weekly_ch_fire_kills"
+        ],
+        [
+          "weekly_ch_mountain_kills",
+          "weekly_ch_pistol_headshots_dlc1",
+          "weekly_ch_ab_warwins"
+        ],
+        [
+          "weekly_ch_expeditionary_kills",
+          "weekly_ch_resistance_kills_dlc1",
+          "weekly_ch_resistance_skill_dlc1"
         ]
       ]
     },
@@ -2377,20 +3192,36 @@
       "activationLimit": 3,
       "sets": [
         [
+          "daily_zm_ch_headshots_1",
           "daily_zm_ch_pistols_1",
           "daily_zm_ch_traps",
+          "daily_zm_ch_pest_melee",
           "daily_zm_ch_wave_challenge_dmg_1",
-          "daily_zm_ch_headshots_1",
-          "daily_zm_ch_kills_upgraded_1",
-          "daily_zm_ch_sniper_headshots_1"
+          "daily_zm_ch_kills_upgraded_1"
         ],
         [
+          "daily_zm_ch_shotguns_1",
+          "daily_zm_ch_lmgs_1",
+          "daily_zm_ch_wustling_melee_only",
+          "daily_zm_ch_empty_clip",
           "daily_zm_ch_revives_1",
+          "daily_zm_ch_bomber_with_bomb"
+        ],
+        [
+          "daily_zm_ch_kills_pistols_upgraded_1",
+          "daily_zm_ch_sniper_headshots_1",
+          "daily_zm_ch_explosives_1",
+          "daily_zm_ch_wustling_betty_charge",
           "daily_zm_ch_purchase_weapons_1",
-          "daily_zm_ch_wave_challenge_shotgun_1",
-          "daily_zm_ch_bomber_with_bomb",
-          "daily_zm_ch_pest_melee",
-          "daily_zm_ch_explosives_1"
+          "daily_zm_ch_throwing_knifes_1"
+        ],
+        [
+          "daily_zm_ch_kills_traps_1",
+          "daily_zm_ch_kills_bombers_clean",
+          "daily_zm_ch_bomber_bomb_kills",
+          "daily_zm_ch_headshots_2",
+          "daily_zm_ch_kills_upgraded_2",
+          "daily_zm_ch_wave_challenge_shotgun_1"
         ]
       ]
     },
@@ -2399,19 +3230,34 @@
       "activationLimit": 3,
       "sets": [
         [
-          "weekly_zm_ch_purchase_doors_1",
           "weekly_zm_ch_headshots_1",
-          "weekly_zm_ch_objective_2"
-        ],
-        [
-          "weekly_zm_ch_kills_electrical_1",
-          "weekly_zm_ch_kills_benners_1",
+          "weekly_zm_ch_purchase_doors_1",
           "weekly_zm_ch_kills_equipment"
         ],
         [
-          "weekly_zm_ch_traps_1",
+          "weekly_zm_ch_kills_electrical_1",
+          "weekly_zm_ch_kills_1",
+          "weekly_zm_ch_traps_1"
+        ],
+        [
+          "weekly_zm_ch_kills_benners_1",
+          "weekly_zm_ch_ripsaw_kills_no_heavy",
+          "weekly_zm_ch_objective_2"
+        ],
+        [
           "weekly_zm_ch_headshots_1",
-          "weekly_zm_ch_kills_electrical_1"
+          "weekly_zm_ch_kills_equipment",
+          "weekly_zm_ch_kills_1"
+        ],
+        [
+          "weekly_zm_ch_purchase_doors_1",
+          "weekly_zm_ch_kills_benners_1",
+          "weekly_zm_ch_ripsaw_kills_no_heavy"
+        ],
+        [
+          "weekly_zm_ch_kills_electrical_1",
+          "weekly_zm_ch_traps_1",
+          "weekly_zm_ch_objective_2"
         ]
       ]
     },
