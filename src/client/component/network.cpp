@@ -114,6 +114,21 @@ namespace network
 			utils::hook::jump(0x8281F9_g, stub);
 		}
 
+		void skip_packet_checksum()
+		{
+			const auto packet_received = 0x7B0ED6_g;
+			const auto stub = utils::hook::assemble([packet_received](utils::hook::assembler& a)
+			{
+				a.mov(dword_ptr(rdi, 0x1C), ebx);
+				a.mov(dword_ptr(rdi, 0x30), 0);
+				a.mov(dword_ptr(r14, 0xC), 0);
+				a.mov(eax, 1);
+				a.jmp(reinterpret_cast<void*>(packet_received));
+			});
+
+			utils::hook::jump(0x7B0F02_g, stub);
+		}
+
 		std::unordered_map<std::string, std::vector<callback>>& get_callbacks()
 		{
 			static std::unordered_map<std::string, std::vector<callback>> callbacks{};
@@ -206,7 +221,6 @@ namespace network
 			}
 
 			constexpr std::size_t max_packet_payload_size = 0x4EE; // 1262 bytes
-			constexpr std::size_t packet_trailer_size = 3;
 
 			const auto payload_size = static_cast<std::size_t>(length);
 
@@ -221,24 +235,6 @@ namespace network
 				return 0;
 			}
 
-			const auto use_standard_master_protocol = master_server::is_master_address(*to);
-			std::vector<char> buffer(payload_size + (use_standard_master_protocol ? 0 : packet_trailer_size));
-
-			if (use_standard_master_protocol)
-			{
-				std::memcpy(buffer.data(), data, payload_size);
-			}
-			else
-			{
-				const auto checksum = game::Sys_ChecksumCopy(buffer.data(), data, static_cast<int>(payload_size));
-				buffer[payload_size + 0] = static_cast<char>((checksum >> 8) & 0xFF);
-				buffer[payload_size + 1] = static_cast<char>(checksum & 0xFF);
-				buffer[payload_size + 2] = static_cast<char>(
-					(static_cast<int>(sock) & 0xF) |
-					((static_cast<int>(to->localNetID) & 0xF) << 4)
-				);
-			}
-
 			sockaddr_in address{};
 			address.sin_family = AF_INET;
 			address.sin_port = to->port;
@@ -246,8 +242,8 @@ namespace network
 
 			const auto result = sendto(
 				socket,
-				buffer.data(),
-				static_cast<int>(buffer.size()),
+				data,
+				length,
 				0,
 				reinterpret_cast<sockaddr*>(&address),
 				sizeof(address)
@@ -439,6 +435,9 @@ namespace network
 
 			// Skip another onlinegame check (drops client EXE_TRANSMITERROR)
 			utils::hook::jump(0xF739E_g, 0xF73F7_g);
+
+			// Don't read checksum
+			skip_packet_checksum();
 
 			// Disable built in "print" OOB command
 			utils::hook::set<std::uint8_t>(0x7023F_g, 0xEB);
