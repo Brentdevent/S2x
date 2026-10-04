@@ -66,4 +66,6 @@ namespace command
 	void add(const std::string& command, command_param_function function);
 
 	void add_sv(const std::string& command, sv_command_param_function function);
+
+	void on_client_command(sv_command_param_function callback);
 }
