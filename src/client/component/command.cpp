@@ -39,6 +39,12 @@ namespace command
 			return map;
 		}
 
+		std::vector<sv_command_param_function>& get_client_command_callbacks()
+		{
+			static std::vector<sv_command_param_function> callbacks{};
+			return callbacks;
+		}
+
 		struct mp_player_context
 		{
 			game::mp::client_t* session{};
@@ -623,6 +629,11 @@ namespace command
 		{
 			const params_sv params{};
 
+			for (const auto& callback : get_client_command_callbacks())
+			{
+				callback(client_num, params);
+			}
+
 			const auto handled = execute_custom_sv_command_internal(client_num, params);
 			if (!handled)
 			{
@@ -842,6 +853,11 @@ namespace command
 		}
 
 		add_server_raw(command.data());
+	}
+
+	void on_client_command(sv_command_param_function callback)
+	{
+		get_client_command_callbacks().push_back(std::move(callback));
 	}
 
 	struct component final : generic_component

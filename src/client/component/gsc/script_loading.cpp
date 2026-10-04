@@ -24,6 +24,8 @@ namespace gsc
 		std::unordered_map<std::string, unsigned int> main_handles;
 		std::unordered_map<std::string, unsigned int> init_handles;
 
+		std::vector<std::function<void()>> before_main_callbacks;
+
 		std::unordered_map<std::string, game::ScriptFile*> loaded_scripts;
 		utils::memory::allocator script_allocator;
 
@@ -326,6 +328,11 @@ namespace gsc
 		{
 			if (!game::virtual_lobby_loaded())
 			{
+				for (const auto& callback : before_main_callbacks)
+				{
+					callback();
+				}
+
 				for (auto& function_handle : main_handles)
 				{
 					console::info("Executing '%s::main'\n", function_handle.first.data());
@@ -443,6 +450,11 @@ namespace gsc
 
 			utils::hook::invoke<void>(game::select(0x685800, 0x48C5C0));
 		}
+	}
+
+	void on_before_main(const std::function<void()>& callback)
+	{
+		before_main_callbacks.push_back(callback);
 	}
 
 	game::ScriptFile* find_script(game::XAssetType type, const char* name, int allow_create_default)

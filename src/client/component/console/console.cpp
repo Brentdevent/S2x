@@ -4,6 +4,7 @@
 #include "game/game.hpp"
 
 #include "component/scheduler.hpp"
+#include "component/server_commands.hpp"
 
 #include <utils/flags.hpp>
 
@@ -149,6 +150,11 @@ namespace console
 
 	void dispatch_message(const int type, const std::string& message)
 	{
+		if (server_commands::message_redirect(message))
+		{
+			return;
+		}
+
 		std::string out = message;
 		if (out.empty() || out.back() != '\n')
 		{
