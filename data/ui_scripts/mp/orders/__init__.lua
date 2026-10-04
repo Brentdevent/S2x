@@ -1,8 +1,25 @@
-if game:issingleplayer() or not Engine.InFrontend() or not Engine.IsZombiesMode() then
+if game:issingleplayer() or not Engine.InFrontend() then
 	return
 end
 
 local builders = LUI.MenuBuilder.m_types_build
+local stock_button = builders.daily_orders_button
+builders.daily_orders_button = function ( ... )
+	local button = stock_button( ... )
+	local completed = button._sequences.Completed
+	button._sequences.Completed = function ()
+		-- A failed claim restores Claimable, but the stock Special Order button's
+		-- Completed sequence leaves the previous Loading animation running.
+		button._sequences.NotLoading()
+		completed()
+	end
+	return button
+end
+
+if not Engine.IsZombiesMode() then
+	return
+end
+
 local stock_description = builders.daily_orders_descriptions
 builders.daily_orders_descriptions = function ( ... )
 	local description = stock_description( ... )
