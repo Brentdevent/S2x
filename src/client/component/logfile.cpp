@@ -11,7 +11,6 @@
 #include "component/gsc/script_extension.hpp"
 #include "component/gsc/script_loading.hpp"
 
-#include <utils/hook.hpp>
 #include <utils/io.hpp>
 #include <utils/string.hpp>
 
@@ -19,13 +18,8 @@ namespace logfile
 {
 	namespace
 	{
-		constexpr auto mod_count = 0x16;
-
 		game::dvar_t* logfile{};
 		game::dvar_t* g_log{};
-
-		utils::hook::detour scr_player_damage_hook;
-		utils::hook::detour scr_player_killed_hook;
 
 		std::int64_t level_start_time{};
 		bool game_running{};
@@ -108,86 +102,6 @@ namespace logfile
 				client.name,
 				message.data());
 		}
-
-		int get_client_num(const game::mp::gentity_s* ent)
-		{
-			if (!ent || !ent->client)
-			{
-				return -1;
-			}
-
-			const auto num = static_cast<int>(ent - game::mp::g_entities.get());
-			return num >= 0 && num < *game::sv_maxclients ? num : -1;
-		}
-
-		const char* get_team_name(const game::mp::gentity_s* ent)
-		{
-			switch (ent->client->team)
-			{
-			case 1:
-				return "axis";
-			case 2:
-				return "allies";
-			case 5:
-				return "spectator";
-			default:
-				return "";
-			}
-		}
-
-		void log_damage_event(const char tag, const game::mp::gentity_s* self, const game::mp::gentity_s* attacker,
-			const int damage, const unsigned int mod, const game::Weapon* weapon, const bool is_alternate,
-			const std::uint8_t hit_loc)
-		{
-			const auto self_num = get_client_num(self);
-			const auto* clients = *game::mp::svs_clients;
-			if (self_num < 0 || !clients)
-			{
-				return;
-			}
-
-			auto attacker_num = -1;
-			const char* attacker_guid = "";
-			const char* attacker_name = "";
-			const char* attacker_team = "world";
-
-			if (const auto num = get_client_num(attacker); num >= 0)
-			{
-				attacker_num = num;
-				attacker_guid = clients[num].guid;
-				attacker_name = clients[num].name;
-				attacker_team = get_team_name(attacker);
-			}
-
-			char weapon_name[1024]{};
-			game::mp::BG_GetWeaponNameComplete(weapon, is_alternate, weapon_name, sizeof(weapon_name));
-
-			const auto* mod_name = mod < mod_count ? game::SL_ConvertToString(*game::mp::modNames[mod]) : "badMOD";
-
-			g_log_printf("%c;%s;%i;%s;%s;%s;%i;%s;%s;%s;%i;%s;%s\n", tag,
-				clients[self_num].guid, self_num, get_team_name(self), clients[self_num].name,
-				attacker_guid, attacker_num, attacker_team, attacker_name,
-				weapon_name, damage, mod_name,
-				game::SL_ConvertToString(game::mp::G_GetHitLocationString(hit_loc)));
-		}
-
-		void scr_player_damage_stub(game::mp::gentity_s* self, game::mp::gentity_s* inflictor, game::mp::gentity_s* attacker,
-			const int damage, const int dflags, const unsigned int mod, const game::Weapon* weapon, const bool is_alternate,
-			const float* point, const float* dir, const std::uint8_t hit_loc, const int time_offset)
-		{
-			log_damage_event('D', self, attacker, damage, mod, weapon, is_alternate, hit_loc);
-			scr_player_damage_hook.invoke<void>(self, inflictor, attacker, damage, dflags, mod, weapon, is_alternate,
-				point, dir, hit_loc, time_offset);
-		}
-
-		void scr_player_killed_stub(game::mp::gentity_s* self, game::mp::gentity_s* inflictor, game::mp::gentity_s* attacker,
-			const int damage, const unsigned int mod, const game::Weapon* weapon, const bool is_alternate, const float* dir,
-			const std::uint8_t hit_loc, const int time_offset, const int death_anim_duration)
-		{
-			log_damage_event('K', self, attacker, damage, mod, weapon, is_alternate, hit_loc);
-			scr_player_killed_hook.invoke<void>(self, inflictor, attacker, damage, mod, weapon, is_alternate, dir,
-				hit_loc, time_offset, death_anim_duration);
-		}
 	}
 
 	class component final : public multiplayer_component
@@ -239,9 +153,6 @@ namespace logfile
 			});
 
 			command::on_client_command(log_say);
-
-			scr_player_damage_hook.create(game::mp::Scr_PlayerDamage, scr_player_damage_stub);
-			scr_player_killed_hook.create(game::mp::Scr_PlayerKilled, scr_player_killed_stub);
 		}
 	};
 }
