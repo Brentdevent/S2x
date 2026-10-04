@@ -29,23 +29,22 @@ namespace demonware::loot_catalog_engine
 		constexpr int maximum_table_rows = 100000;
 		constexpr int maximum_table_columns = 256;
 
+		constexpr int minimum_stats_columns = 57;
+
 		constexpr int stats_group_column = 0;
 		constexpr int stats_name_column = 1;
 		constexpr int stats_reference_column = 2;
 		constexpr int stats_image_column = 4;
 		constexpr int stats_guid_column = 18;
-		constexpr int stats_ignore_column = 20;
 		constexpr int stats_hidden_item_column = 24;
 		constexpr int stats_rarity_column = 29;
 		constexpr int stats_rarity_eligible_column = 33;
 		constexpr int stats_loot_item_column = 35;
 		constexpr int stats_challenge_column = 36;
 		constexpr int stats_entitlement_column = 37;
-		constexpr int stats_collection_column = 46;
 		constexpr int stats_collection_reward_column = 47;
 		constexpr int stats_division_column = 48;
 		constexpr int stats_operation_column = 52;
-		constexpr int stats_production_level_column = 56;
 
 		constexpr std::array stats_columns
 		{
@@ -54,18 +53,14 @@ namespace demonware::loot_catalog_engine
 			stats_name_column,
 			stats_image_column,
 			stats_guid_column,
-			stats_ignore_column,
-			stats_hidden_item_column,
 			stats_rarity_column,
 			stats_rarity_eligible_column,
 			stats_loot_item_column,
 			stats_challenge_column,
 			stats_entitlement_column,
-			stats_collection_column,
 			stats_collection_reward_column,
 			stats_division_column,
 			stats_operation_column,
-			stats_production_level_column,
 		};
 
 		using stats_cells = std::array<std::string_view, stats_columns.size()>;
@@ -453,18 +448,10 @@ namespace demonware::loot_catalog_engine
 			auto& item = definition.item;
 			item.reference = cell<stats_reference_column>(cells);
 			item.group = cell<stats_group_column>(cells);
-			item.ignore = cell<stats_ignore_column>(cells);
-			item.hidden_item = cell<stats_hidden_item_column>(cells);
-			item.production_level = cell<stats_production_level_column>(cells);
 
 			definition.reference_valid = !item.reference.empty();
 			definition.presentation_available = !name.empty() && !cell<stats_image_column>(cells).empty();
 			definition.rarity_valid = parse_integer(cell<stats_rarity_column>(cells), item.rarity);
-
-			if (const auto collection = cell<stats_collection_column>(cells); !collection.empty())
-			{
-				definition.collection_valid = parse_integer(collection, item.collection_id);
-			}
 
 			if (const auto operation = cell<stats_operation_column>(cells); !operation.empty())
 			{
@@ -595,7 +582,7 @@ namespace demonware::loot_catalog_engine
 		}
 
 		const auto* table = find_table(stats_table_name);
-		if (!table || table->rowCount <= 0 || table->columnCount <= stats_production_level_column)
+		if (!table || table->rowCount <= 0 || table->columnCount < minimum_stats_columns)
 		{
 			return std::nullopt;
 		}

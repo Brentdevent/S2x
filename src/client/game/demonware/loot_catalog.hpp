@@ -31,14 +31,10 @@ namespace demonware::loot_catalog
 	{
 		std::uint32_t item_id{};
 		int rarity{};
-		int collection_id{};
 		std::optional<int> operation{};
 		std::optional<int> division{};
 		std::string group{};
 		std::string reference{};
-		std::string ignore{};
-		std::string hidden_item{};
-		std::string production_level{};
 		bool azm_consumable{};
 		bool stock_hidden_item{};
 		bool stock_internal_costume_component{};
@@ -68,7 +64,6 @@ namespace demonware::loot_catalog
 		bool presentation_available{};
 		bool zombie_consumable_available{};
 		bool rarity_valid{};
-		bool collection_valid{true};
 		bool operation_valid{true};
 	};
 

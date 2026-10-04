@@ -78,7 +78,6 @@ namespace demonware::marketplace_store
 		store_status status{store_status::ready};
 		std::vector<currency_record> currencies{};
 		std::vector<inventory_record> inventory{};
-		std::vector<committed_economy_transaction> processed_transactions{};
 	};
 
 	enum class edit_result
@@ -99,7 +98,6 @@ namespace demonware::marketplace_store
 
 	class transaction;
 	struct transaction_result;
-	enum class mutation_result;
 	using transaction_callback = std::function<bool(transaction&, std::string& response_json)>;
 
 	class transaction
@@ -113,16 +111,11 @@ namespace demonware::marketplace_store
 
 		std::uint32_t get_currency(std::uint8_t currency_id) const;
 		std::optional<inventory_record> get_inventory(std::uint32_t item_id) const;
-		std::vector<currency_record> get_currencies() const;
 		std::vector<inventory_record> get_inventory() const;
 
-		edit_result set_currency(std::uint8_t currency_id, std::uint32_t value);
 		edit_result add_currency(std::uint8_t currency_id, std::uint32_t amount);
 		edit_result consume_currency(std::uint8_t currency_id, std::uint32_t amount);
 
-		// The supplied quantity is added to the current quantity. Its remaining
-		// metadata replaces the stored metadata for the item.
-		edit_result grant_inventory(const inventory_record& grant);
 		edit_result consume_inventory(std::uint32_t item_id, std::uint32_t quantity);
 		edit_result set_inventory(const inventory_record& record);
 
@@ -133,22 +126,7 @@ namespace demonware::marketplace_store
 		state_view* state_{};
 
 		friend bool save_achievement_state(const std::string&, const std::function<bool(transaction&)>&);
-		friend mutation_result set_currency(std::uint8_t, std::uint32_t);
-		friend mutation_result grant_inventory(const inventory_record&);
-		friend mutation_result consume_inventory(std::uint32_t, std::uint32_t);
 		friend transaction_result transact(const std::string&, const std::string&, const transaction_callback&);
-	};
-
-	enum class mutation_result
-	{
-		unchanged,
-		updated,
-		invalid_argument,
-		insufficient_quantity,
-		overflow,
-		capacity_exceeded,
-		store_unavailable,
-		save_failed,
 	};
 
 	enum class transaction_status
@@ -175,11 +153,6 @@ namespace demonware::marketplace_store
 		const std::function<bool(transaction&)>& reward = {});
 	snapshot get_snapshot();
 	std::optional<committed_economy_transaction> find_transaction(const std::string& client_tx);
-	store_status get_status();
-
-	mutation_result set_currency(std::uint8_t currency_id, std::uint32_t value);
-	mutation_result grant_inventory(const inventory_record& grant);
-	mutation_result consume_inventory(std::uint32_t item_id, std::uint32_t quantity);
 
 	// The callback runs synchronously while the store is locked and must not
 	// call another marketplace_store function. Returning false aborts without

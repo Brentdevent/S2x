@@ -36,26 +36,6 @@ namespace demonware::marketplace_store
 			}
 		}
 
-		mutation_result to_mutation_result(const edit_result result)
-		{
-			switch (result)
-			{
-			case edit_result::unchanged:
-				return mutation_result::unchanged;
-			case edit_result::updated:
-				return mutation_result::updated;
-			case edit_result::invalid_argument:
-				return mutation_result::invalid_argument;
-			case edit_result::insufficient_quantity:
-				return mutation_result::insufficient_quantity;
-			case edit_result::overflow:
-				return mutation_result::overflow;
-			case edit_result::capacity_exceeded:
-			default:
-				return mutation_result::capacity_exceeded;
-			}
-		}
-
 		void compact_transaction_sequences(store_state* state)
 		{
 			std::vector<committed_economy_transaction*> transactions{};
@@ -163,18 +143,6 @@ namespace demonware::marketplace_store
 		return entry->second;
 	}
 
-	std::vector<currency_record> transaction::get_currencies() const
-	{
-		std::vector<currency_record> result{};
-		result.reserve(this->state_->state->currencies.size());
-		for (const auto& [currency_id, value] : this->state_->state->currencies)
-		{
-			result.push_back({currency_id, value});
-		}
-
-		return result;
-	}
-
 	std::vector<inventory_record> transaction::get_inventory() const
 	{
 		std::vector<inventory_record> result{};
@@ -185,18 +153,6 @@ namespace demonware::marketplace_store
 		}
 
 		return result;
-	}
-
-	edit_result transaction::set_currency(const std::uint8_t currency_id, const std::uint32_t value)
-	{
-		const auto entry = this->state_->state->currencies.find(currency_id);
-		if (entry != this->state_->state->currencies.end() && entry->second == value)
-		{
-			return edit_result::unchanged;
-		}
-
-		this->state_->state->currencies[currency_id] = value;
-		return edit_result::updated;
 	}
 
 	edit_result transaction::add_currency(const std::uint8_t currency_id, const std::uint32_t amount)
@@ -230,37 +186,6 @@ namespace demonware::marketplace_store
 		}
 
 		this->state_->state->currencies[currency_id] = current - amount;
-		return edit_result::updated;
-	}
-
-	edit_result transaction::grant_inventory(const inventory_record& grant)
-	{
-		if (!is_valid_inventory_record(grant))
-		{
-			return edit_result::invalid_argument;
-		}
-
-		auto& inventory = this->state_->state->inventory;
-		const auto entry = inventory.find(grant.item_id);
-		if (entry == inventory.end())
-		{
-			if (inventory.size() >= max_inventory_records)
-			{
-				return edit_result::capacity_exceeded;
-			}
-
-			inventory.emplace(grant.item_id, grant);
-			return edit_result::updated;
-		}
-
-		if (grant.quantity > std::numeric_limits<std::uint32_t>::max() - entry->second.quantity)
-		{
-			return edit_result::overflow;
-		}
-
-		auto updated = grant;
-		updated.quantity += entry->second.quantity;
-		entry->second = std::move(updated);
 		return edit_result::updated;
 	}
 
@@ -359,21 +284,6 @@ namespace demonware::marketplace_store
 			result.inventory.push_back(entry.second);
 		}
 
-		result.processed_transactions.reserve(current_state.processed_transactions.size());
-		for (const auto& entry : current_state.processed_transactions)
-		{
-			result.processed_transactions.push_back(entry.second);
-		}
-		std::sort(result.processed_transactions.begin(), result.processed_transactions.end(),
-				  [](const committed_economy_transaction& left, const committed_economy_transaction& right) {
-					  if (left.sequence != right.sequence)
-					  {
-						  return left.sequence < right.sequence;
-					  }
-
-					  return left.client_tx < right.client_tx;
-				  });
-
 		return result;
 	}
 
@@ -388,112 +298,6 @@ namespace demonware::marketplace_store
 		const auto found = current_state.processed_transactions.find(client_tx);
 		return found == current_state.processed_transactions.end() ? std::nullopt :
 			std::optional{found->second};
-	}
-
-	store_status get_status()
-	{
-		std::lock_guard lock{store_mutex};
-		load_store();
-		return current_status;
-	}
-
-	mutation_result set_currency(const std::uint8_t currency_id, const std::uint32_t value)
-	{
-		std::lock_guard lock{store_mutex};
-		load_store();
-		if (current_status != store_status::ready)
-		{
-			return mutation_result::store_unavailable;
-		}
-
-		auto staged = current_state;
-		transaction::state_view view{&staged};
-		transaction edit{&view};
-		const auto edit_status = edit.set_currency(currency_id, value);
-		if (edit_status != edit_result::updated)
-		{
-			return to_mutation_result(edit_status);
-		}
-
-		const auto saved = detail::persistence::save(staged);
-		if (saved == save_result::too_large)
-		{
-			return mutation_result::capacity_exceeded;
-		}
-
-		if (saved != save_result::saved)
-		{
-			return mutation_result::save_failed;
-		}
-
-		current_state = std::move(staged);
-		return mutation_result::updated;
-	}
-
-	mutation_result grant_inventory(const inventory_record& grant)
-	{
-		std::lock_guard lock{store_mutex};
-		load_store();
-		if (current_status != store_status::ready)
-		{
-			return mutation_result::store_unavailable;
-		}
-
-		auto staged = current_state;
-		transaction::state_view view{&staged};
-		transaction edit{&view};
-		const auto edit_status = edit.grant_inventory(grant);
-		if (edit_status != edit_result::updated)
-		{
-			return to_mutation_result(edit_status);
-		}
-
-		const auto saved = detail::persistence::save(staged);
-		if (saved == save_result::too_large)
-		{
-			return mutation_result::capacity_exceeded;
-		}
-
-		if (saved != save_result::saved)
-		{
-			return mutation_result::save_failed;
-		}
-
-		current_state = std::move(staged);
-		return mutation_result::updated;
-	}
-
-	mutation_result consume_inventory(const std::uint32_t item_id, const std::uint32_t quantity)
-	{
-		std::lock_guard lock{store_mutex};
-		load_store();
-		if (current_status != store_status::ready)
-		{
-			return mutation_result::store_unavailable;
-		}
-
-		auto staged = current_state;
-		transaction::state_view view{&staged};
-		transaction edit{&view};
-		const auto edit_status = edit.consume_inventory(item_id, quantity);
-		if (edit_status != edit_result::updated)
-		{
-			return to_mutation_result(edit_status);
-		}
-
-		const auto saved = detail::persistence::save(staged);
-		if (saved == save_result::too_large)
-		{
-			return mutation_result::capacity_exceeded;
-		}
-
-		if (saved != save_result::saved)
-		{
-			return mutation_result::save_failed;
-		}
-
-		current_state = std::move(staged);
-		return mutation_result::updated;
 	}
 
 	transaction_result transact(const std::string& client_tx, const std::string& request_fingerprint,
