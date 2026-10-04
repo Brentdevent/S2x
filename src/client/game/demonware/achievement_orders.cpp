@@ -113,7 +113,14 @@ namespace demonware::achievement_orders
 				return std::nullopt;
 			}
 
+			const auto* repeatable = find_member(*value, "repeatable");
+			if (repeatable && (!achievement_kind::special(kind) || !repeatable->IsBool()))
+			{
+				return std::nullopt;
+			}
+
 			order_offer order{};
+			order.repeatable = repeatable && repeatable->GetBool();
 			order.achievement.name = name;
 			order.achievement.kind = kind;
 			order.achievement.progress_target = progress_target->GetUint();
@@ -150,7 +157,7 @@ namespace demonware::achievement_orders
 			if (!kind || !kind->IsInt() || !achievement_kind::periodic(kind->GetInt()) ||
 				!limit || !limit->IsUint() ||
 				limit->GetUint() != (achievement_kind::special(kind->GetInt()) ? 1u : 3u) ||
-				!sets || !sets->IsArray() || sets->Empty() || sets->Size() > 32)
+				!sets || !sets->IsArray() || sets->Empty() || sets->Size() > 64)
 			{
 				return std::nullopt;
 			}
@@ -367,12 +374,18 @@ namespace demonware::achievement_orders
 
 			switch (existing->status)
 			{
+			case achievement_status::inactive:
+				if (achievement_kind::order(existing->kind))
+				{
+					return "available";
+				}
+				break;
 			case achievement_status::in_progress:
 				return "in_progress";
 			case achievement_status::claimable:
 				return "claimable";
 			case achievement_status::finished:
-				if (achievement_kind::special(existing->kind))
+				if (achievement_kind::special(existing->kind) && !order.repeatable)
 				{
 					return "completed";
 				}
@@ -593,6 +606,46 @@ namespace demonware::achievement_orders
 		}
 
 		return json;
+	}
+
+	activation_response deactivate(const std::string_view json, const std::uint64_t user_id)
+	{
+		using namespace game::demonware;
+		using marketplace_store::transaction_status;
+
+		if (json.empty() || json.size() > achievement_response::maximum_request_length)
+		{
+			return {BD_REWARD_EVENTS_DATA_ERROR};
+		}
+
+		rapidjson::Document request{};
+		request.Parse(json.data(), json.size());
+		std::string transaction{};
+		if (request.HasParseError() ||
+			!reward_json::unique_members(request) || request.MemberCount() != 4 ||
+			!reward_json::common_fields(request, deactivation_action, transaction))
+		{
+			return {BD_REWARD_EVENTS_DATA_ERROR};
+		}
+
+		const auto* name = find_member(request, "AchievementName");
+		if (!reward_json::ascii_string(name, 128))
+		{
+			return {BD_REWARD_EVENTS_DATA_ERROR};
+		}
+
+		const auto result = achievement_store::deactivate_order(std::string{reward_json::view(*name)}, user_id, transaction);
+		if (result.status != transaction_status::committed && result.status != transaction_status::replayed)
+		{
+			return {BD_REWARD_EVENTS_TRANSACTION_ERROR};
+		}
+
+		rapidjson::Document response{rapidjson::kObjectType};
+		auto& allocator = response.GetAllocator();
+		reward_json::add_string(response, "Action", deactivation_action, allocator);
+		response.AddMember("Status", "ok", allocator);
+		reward_json::add_string(response, "ClientTx", transaction, allocator);
+		return {0, encode_ascii(response)};
 	}
 
 	activation_response activate(const std::string_view json, const std::uint64_t user_id, const std::uint64_t timestamp)

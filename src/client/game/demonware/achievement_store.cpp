@@ -508,8 +508,9 @@ namespace demonware::achievement_store
 		bool is_new_period(const achievement_record& record, const std::optional<order_offer>& offer,
 			const std::uint64_t timestamp)
 		{
-			// Local weapon Special Orders are one-time unlocks, not repeatable daily rewards.
-			return !(achievement_kind::special(record.kind) && record.status == achievement_status::finished) &&
+			// Weapon unlocks stay one-time; bundled bribe offers can recur in later rotations.
+			return !(achievement_kind::special(record.kind) && record.status == achievement_status::finished &&
+				(!offer || !offer->repeatable)) &&
 				offer && offer->period_start &&
 				record.activation_timestamp.value_or(timestamp) < offer->period_start &&
 				(record.status == achievement_status::finished || record.status == achievement_status::inactive);
@@ -734,7 +735,8 @@ namespace demonware::achievement_store
 			return exists ? activation_result::success : activation_result::invalid_state;
 		}
 
-		const auto activating = !exists || is_new_period(existing->second, offer, timestamp);
+		const auto activating = !exists || is_new_period(existing->second, offer, timestamp) ||
+			(!contract && existing->second.status == achievement_status::inactive);
 		const auto rejection = activating
 			? check_offer(name, kind, offer, timestamp)
 			: check_carry_over(existing->second, kind, previous != nullptr);
@@ -774,6 +776,52 @@ namespace demonware::achievement_store
 			restore(name, original);
 		}
 
+		return result;
+	}
+
+	marketplace_store::transaction_result deactivate_order(const std::string& name,
+		const std::uint64_t user_id, const std::string& transaction)
+	{
+		using marketplace_store::transaction_status;
+
+		std::lock_guard lock{achievement_mutex};
+		load_achievements();
+
+		const auto found = achievements.find(name);
+		if (!achievements_valid || !user_id || transaction.size() != transaction_length ||
+			found == achievements.end() || !achievement_kind::order(found->second.kind))
+		{
+			return {transaction_status::rejected};
+		}
+
+		const auto original = found->second;
+		auto committed = false;
+		const auto rollback = utils::finally([&]
+		{
+			if (!committed)
+			{
+				found->second = original;
+			}
+		});
+
+		auto result = marketplace_store::transact("order_abandon:" + transaction,
+			"abandon_order:" + std::to_string(user_id) + ":" + name,
+			[&](marketplace_store::transaction& economy, std::string& response)
+		{
+			auto& record = found->second;
+			if (record.status != achievement_status::in_progress && record.status != achievement_status::inactive)
+			{
+				return false;
+			}
+
+			record.status = achievement_status::inactive;
+			record.progress = 0;
+			const auto json = serialize_state();
+			response = "{}";
+			return json && economy.set_achievement_state(*json);
+		});
+
+		committed = result.status == transaction_status::committed;
 		return result;
 	}
 

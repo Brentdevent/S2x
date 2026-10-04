@@ -85,6 +85,7 @@ namespace demonware
 			std::uint64_t next_period_start{};
 			std::uint32_t cost_item_id{};
 			std::uint64_t period_start{};
+			bool repeatable{};
 		};
 
 		enum class activation_result
@@ -109,6 +110,9 @@ namespace demonware
 			std::uint64_t user_id, const std::string& transaction,
 			const std::optional<order_offer>& offer, std::uint64_t timestamp,
 			std::uint32_t* cost_item_id = nullptr);
+
+		marketplace_store::transaction_result deactivate_order(const std::string& name,
+			std::uint64_t user_id, const std::string& transaction);
 
 		bool complete_hq_reward(achievement_record record, std::uint64_t timestamp,
 			std::uint64_t event_timestamp, bool payroll,

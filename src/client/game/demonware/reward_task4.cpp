@@ -73,6 +73,12 @@ namespace demonware::reward_task4
 				return reward_end_mission::handle(request.json);
 			}
 
+			if (action == achievement_orders::deactivation_action)
+			{
+				auto abandoned = achievement_orders::deactivate(request.json, context.user_id);
+				return {abandoned.error, std::move(abandoned.json)};
+			}
+
 			if (action == achievement_orders::activation_action || action == achievement_orders::contract_action)
 			{
 				auto activated = achievement_orders::activate(request.json, context.user_id,

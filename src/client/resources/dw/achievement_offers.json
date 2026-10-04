@@ -1,5 +1,5 @@
 {
-  "policy": "S2x curated local rotations, not the retail ordering algorithm. Daily Orders and Contracts reset at 17:00 UTC; Weekly Orders reset Tuesday at 17:00 UTC. Each mode offers 6 Daily, 3 Weekly and 9 Contracts, with 3 active per category. Captured targets/reward promises are retained, including backend overrides of table defaults. Entries marked local_rare_zombies_drop use native table targets/predicates/tokens/timers and a local reward of one Rare Zombies Drop; their retail reward values were not recovered. Descriptions and objective evaluation use native tables. Cohort/randomizer-gated MP variants are excluded so stock menus show the same set for every player. Ungated native replacements marked local_200_armory_credits award 200 Armory Credits; their retail reward values were not recovered. MP Winter Siege Special Orders use a five-day cycle with one offer and one active slot; accepted Orders have no expiry and each can be claimed once. Their targets come from native tables. Entries marked local_base_weapon grant the native base weapon inventory item; the original backend reward descriptors were not recovered.",
+  "policy": "S2x curated local rotations, not the retail ordering algorithm. Daily Orders and Contracts reset at 17:00 UTC; Weekly Orders reset Tuesday at 17:00 UTC. Each mode offers 6 Daily, 3 Weekly and 9 Contracts, with 3 active per category. Captured targets/reward promises are retained, including backend overrides of table defaults. Entries marked local_rare_zombies_drop use native table targets/predicates/tokens/timers and a local reward of one Rare Zombies Drop; their retail reward values were not recovered. Descriptions and objective evaluation use native tables. Cohort/randomizer-gated MP variants are excluded so stock menus show the same set for every player. Ungated native replacements marked local_200_armory_credits award 200 Armory Credits; their retail reward values were not recovered. MP Special Orders use one daily offer and one active slot; accepted Orders have no expiry. The curated cycle contains ten one-time base-weapon unlocks and twenty-nine repeatable bribe offers. Targets come from native tables, and bribe types/bundle quantities follow native reward text; an unquantified single-bribe offer grants one. Base-weapon and bribe item mappings are marked local_base_weapon/local_native_bribe because the original backend product descriptors were not recovered. Bribes may be accepted again only in a later offered period. Historical reissues, unsupported St. Patrick's bribes, unnamed premium-bribe rewards, Zombies Special Orders and non-match-count objectives are omitted.",
   "offers": {
     "daily_ch_karloot2_1": {
       "kind": 1,
@@ -1264,6 +1264,903 @@
           }
         }
       ]
+    },
+    "special_ch_volk": {
+      "kind": 3,
+      "progressTarget": 50,
+      "rewardPolicy": "local_base_weapon",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 16900096,
+            "items": [
+              {
+                "id": 16900096,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_orso": {
+      "kind": 3,
+      "progressTarget": 50,
+      "rewardPolicy": "local_base_weapon",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 16896000,
+            "items": [
+              {
+                "id": 16896000,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_combatknife": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_base_weapon",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 17100800,
+            "items": [
+              {
+                "id": 17100800,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_enfield": {
+      "kind": 3,
+      "progressTarget": 50,
+      "rewardPolicy": "local_base_weapon",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 16965632,
+            "items": [
+              {
+                "id": 16965632,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_revolver": {
+      "kind": 3,
+      "progressTarget": 50,
+      "rewardPolicy": "local_base_weapon",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 16969728,
+            "items": [
+              {
+                "id": 16969728,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_resist_bribe": {
+      "kind": 3,
+      "progressTarget": 30,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 78,
+            "items": [
+              {
+                "id": 78,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_uprising_triple_play": {
+      "kind": 3,
+      "progressTarget": 80,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 80,
+            "items": [
+              {
+                "id": 80,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        },
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 85,
+            "items": [
+              {
+                "id": 85,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_heroic_weapon_bribe": {
+      "kind": 3,
+      "progressTarget": 100,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 84,
+            "items": [
+              {
+                "id": 84,
+                "quantity": 2,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_epic_weapon_x2": {
+      "kind": 3,
+      "progressTarget": 85,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 86,
+            "items": [
+              {
+                "id": 86,
+                "quantity": 2,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_heroic_uniform": {
+      "kind": 3,
+      "progressTarget": 40,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 83,
+            "items": [
+              {
+                "id": 83,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_epic_weapon": {
+      "kind": 3,
+      "progressTarget": 40,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 86,
+            "items": [
+              {
+                "id": 86,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_mtx4_bribe": {
+      "kind": 3,
+      "progressTarget": 30,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 95,
+            "items": [
+              {
+                "id": 95,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_weap_uniform_bribe": {
+      "kind": 3,
+      "progressTarget": 65,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 72,
+            "items": [
+              {
+                "id": 72,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        },
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 81,
+            "items": [
+              {
+                "id": 81,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_blitzkrieg_bribe": {
+      "kind": 3,
+      "progressTarget": 150,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 95,
+            "items": [
+              {
+                "id": 95,
+                "quantity": 5,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_weapon_bribe_mtx5": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 72,
+            "items": [
+              {
+                "id": 72,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_undead_bribe": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 105,
+            "items": [
+              {
+                "id": 105,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_undead_5bribes": {
+      "kind": 3,
+      "progressTarget": 150,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 105,
+            "items": [
+              {
+                "id": 105,
+                "quantity": 5,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_airborne_bribe": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 114,
+            "items": [
+              {
+                "id": 114,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_epic_uniform_bribe": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 101,
+            "items": [
+              {
+                "id": 101,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_sniper_bribe": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 111,
+            "items": [
+              {
+                "id": 111,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_rifle_bribe": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 108,
+            "items": [
+              {
+                "id": 108,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_shotgun_mtx7": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 112,
+            "items": [
+              {
+                "id": 112,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_snipe_uniform_mtx7": {
+      "kind": 3,
+      "progressTarget": 70,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 111,
+            "items": [
+              {
+                "id": 111,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        },
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 81,
+            "items": [
+              {
+                "id": 81,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_cavalry_mtx7": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 131,
+            "items": [
+              {
+                "id": 131,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_lmg_mtx7": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 110,
+            "items": [
+              {
+                "id": 110,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_summer_uniform_mtx7": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 129,
+            "items": [
+              {
+                "id": 129,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_smg_uni_mtx7": {
+      "kind": 3,
+      "progressTarget": 85,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 109,
+            "items": [
+              {
+                "id": 109,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        },
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 83,
+            "items": [
+              {
+                "id": 83,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_aruniform_mtx8": {
+      "kind": 3,
+      "progressTarget": 85,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 108,
+            "items": [
+              {
+                "id": 108,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        },
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 83,
+            "items": [
+              {
+                "id": 83,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_weapsmg_mtx8": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 109,
+            "items": [
+              {
+                "id": 109,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        },
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 84,
+            "items": [
+              {
+                "id": 84,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_mountain1_mtx8": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 116,
+            "items": [
+              {
+                "id": 116,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_weapsniper_mtx8": {
+      "kind": 3,
+      "progressTarget": 75,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 111,
+            "items": [
+              {
+                "id": 111,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        },
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 84,
+            "items": [
+              {
+                "id": 84,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_5weap_mtx9": {
+      "kind": 3,
+      "progressTarget": 150,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 72,
+            "items": [
+              {
+                "id": 72,
+                "quantity": 5,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_heroic_ar_mtx9": {
+      "kind": 3,
+      "progressTarget": 70,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 108,
+            "items": [
+              {
+                "id": 108,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        },
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 84,
+            "items": [
+              {
+                "id": 84,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_y2_winter": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_native_bribe",
+      "repeatable": true,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 76,
+            "items": [
+              {
+                "id": 76,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
     }
   },
   "rotations": [
@@ -1285,6 +2182,108 @@
         ],
         [
           "special_ch_trenchknife"
+        ],
+        [
+          "special_ch_volk"
+        ],
+        [
+          "special_ch_orso"
+        ],
+        [
+          "special_ch_combatknife"
+        ],
+        [
+          "special_ch_enfield"
+        ],
+        [
+          "special_ch_revolver"
+        ],
+        [
+          "special_ch_resist_bribe"
+        ],
+        [
+          "special_ch_uprising_triple_play"
+        ],
+        [
+          "special_ch_heroic_weapon_bribe"
+        ],
+        [
+          "special_ch_epic_weapon_x2"
+        ],
+        [
+          "special_ch_heroic_uniform"
+        ],
+        [
+          "special_ch_epic_weapon"
+        ],
+        [
+          "special_ch_mtx4_bribe"
+        ],
+        [
+          "special_ch_weap_uniform_bribe"
+        ],
+        [
+          "special_ch_blitzkrieg_bribe"
+        ],
+        [
+          "special_ch_weapon_bribe_mtx5"
+        ],
+        [
+          "special_ch_undead_bribe"
+        ],
+        [
+          "special_ch_undead_5bribes"
+        ],
+        [
+          "special_ch_airborne_bribe"
+        ],
+        [
+          "special_ch_epic_uniform_bribe"
+        ],
+        [
+          "special_ch_sniper_bribe"
+        ],
+        [
+          "special_ch_rifle_bribe"
+        ],
+        [
+          "special_ch_shotgun_mtx7"
+        ],
+        [
+          "special_ch_snipe_uniform_mtx7"
+        ],
+        [
+          "special_ch_cavalry_mtx7"
+        ],
+        [
+          "special_ch_lmg_mtx7"
+        ],
+        [
+          "special_ch_summer_uniform_mtx7"
+        ],
+        [
+          "special_ch_smg_uni_mtx7"
+        ],
+        [
+          "special_ch_aruniform_mtx8"
+        ],
+        [
+          "special_ch_weapsmg_mtx8"
+        ],
+        [
+          "special_ch_mountain1_mtx8"
+        ],
+        [
+          "special_ch_weapsniper_mtx8"
+        ],
+        [
+          "special_ch_5weap_mtx9"
+        ],
+        [
+          "special_ch_heroic_ar_mtx9"
+        ],
+        [
+          "special_ch_y2_winter"
         ]
       ]
     },
