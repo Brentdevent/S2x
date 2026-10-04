@@ -6,7 +6,7 @@
 
 namespace demonware::reward_event_relay
 {
-	inline constexpr auto command = "$s2x_rg1";
+	inline constexpr auto command = "$s2x_rg";
 	inline constexpr std::size_t batch_limit = 4;
 	inline constexpr std::size_t pending_limit = 120;
 	inline constexpr std::size_t payload_limit = 800;

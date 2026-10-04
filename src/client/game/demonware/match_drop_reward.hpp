@@ -6,7 +6,7 @@
 
 namespace demonware::match_drop_reward
 {
-	inline constexpr auto command = "$s2x_drop2";
+	inline constexpr auto command = "$s2x_drop";
 	inline constexpr unsigned maximum_drops = 18;
 
 	struct award
