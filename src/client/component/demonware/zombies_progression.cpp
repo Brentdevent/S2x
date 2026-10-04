@@ -22,16 +22,25 @@ namespace zombies_progression
 			int id;
 			int event;
 			const char* event_name;
+			int group{};
+			const char* reward_reference{};
 		};
 
 		constexpr std::array bindings{
-			binding{344, 16, "zombies"},
+			binding{344, 16, "zombies", 0, "Zombie_Tutorial_Level_Unlocked"},
 			binding{1112, 41, "zombies_map_won"},
 			binding{1114, 42, "zombies_dlc3_sv_unlock"},
 			binding{759, 43, "zombies_dlc3_ee_unlock"},
 			binding{758, 43, "zombies_dlc3_ee_unlock"},
 			binding{760, 43, "zombies_dlc3_ee_unlock"},
 			binding{761, 44, "zombies_dlc3_skull_unlock"},
+			// Native event 16, selector 3: radio camo, prestige milestones and all character challenges.
+			// Local reward bindings restore the backend grants; IDs come from the native catalog.
+			binding{83, 16, "zombies", 22},
+			binding{1142, 16, "zombies", 30, "weaponcharm_mtx8_01"},
+			binding{1143, 16, "zombies", 31, "weaponcharm_dlc4_01"},
+			binding{1144, 16, "zombies", 32, "zom_stun_01"},
+			binding{1145, 16, "zombies", 33},
 		};
 
 		constexpr std::size_t boss_index = 0;
@@ -54,7 +63,7 @@ namespace zombies_progression
 		struct definitions
 		{
 			std::array<achievement_record, bindings.size()> records;
-			std::uint32_t house_item{};
+			std::array<std::uint32_t, bindings.size()> rewards{};
 		};
 
 		std::atomic<std::shared_ptr<const definitions>> current;
@@ -109,18 +118,17 @@ namespace zombies_progression
 			return true;
 		}
 
-		std::uint32_t find_house_item(const loot_catalog::catalog& catalog)
+		std::uint32_t find_reward_item(const loot_catalog::catalog& catalog, const char* reference)
 		{
-			std::uint32_t house_item{};
 			for (const auto& row : catalog.items)
 			{
-				if (row.reference_valid && row.item.reference == "Zombie_Tutorial_Level_Unlocked")
+				if (row.reference_valid && row.item.reference == reference)
 				{
-					house_item = row.item.item_id;
+					return row.item.item_id;
 				}
 			}
 
-			return house_item;
+			return 0;
 		}
 
 		bool load_definitions()
@@ -147,6 +155,18 @@ namespace zombies_progression
 				}
 			}
 
+			for (std::size_t index = 0; index < bindings.size(); ++index)
+			{
+				if (const auto* reference = bindings[index].reward_reference)
+				{
+					result->rewards[index] = find_reward_item(*catalog, reference);
+					if (!result->rewards[index])
+					{
+						return false;
+					}
+				}
+			}
+
 			unsigned mask{};
 			if (!read_map_mask(chapters, mask))
 			{
@@ -155,8 +175,7 @@ namespace zombies_progression
 
 			result->records[map_won_index].progress = static_cast<std::uint16_t>(mask);
 			result->records[map_won_index].progress_target = mask;
-			result->house_item = find_house_item(*catalog);
-			if (!result->house_item || catalog != loot_catalog::get_snapshot())
+			if (catalog != loot_catalog::get_snapshot())
 			{
 				return false;
 			}
@@ -200,10 +219,10 @@ namespace zombies_progression
 				item.collision_field || !has_valid_expiry(item);
 		}
 
-		bool grant_house_item(marketplace_store::transaction& state, const std::uint32_t house_item,
+		bool grant_reward_item(marketplace_store::transaction& state, const std::uint32_t reward_item,
 			const std::uint64_t user, bool& inventory_changed)
 		{
-			auto item = state.get_inventory(house_item).value_or(marketplace_store::inventory_record{});
+			auto item = state.get_inventory(reward_item).value_or(marketplace_store::inventory_record{});
 			if (conflicts_with_grant(item, user))
 			{
 				return false;
@@ -214,7 +233,7 @@ namespace zombies_progression
 				return true;
 			}
 
-			item.item_id = house_item;
+			item.item_id = reward_item;
 			item.player_id = user;
 			item.account_type = "steam";
 			item.quantity = 1;
@@ -224,17 +243,17 @@ namespace zombies_progression
 			return inventory_changed;
 		}
 
-		bool settle(const std::vector<achievement_record>& records, const std::uint32_t house_item,
+		bool settle(const std::vector<achievement_record>& records, const std::uint32_t reward_item,
 			const std::uint64_t user)
 		{
 			std::function<bool(marketplace_store::transaction&)> reward;
 			bool inventory_changed{};
 
-			if (house_item)
+			if (reward_item)
 			{
 				reward = [&](marketplace_store::transaction& state)
 				{
-					return grant_house_item(state, house_item, user, inventory_changed);
+					return grant_reward_item(state, reward_item, user, inventory_changed);
 				};
 			}
 
@@ -272,9 +291,21 @@ namespace zombies_progression
 		{
 			const auto map = parameter(event, "5");
 
-			if (event.name == "zombies" && parameter(event, "1") == 1)
+			if (event.name == "zombies")
 			{
-				return progress_target{boss_index};
+				if (parameter(event, "1") == 1)
+				{
+					return progress_target{boss_index};
+				}
+
+				const auto group = parameter(event, "3");
+				for (std::size_t index = 0; index < bindings.size(); ++index)
+				{
+					if (bindings[index].group && group == bindings[index].group)
+					{
+						return progress_target{index};
+					}
+				}
 			}
 
 			if (event.name == "zombies_map_won" && is_valid_map(map))
@@ -324,7 +355,7 @@ namespace zombies_progression
 		auto record = data->records[target->index];
 		record.progress = target->bits;
 
-		return settle({record}, target->index == boss_index ? data->house_item : 0, user);
+		return settle({record}, data->rewards[target->index], user);
 	}
 
 	bool unlock_quests()
@@ -333,7 +364,8 @@ namespace zombies_progression
 		const auto identity = demonware::runtime_context::get_snapshot();
 
 		return data && identity && identity->user_id &&
-			settle({data->records.begin(), data->records.end()}, data->house_item, identity->user_id);
+			settle({data->records.begin(), data->records.begin() + skull_unlock_index + 1},
+				data->rewards[boss_index], identity->user_id);
 	}
 
 	class component final : public multiplayer_component

@@ -53,8 +53,8 @@ namespace hidden_challenges
 
 		// Selector 3 contains the stock hidden-character group value. The parent AE IDs
 		// join the shipped tables; the comments name the stock script groups.
-		// Group 22 is intentionally unused by the stock mapping; selector 4 is a
-		// zero-based challenge slot within the resolved group.
+		// Group 22 is the radio camo, handled by zombies_progression. Selector 4 is a
+		// zero-based challenge slot within the resolved character group.
 		constexpr std::array hidden_groups
 		{
 			hidden_group{1, 363}, // treasure_set
