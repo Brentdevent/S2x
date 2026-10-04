@@ -1,5 +1,5 @@
 {
-  "policy": "S2x curated local rotations, not the retail ordering algorithm. Daily Orders and Contracts reset at 17:00 UTC; Weekly Orders reset Tuesday at 17:00 UTC. Each mode offers 6 Daily, 3 Weekly and 9 Contracts, with 3 active per category. Captured targets/reward promises are retained, including backend overrides of table defaults. Entries marked local_rare_zombies_drop use native table targets/predicates/tokens/timers and a local reward of one Rare Zombies Drop; their retail reward values were not recovered. Descriptions and objective evaluation use native tables. Cohort/randomizer-gated MP variants are excluded so stock menus show the same set for every player. Ungated native replacements marked local_200_armory_credits award 200 Armory Credits; their retail reward values were not recovered. MP Special Orders use one daily offer and one active slot; accepted Orders have no expiry. The curated cycle contains ten one-time base-weapon unlocks and twenty-nine repeatable bribe offers. Targets come from native tables, and bribe types/bundle quantities follow native reward text; an unquantified single-bribe offer grants one. Base-weapon and bribe item mappings are marked local_base_weapon/local_native_bribe because the original backend product descriptors were not recovered. Bribes may be accepted again only in a later offered period. Historical reissues, unsupported St. Patrick's bribes, unnamed premium-bribe rewards, Zombies Special Orders and non-match-count objectives are omitted. Expanded ungated native daily/weekly definitions retain their table targets and predicates. Where retail rewards are unavailable, local_200_armory_credits grants 200 Armory Credits and local_rare_mp_drop/local_rare_zombies_drop grants one Rare Supply Drop for the corresponding mode. Fixed MP rotations contain 36 Daily Orders across six days and 15 Weekly Orders across five weeks; Zombies rotations contain 24 Daily Orders across four days and 9 Weekly Orders across six curated weeks. No scheduling randomness is used.",
+  "policy": "S2x curated local rotations, not the retail ordering algorithm. Daily Orders and Contracts reset at 17:00 UTC; Weekly Orders reset Tuesday at 17:00 UTC. Each mode offers 6 Daily, 3 Weekly and 9 Contracts, with 3 active per category. Captured targets/reward promises are retained, including backend overrides of table defaults. Entries marked local_rare_zombies_drop use native table targets/predicates/tokens/timers and a local reward of one Rare Zombies Drop; their retail reward values were not recovered. Descriptions and objective evaluation use native tables. Cohort/randomizer-gated MP variants are excluded so stock menus show the same set for every player. Ungated native replacements marked local_200_armory_credits award 200 Armory Credits; their retail reward values were not recovered. MP Special Orders use one daily offer and one active slot; accepted Orders have no expiry. The curated cycle contains ten one-time base-weapon unlocks and twenty-nine repeatable bribe offers. Targets come from native tables, and bribe types/bundle quantities follow native reward text; an unquantified single-bribe offer grants one. Base-weapon and bribe item mappings are marked local_base_weapon/local_native_bribe because the original backend product descriptors were not recovered. Bribes may be accepted again only in a later offered period. Historical reissues, unsupported St. Patrick's bribes, unnamed premium-bribe rewards, Zombies Special Orders and non-match-count objectives are omitted. Expanded ungated native daily/weekly definitions retain their table targets and predicates. Where retail rewards are unavailable, local_200_armory_credits grants 200 Armory Credits and local_rare_mp_drop/local_rare_zombies_drop grants one Rare Supply Drop for the corresponding mode. Fixed MP rotations contain 36 Daily Orders across six days and 18 Weekly Orders across six weeks; Zombies rotations contain 24 Daily Orders across four days and 9 Weekly Orders across six curated weeks. No scheduling randomness is used. Six additional MP objectives use native targets, predicates and contract tokens/timers/prices with local CP rewards: local_100_cod_points grants 100 COD Points for a Weekly Order; local_50_cod_points grants 50 COD Points for a Contract. These payouts are S2x policy, not recovered retail rewards. Each of the three MP contract rotations includes one CP contract; the 14 supported contracts retain nine visible offers per day.",
   "offers": {
     "daily_ch_karloot2_1": {
       "kind": 1,
@@ -2937,6 +2937,96 @@
           }
         }
       ]
+    },
+    "weekly_ch_hipfire_dlc2": {
+      "kind": 2,
+      "progressTarget": 150,
+      "rewardPolicy": "local_100_cod_points",
+      "successRewards": [
+        {
+          "currency": {
+            "amount": 100,
+            "id": 2
+          },
+          "type": "grant_currency"
+        }
+      ]
+    },
+    "weekly_ch_hc_kills_dlc2": {
+      "kind": 2,
+      "progressTarget": 350,
+      "rewardPolicy": "local_100_cod_points",
+      "successRewards": [
+        {
+          "currency": {
+            "amount": 100,
+            "id": 2
+          },
+          "type": "grant_currency"
+        }
+      ]
+    },
+    "weekly_ch_cav_kills": {
+      "kind": 2,
+      "progressTarget": 300,
+      "rewardPolicy": "local_100_cod_points",
+      "successRewards": [
+        {
+          "currency": {
+            "amount": 100,
+            "id": 2
+          },
+          "type": "grant_currency"
+        }
+      ]
+    },
+    "contract_15_headshots": {
+      "kind": 4,
+      "progressTarget": 15,
+      "costItemID": 83886184,
+      "usageTimeTarget": 3600,
+      "rewardPolicy": "local_50_cod_points",
+      "successRewards": [
+        {
+          "currency": {
+            "amount": 50,
+            "id": 2
+          },
+          "type": "grant_currency"
+        }
+      ]
+    },
+    "contract_50_kills_rifle": {
+      "kind": 4,
+      "progressTarget": 50,
+      "costItemID": 83886187,
+      "usageTimeTarget": 2400,
+      "rewardPolicy": "local_50_cod_points",
+      "successRewards": [
+        {
+          "currency": {
+            "amount": 50,
+            "id": 2
+          },
+          "type": "grant_currency"
+        }
+      ]
+    },
+    "contract_50_kills_smg": {
+      "kind": 4,
+      "progressTarget": 50,
+      "costItemID": 83886188,
+      "usageTimeTarget": 2400,
+      "rewardPolicy": "local_50_cod_points",
+      "successRewards": [
+        {
+          "currency": {
+            "amount": 50,
+            "id": 2
+          },
+          "type": "grant_currency"
+        }
+      ]
     }
   },
   "rotations": [
@@ -3124,7 +3214,7 @@
         [
           "weekly_ch_kills",
           "weekly_ch_infantry_kills",
-          "weekly_ch_explosive_kills"
+          "weekly_ch_hipfire_dlc2"
         ],
         [
           "weekly_ch_airborne_kills",
@@ -3134,7 +3224,7 @@
         [
           "weekly_ch_armored_kills",
           "weekly_ch_long_range_kills",
-          "weekly_ch_fire_kills"
+          "weekly_ch_hc_kills_dlc2"
         ],
         [
           "weekly_ch_mountain_kills",
@@ -3144,6 +3234,11 @@
         [
           "weekly_ch_expeditionary_kills",
           "weekly_ch_resistance_kills_dlc1",
+          "weekly_ch_cav_kills"
+        ],
+        [
+          "weekly_ch_explosive_kills",
+          "weekly_ch_fire_kills",
           "weekly_ch_resistance_skill_dlc1"
         ]
       ]
@@ -3161,7 +3256,7 @@
           "contract_65_kills_tdm",
           "contract_6_headshots_tdm",
           "contract_35_kills_dom",
-          "contract_25_kills_rifle"
+          "contract_15_headshots"
         ],
         [
           "contract_100_kills",
@@ -3172,7 +3267,7 @@
           "contract_35_kills_dom",
           "contract_25_kills_rifle",
           "contract_65_kills_hc",
-          "contract_55_kills_tdm_dlc2"
+          "contract_50_kills_rifle"
         ],
         [
           "contract_100_kills",
@@ -3181,7 +3276,7 @@
           "contract_5_headshots",
           "contract_65_kills_tdm",
           "contract_6_headshots_tdm",
-          "contract_25_kills_rifle",
+          "contract_50_kills_smg",
           "contract_65_kills_hc",
           "contract_55_kills_tdm_dlc2"
         ]

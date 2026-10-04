@@ -34,7 +34,7 @@ namespace demonware::achievement_claim
 
 		bool is_reward_currency(const std::uint32_t id)
 		{
-			return id == 1 || id == 6 || id == 7;
+			return id == 1 || id == 2 || id == 6 || id == 7;
 		}
 
 		bool is_owned_by(const inventory_record& item, const std::uint64_t user)
