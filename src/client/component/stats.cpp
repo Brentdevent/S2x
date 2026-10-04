@@ -728,7 +728,7 @@ namespace stats
 
 			if (!challenges.persisted)
 			{
-				console::warn("unlockstatszm: failed to persist Zombies Hidden Challenge progression.\n");
+				console::warn("unlockstatszm: challenge/reward data unavailable or save failed; retry when ready.\n");
 			}
 			else if (!challenges_unlocked)
 			{
@@ -737,7 +737,7 @@ namespace stats
 
 			if (rank_unlocked && challenges_unlocked)
 			{
-				console::info("unlockstatszm: Zombies progression and Hidden Challenges unlocked.\n");
+				console::info("unlockstatszm: Zombies progression, Hidden Challenges and their rewards unlocked.\n");
 			}
 		}
 	}

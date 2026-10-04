@@ -119,7 +119,6 @@ namespace demonware
 			const std::function<bool(marketplace_store::transaction&, const achievement_record&, bool)>& reward);
 
 		std::vector<achievement_record> get_all();
-		bool merge(const std::vector<achievement_record>& records);
 
 		mutation_result merge_completion_bits(const std::vector<achievement_record>& records,
 			const std::function<bool(marketplace_store::transaction&)>& reward = {});

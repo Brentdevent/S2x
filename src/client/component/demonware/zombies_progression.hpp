@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/demonware/reward_game_event.hpp"
+#include "game/demonware/achievement_store.hpp"
 
 namespace zombies_progression
 {
@@ -9,4 +10,5 @@ namespace zombies_progression
 
 	// Main pipeline only
 	bool unlock_quests();
+	bool unlock_challenges(const std::vector<demonware::achievement_record>& records);
 }

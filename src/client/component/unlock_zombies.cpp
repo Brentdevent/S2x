@@ -1,7 +1,7 @@
 #include <std_include.hpp>
 #include "unlock_zombies.hpp"
 
-#include "component/achievement_sync.hpp"
+#include "demonware/zombies_progression.hpp"
 
 #include "game/game.hpp"
 #include "game/string_table.hpp"
@@ -166,11 +166,10 @@ namespace unlock_zombies
 		const auto achievements = get_zombie_challenge_achievements();
 		result.total = achievements.total;
 		if (!achievements.records.empty() &&
-			demonware::achievement_store::merge(achievements.records))
+			zombies_progression::unlock_challenges(achievements.records))
 		{
 			result.persisted = true;
 			result.completed = static_cast<int>(achievements.records.size());
-			achievement_sync::request_refresh();
 		}
 
 		return result;

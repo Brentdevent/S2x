@@ -243,17 +243,25 @@ namespace zombies_progression
 			return inventory_changed;
 		}
 
-		bool settle(const std::vector<achievement_record>& records, const std::uint32_t reward_item,
+		bool settle(const std::vector<achievement_record>& records, const std::vector<std::uint32_t>& reward_items,
 			const std::uint64_t user)
 		{
 			std::function<bool(marketplace_store::transaction&)> reward;
 			bool inventory_changed{};
 
-			if (reward_item)
+			if (std::ranges::any_of(reward_items, [](const auto item) { return item != 0; }))
 			{
 				reward = [&](marketplace_store::transaction& state)
 				{
-					return grant_reward_item(state, reward_item, user, inventory_changed);
+					for (const auto item : reward_items)
+					{
+						if (item && !grant_reward_item(state, item, user, inventory_changed))
+						{
+							return false;
+						}
+					}
+
+					return true;
 				};
 			}
 
@@ -355,7 +363,7 @@ namespace zombies_progression
 		auto record = data->records[target->index];
 		record.progress = target->bits;
 
-		return settle({record}, data->rewards[target->index], user);
+		return settle({record}, {data->rewards[target->index]}, user);
 	}
 
 	bool unlock_quests()
@@ -365,7 +373,29 @@ namespace zombies_progression
 
 		return data && identity && identity->user_id &&
 			settle({data->records.begin(), data->records.begin() + skull_unlock_index + 1},
-				data->rewards[boss_index], identity->user_id);
+				{data->rewards[boss_index]}, identity->user_id);
+	}
+
+	bool unlock_challenges(const std::vector<demonware::achievement_record>& records)
+	{
+		const auto data = current.load();
+		const auto identity = demonware::runtime_context::get_snapshot();
+		if (!data || !identity || !identity->user_id)
+		{
+			return false;
+		}
+
+		std::vector<std::uint32_t> rewards;
+		for (std::size_t index = 0; index < data->records.size(); ++index)
+		{
+			if (data->rewards[index] && std::ranges::find(records, data->records[index].name,
+				&demonware::achievement_record::name) != records.end())
+			{
+				rewards.push_back(data->rewards[index]);
+			}
+		}
+
+		return settle(records, rewards, identity->user_id);
 	}
 
 	class component final : public multiplayer_component

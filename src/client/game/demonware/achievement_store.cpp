@@ -656,28 +656,6 @@ namespace demonware::achievement_store
 			return changed;
 		}
 
-		void merge_record(achievement_record record, const std::uint64_t timestamp)
-		{
-			if (record.name.empty())
-			{
-				return;
-			}
-
-			if (!record.progress_target)
-			{
-				record.progress_target = std::max<std::uint16_t>(record.progress, 1);
-			}
-
-			if (record.status == achievement_status::finished && record.fulfilled_times > 0 &&
-				!record.completion_timestamp)
-			{
-				record.completion_timestamp = timestamp;
-			}
-
-			auto name = record.name;
-			achievements.insert_or_assign(std::move(name), std::move(record));
-		}
-
 		void append_missing(std::vector<achievement_record>& result, achievement_record record)
 		{
 			if (!achievements.contains(record.name))
@@ -1000,33 +978,6 @@ namespace demonware::achievement_store
 		}
 
 		return result;
-	}
-
-	bool merge(const std::vector<achievement_record>& records)
-	{
-		std::lock_guard lock{achievement_mutex};
-		load_achievements();
-
-		if (!achievements_valid)
-		{
-			return false;
-		}
-
-		const auto original = achievements;
-		const auto timestamp = now();
-
-		for (auto record : records)
-		{
-			merge_record(std::move(record), timestamp);
-		}
-
-		if (save_achievements())
-		{
-			return true;
-		}
-
-		achievements = original;
-		return false;
 	}
 
 	mutation_result merge_completion_bits(const std::vector<achievement_record>& records,

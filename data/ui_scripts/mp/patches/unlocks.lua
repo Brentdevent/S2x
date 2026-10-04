@@ -308,7 +308,7 @@ local function zombies_options( controller )
 			buttonType = "GenericButton",
 			buttonText = Engine.Localize( "Unlock Zombies Progression" ),
 			buttonDesc = Engine.Localize(
-				"Permanently unlock Zombies rank and Hidden Challenges." ),
+				"Permanently unlock Zombies rank, Hidden Challenges and their rewards." ),
 			buttonActionFunc = function ( element )
 				open_unlock_confirmation( element, controller, "unlockstatszm",
 					"WARNING: This permanently changes Zombies progression, including rank " ..
