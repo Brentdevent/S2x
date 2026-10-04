@@ -424,20 +424,22 @@ namespace command
 
 		void dump_string_tables(const params& arguments)
 		{
-			const std::string filter = arguments.size() >= 2 ? arguments[1] : "";
-			std::vector<const game::StringTable*> tables{};
+			struct dump_context
+			{
+				std::string filter;
+				std::vector<std::pair<std::string, std::string>> tables;
+			};
+
+			dump_context context{arguments.size() >= 2 ? arguments[1] : ""};
+			// Copy asset contents while enumeration holds the database read lock.
 			game::DB_EnumXAssets_FastFile(game::ASSET_TYPE_STRINGTABLE, [](const game::XAssetHeader header, void* data)
 			{
-				static_cast<std::vector<const game::StringTable*>*>(data)->push_back(header.stringTable);
-			}, &tables, true);
-
-			auto count = 0;
-			for (const auto* table : tables)
-			{
-				if (!table || !table->name || (!filter.empty()
-					&& !utils::string::match_compare(filter, table->name, false)))
+				auto& context = *static_cast<dump_context*>(data);
+				const auto* table = header.stringTable;
+				if (!table || !table->name || (!context.filter.empty()
+					&& !utils::string::match_compare(context.filter, table->name, false)))
 				{
-					continue;
+					return;
 				}
 
 				std::string buffer{};
@@ -456,41 +458,46 @@ namespace command
 					buffer.append("\r\n");
 				}
 
-				utils::io::write_file(std::format("s2x/dump/stringtables/{}", table->name), buffer);
-				++count;
+				context.tables.emplace_back(table->name, std::move(buffer));
+			}, &context, true);
+
+			for (const auto& [name, contents] : context.tables)
+			{
+				utils::io::write_file(std::format("s2x/dump/stringtables/{}", name), contents);
 			}
 
-			console::info("Dumped %i stringtables to s2x/dump/stringtables\n", count);
+			console::info("Dumped %zu stringtables to s2x/dump/stringtables\n", context.tables.size());
 		}
 
 		void dump_localization(const params& arguments)
 		{
-			const std::string filter = arguments.size() >= 2 ? arguments[1] : "";
-			std::vector<const game::LocalizeEntry*> entries{};
+			struct dump_context
+			{
+				std::string filter;
+				std::string buffer;
+				int count{};
+			};
+
+			dump_context context{arguments.size() >= 2 ? arguments[1] : ""};
 			game::DB_EnumXAssets_FastFile(game::ASSET_TYPE_LOCALIZE, [](const game::XAssetHeader header, void* data)
 			{
-				static_cast<std::vector<const game::LocalizeEntry*>*>(data)->push_back(header.localize);
-			}, &entries, true);
-
-			std::string buffer{};
-			auto count = 0;
-			for (const auto* entry : entries)
-			{
-				if (!entry || !entry->name || (!filter.empty()
-					&& !utils::string::match_compare(filter, entry->name, false)))
+				auto& context = *static_cast<dump_context*>(data);
+				const auto* entry = header.localize;
+				if (!entry || !entry->name || (!context.filter.empty()
+					&& !utils::string::match_compare(context.filter, entry->name, false)))
 				{
-					continue;
+					return;
 				}
 
-				buffer.append(escape_csv(entry->name));
-				buffer.push_back(',');
-				buffer.append(escape_csv(entry->value));
-				buffer.append("\r\n");
-				++count;
-			}
+				context.buffer.append(escape_csv(entry->name));
+				context.buffer.push_back(',');
+				context.buffer.append(escape_csv(entry->value));
+				context.buffer.append("\r\n");
+				++context.count;
+			}, &context, true);
 
-			utils::io::write_file("s2x/dump/localization.csv", buffer);
-			console::info("Dumped %i localized strings to s2x/dump/localization.csv\n", count);
+			utils::io::write_file("s2x/dump/localization.csv", context.buffer);
+			console::info("Dumped %i localized strings to s2x/dump/localization.csv\n", context.count);
 		}
 
 		void dump_commands(const params& arguments)
