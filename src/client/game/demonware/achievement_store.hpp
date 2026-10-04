@@ -124,7 +124,8 @@ namespace demonware
 			const std::function<bool(marketplace_store::transaction&)>& reward = {});
 
 		mutation_result mutate(const std::string& name,
-			const std::function<bool(achievement_record&)>& mutator);
+			const std::function<bool(achievement_record&)>& mutator,
+			const std::function<bool(marketplace_store::transaction&)>& reward = {});
 
 		mutation_result mutate_all(const std::function<bool(achievement_record&)>& mutator);
 	}

@@ -9,6 +9,7 @@
 #include "game/demonware/achievement_store.hpp"
 #include "game/demonware/loot_catalog.hpp"
 #include "game/demonware/runtime_context.hpp"
+#include "game/demonware/supply_drop_inventory.hpp"
 
 namespace zombies_progression
 {
@@ -60,10 +61,20 @@ namespace zombies_progression
 		constexpr std::uint64_t survival_unlock_map = 5;
 		constexpr std::uint64_t skull_unlock_map = 7;
 
+		struct rank_reward
+		{
+			achievement_record record;
+			int level{};
+			int experience{};
+			std::uint32_t item{};
+		};
+
 		struct definitions
 		{
 			std::array<achievement_record, bindings.size()> records;
 			std::array<std::uint32_t, bindings.size()> rewards{};
+			std::vector<rank_reward> ranks;
+			int max_prestige{};
 		};
 
 		std::atomic<std::shared_ptr<const definitions>> current;
@@ -131,6 +142,54 @@ namespace zombies_progression
 			return 0;
 		}
 
+		bool read_rank_rewards(definitions& result, const game::StringTable* ranks,
+			const game::StringTable* challenges, const game::StringTable* events, const loot_catalog::catalog& catalog)
+		{
+			if (!ranks || !ranks->values || ranks->columnCount < 20 ||
+				!parse_integer(get_cell(ranks, find_row(ranks, 0, "maxprestige"), 1), result.max_prestige) ||
+				result.max_prestige < 0 || result.max_prestige >= INT_MAX)
+			{
+				return false;
+			}
+
+			// ZMCacUtils maps SupplyDrop 1/2 to normal/rare; the label "Epic" in
+			// its enum still presents advanced_zombie_supply_drop, not sd_zombie_epic.
+			constexpr std::array drops{"sd_zombie", "sd_zombie_rare"};
+			for (int row = 0; row < ranks->rowCount; ++row)
+			{
+				int index{};
+				const auto* type = get_cell(ranks, row, 19);
+				if (!parse_integer(get_cell(ranks, row, 0), index) || index < 0 || !type || !*type)
+				{
+					continue;
+				}
+
+				rank_reward reward;
+				int drop_type{};
+				if (!parse_integer(type, drop_type) || drop_type < 1 || drop_type > drops.size() ||
+					!parse_integer(get_cell(ranks, row, 12), reward.level) || reward.level <= 0 ||
+					!parse_integer(get_cell(ranks, row, 2), reward.experience) || reward.experience < 0)
+				{
+					return false;
+				}
+
+				const auto name = "player_zm_level_" + std::to_string(reward.level);
+				int id{};
+				const auto drop = loot_catalog::find_supply_drop(catalog, drops[drop_type - 1]);
+				if (!drop || !parse_integer(get_cell(challenges, find_row(challenges, 1, name), 0), id) ||
+					!read_binding({id, 14, "player_rank_up"}, challenges, events, reward.record))
+				{
+					return false;
+				}
+
+				reward.record.fulfilled_times = 0;
+				reward.item = drop->item_id;
+				result.ranks.push_back(std::move(reward));
+			}
+
+			return !result.ranks.empty();
+		}
+
 		bool load_definitions()
 		{
 			const auto catalog = loot_catalog::get_snapshot();
@@ -165,6 +224,13 @@ namespace zombies_progression
 						return false;
 					}
 				}
+			}
+
+			const auto* ranks = game::DB_FindXAssetHeader(game::ASSET_TYPE_STRINGTABLE,
+				"mp/cp_rankTable.csv", false).stringTable;
+			if (!read_rank_rewards(*result, ranks, challenges, events, *catalog))
+			{
+				return false;
 			}
 
 			unsigned mask{};
@@ -203,6 +269,94 @@ namespace zombies_progression
 			}
 
 			return value;
+		}
+
+		bool process_rank(const reward_game_events::event& event, const std::uint64_t user)
+		{
+			const auto level = parameter(event, "1");
+			const auto master = parameter(event, "3");
+			if (parameter(event, "2") != 2 || !level || (master && *master != 0) ||
+				std::ranges::count(event.parameters, "3", &reward_game_events::parameter::selector) > 1)
+			{
+				return true;
+			}
+
+			const auto data = current.load();
+			const auto identity = runtime_context::get_snapshot();
+			if (!data || !identity || identity->user_id != user || !identity->zombies)
+			{
+				return false;
+			}
+
+			const auto reward = std::ranges::find(data->ranks, *level, &rank_reward::level);
+			if (reward == data->ranks.end())
+			{
+				return true;
+			}
+
+			const auto& rank = *identity->zombies;
+			if (rank.prestige < 0 || rank.prestige > data->max_prestige || rank.experience < 0)
+			{
+				return false;
+			}
+
+			// The event has no prestige or occurrence ID. Bound fulfillment by the
+			// native profile: once per completed prestige, plus the current earned
+			// level. Stock prestige backfill and transport replays share this limit.
+			const auto earned = rank.prestige + (rank.experience >= reward->experience ? 1 : 0);
+			if (!earned)
+			{
+				// Stats replication/main-thread publication may follow the event.
+				return false;
+			}
+
+			int grants{};
+			const auto now = static_cast<std::uint32_t>(time(nullptr));
+			const auto result = achievement_store::mutate(reward->record.name, [&](achievement_record& record)
+			{
+				if (record.kind != challenge_kind)
+				{
+					record = reward->record;
+				}
+
+				if (record.fulfilled_times >= earned)
+				{
+					return false;
+				}
+
+				grants = earned - record.fulfilled_times;
+				record.fulfilled_times = earned;
+				record.progress = 1;
+				record.status = achievement_status::finished;
+				record.completion_timestamp = now;
+				return true;
+			}, [&](marketplace_store::transaction& state)
+			{
+				marketplace_store::inventory_record item;
+				for (int count = 0; count < grants; ++count)
+				{
+					if (!supply_drop_inventory::grant(state, reward->item, user, now, item))
+					{
+						return false;
+					}
+				}
+
+				return true;
+			});
+
+			if (result == achievement_store::mutation_result::save_failed)
+			{
+				return false;
+			}
+
+			if (result == achievement_store::mutation_result::updated)
+			{
+				achievement_sync::request_refresh();
+			}
+
+			// Fetch current absolute quantities, including on acknowledgement retry.
+			economy::request_inventory_refresh();
+			return true;
 		}
 
 		bool has_valid_expiry(const marketplace_store::inventory_record& item)
@@ -346,6 +500,11 @@ namespace zombies_progression
 		if (!user || game::environment::is_dedicated() || !game::environment::is_zombies())
 		{
 			return true;
+		}
+
+		if (event.name == "player_rank_up")
+		{
+			return process_rank(event, user);
 		}
 
 		const auto target = resolve_target(event);

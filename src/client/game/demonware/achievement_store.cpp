@@ -1064,7 +1064,8 @@ namespace demonware::achievement_store
 	}
 
 	mutation_result mutate(const std::string& name,
-		const std::function<bool(achievement_record&)>& mutator)
+		const std::function<bool(achievement_record&)>& mutator,
+		const std::function<bool(marketplace_store::transaction&)>& reward)
 	{
 		if (name.empty() || !mutator)
 		{
@@ -1093,12 +1094,17 @@ namespace demonware::achievement_store
 		updated.name = name;
 		achievements.insert_or_assign(name, std::move(updated));
 
-		if (save_achievements())
+		auto committed = false;
+		const auto rollback = utils::finally([&]
 		{
-			return mutation_result::updated;
-		}
+			if (!committed)
+			{
+				restore(name, original);
+			}
+		});
 
-		restore(name, original);
-		return mutation_result::save_failed;
+		const auto json = serialize_state();
+		committed = json && marketplace_store::save_achievement_state(*json, reward);
+		return committed ? mutation_result::updated : mutation_result::save_failed;
 	}
 }

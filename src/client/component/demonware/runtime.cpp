@@ -49,6 +49,27 @@ namespace demonware_runtime
 			return true;
 		}
 
+		std::optional<demonware::runtime_context::zombie_rank> read_zombie_rank()
+		{
+			if (game::environment::is_dedicated() || !game::environment::is_zombies())
+			{
+				return {};
+			}
+
+			const auto controller = game::CL_ControllerIndexFromClientNum(0);
+			if (controller < 0 || !game::LiveStorage_DoWeHaveStats(controller))
+			{
+				return {};
+			}
+
+			// CoD.StatsGroup.Coop; read on the main thread before publishing to DW.
+			static const auto prestige = game::DDL_HashString("prestigeLevel");
+			static const auto experience = game::DDL_HashString("totalXP");
+			return demonware::runtime_context::zombie_rank{
+				game::LiveStorage_PlayerDataGetIntByNameArray(controller, &prestige, 1, 3),
+				game::LiveStorage_PlayerDataGetIntByNameArray(controller, &experience, 1, 3)};
+		}
+
 		void publish_identity()
 		{
 			if (!accepting_work.load(std::memory_order_acquire) || !is_producer_thread())
@@ -68,7 +89,9 @@ namespace demonware_runtime
 
 			const std::string persona = name_length ? std::string{name, name_length} : "S2x";
 			const auto rarity_scale = loot_rarity_scale ? loot_rarity_scale->current.value : 1.0f;
-			if (current && current->persona_name == persona && current->loot_rarity_scale == rarity_scale)
+			const auto zombies = read_zombie_rank();
+			if (current && current->persona_name == persona && current->loot_rarity_scale == rarity_scale &&
+				current->zombies == zombies)
 			{
 				return;
 			}
@@ -79,7 +102,7 @@ namespace demonware_runtime
 				return;
 			}
 
-			demonware::runtime_context::publish({user_id, persona, producer_thread, rarity_scale});
+			demonware::runtime_context::publish({user_id, persona, producer_thread, rarity_scale, zombies});
 		}
 
 		bool database_ready()

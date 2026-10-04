@@ -105,6 +105,8 @@ namespace game
 	WEAK symbol<void(const void* definition, void* state, unsigned int statsGroup)> DDL_InitState{ 0x6546A0 };
 	WEAK symbol<bool(const void* fromState, void* toState, int pathCount, const unsigned int* path)> DDL_MoveToPath{ 0xA1D1C0 };
 	WEAK symbol<bool(int controllerIndex)> LiveStorage_DoWeHaveStats{ 0xCECE0 };
+	WEAK symbol<int(int controllerIndex, const unsigned int* path, unsigned int pathCount,
+		unsigned int statsGroup)> LiveStorage_PlayerDataGetIntByNameArray{ 0x18DD90 };
 	WEAK symbol<const void*(unsigned int statsGroup)> LiveStorage_GetStatsGroupDDLDefinition{ 0x653FC0 };
 	WEAK symbol<bool(int controllerIndex, const unsigned int* path, unsigned int pathCount, int value,
 		unsigned int statsGroup)> LiveStorage_PlayerDataSetIntByNameArray{ 0x18E8B0 };
