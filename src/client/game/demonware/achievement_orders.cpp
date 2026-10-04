@@ -67,6 +67,11 @@ namespace demonware::achievement_orders
 				return 9;
 			}
 
+			if (achievement_kind::special(kind))
+			{
+				return 1;
+			}
+
 			return is_weekly(kind) ? 3 : 6;
 		}
 
@@ -143,7 +148,8 @@ namespace demonware::achievement_orders
 			const auto* sets = find_member(group, "sets");
 
 			if (!kind || !kind->IsInt() || !achievement_kind::periodic(kind->GetInt()) ||
-				!limit || !limit->IsUint() || limit->GetUint() != 3 ||
+				!limit || !limit->IsUint() ||
+				limit->GetUint() != (achievement_kind::special(kind->GetInt()) ? 1u : 3u) ||
 				!sets || !sets->IsArray() || sets->Empty() || sets->Size() > 32)
 			{
 				return std::nullopt;
@@ -209,7 +215,7 @@ namespace demonware::achievement_orders
 			const auto* rotations = find_member(document, "rotations");
 
 			if (!offers || !reward_json::unique_members(*offers) ||
-				!rotations || !rotations->IsArray() || rotations->Size() != 6)
+				!rotations || !rotations->IsArray() || rotations->Size() != 7)
 			{
 				return std::nullopt;
 			}
@@ -365,6 +371,12 @@ namespace demonware::achievement_orders
 				return "in_progress";
 			case achievement_status::claimable:
 				return "claimable";
+			case achievement_status::finished:
+				if (achievement_kind::special(existing->kind))
+				{
+					return "completed";
+				}
+				break;
 			default:
 				break;
 			}

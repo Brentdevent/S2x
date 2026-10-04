@@ -6,9 +6,14 @@ namespace demonware
 {
 	namespace achievement_kind
 	{
+		constexpr bool special(const int kind)
+		{
+			return kind == 3;
+		}
+
 		constexpr bool order(const int kind)
 		{
-			return kind == 1 || kind == 2 || kind == 8 || kind == 9;
+			return kind == 1 || kind == 2 || special(kind) || kind == 8 || kind == 9;
 		}
 
 		constexpr bool contract(const int kind)

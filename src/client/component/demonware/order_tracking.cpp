@@ -144,6 +144,31 @@ namespace order_progress
 			return std::nullopt;
 		}
 
+		std::string_view special_order_unit(const demonware::achievement_record& record)
+		{
+			if (!demonware::achievement_kind::special(record.kind))
+			{
+				return {};
+			}
+
+			const auto* table = game::DB_FindXAssetHeader(game::ASSET_TYPE_STRINGTABLE,
+				"mp/periodicChallengeTable.csv", false).stringTable;
+			if (!is_valid_challenge_table(table) || table->columnCount <= 9)
+			{
+				return {};
+			}
+
+			for (int row = 0; row < table->rowCount; ++row)
+			{
+				if (cell(table, row, 2) == record.name)
+				{
+					return cell(table, row, 9).value_or(std::string_view{});
+				}
+			}
+
+			return {};
+		}
+
 		bool challenge_row_matches(const game::StringTable* table, const int row,
 			const demonware::achievement_record& record, const progress::event& event, const int event_class)
 		{
@@ -160,7 +185,7 @@ namespace order_progress
 
 			if (!event_class)
 			{
-				const auto rule = progress::server_rule(record.name, record.kind, event.id);
+				const auto rule = progress::server_rule(record.name, record.kind, event.id, special_order_unit(record));
 				return definition->empty() && rule && progress::matches(*rule, event);
 			}
 

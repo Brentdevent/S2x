@@ -59,7 +59,8 @@ namespace demonware::order_progress
 	bool eligible(const achievement_record& record);
 	// Reject definitions the stock fixed-size parser would truncate or ignore.
 	bool supported(std::string_view definition, const predicate& native);
-	std::optional<server_predicate> server_rule(std::string_view name, int kind, int event_id);
+	std::optional<server_predicate> server_rule(std::string_view name, int kind, int event_id,
+		std::string_view unit = {});
 	bool matches(const predicate& rule, const event& occurrence);
 	bool matches(const server_predicate& rule, const event& occurrence);
 	achievement_store::mutation_result settle(const std::vector<target>& targets,

@@ -1,5 +1,5 @@
 {
-  "policy": "S2x curated local rotations, not the retail ordering algorithm. Daily Orders and Contracts reset at 17:00 UTC; Weekly Orders reset Tuesday at 17:00 UTC. Each mode offers 6 Daily, 3 Weekly and 9 Contracts, with 3 active per category. Captured targets/reward promises are retained, including backend overrides of table defaults. Entries marked local_rare_zombies_drop use native table targets/predicates/tokens/timers and a local reward of one Rare Zombies Drop; their retail reward values were not recovered. Descriptions and objective evaluation use native tables. Cohort/randomizer-gated MP variants are excluded so stock menus show the same set for every player. Ungated native replacements marked local_200_armory_credits award 200 Armory Credits; their retail reward values were not recovered.",
+  "policy": "S2x curated local rotations, not the retail ordering algorithm. Daily Orders and Contracts reset at 17:00 UTC; Weekly Orders reset Tuesday at 17:00 UTC. Each mode offers 6 Daily, 3 Weekly and 9 Contracts, with 3 active per category. Captured targets/reward promises are retained, including backend overrides of table defaults. Entries marked local_rare_zombies_drop use native table targets/predicates/tokens/timers and a local reward of one Rare Zombies Drop; their retail reward values were not recovered. Descriptions and objective evaluation use native tables. Cohort/randomizer-gated MP variants are excluded so stock menus show the same set for every player. Ungated native replacements marked local_200_armory_credits award 200 Armory Credits; their retail reward values were not recovered. MP Winter Siege Special Orders use a five-day cycle with one offer and one active slot; accepted Orders have no expiry and each can be claimed once. Their targets come from native tables. Entries marked local_base_weapon grant the native base weapon inventory item; the original backend reward descriptors were not recovered.",
   "offers": {
     "daily_ch_karloot2_1": {
       "kind": 1,
@@ -1154,9 +1154,140 @@
           }
         }
       ]
+    },
+    "special_ch_sten": {
+      "kind": 3,
+      "progressTarget": 50,
+      "rewardPolicy": "local_base_weapon",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 16883968,
+            "items": [
+              {
+                "id": 16883968,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_gewehr43": {
+      "kind": 3,
+      "progressTarget": 50,
+      "rewardPolicy": "local_base_weapon",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 16908544,
+            "items": [
+              {
+                "id": 16908544,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_gpmg": {
+      "kind": 3,
+      "progressTarget": 50,
+      "rewardPolicy": "local_base_weapon",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 17129728,
+            "items": [
+              {
+                "id": 17129728,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_icepick": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_base_weapon",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 17117440,
+            "items": [
+              {
+                "id": 17117440,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_trenchknife": {
+      "kind": 3,
+      "progressTarget": 35,
+      "rewardPolicy": "local_base_weapon",
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 17232128,
+            "items": [
+              {
+                "id": 17232128,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
     }
   },
   "rotations": [
+    {
+      "kind": 3,
+      "activationLimit": 1,
+      "sets": [
+        [
+          "special_ch_sten"
+        ],
+        [
+          "special_ch_gewehr43"
+        ],
+        [
+          "special_ch_gpmg"
+        ],
+        [
+          "special_ch_icepick"
+        ],
+        [
+          "special_ch_trenchknife"
+        ]
+      ]
+    },
     {
       "kind": 1,
       "activationLimit": 3,

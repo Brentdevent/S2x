@@ -508,7 +508,9 @@ namespace demonware::achievement_store
 		bool is_new_period(const achievement_record& record, const std::optional<order_offer>& offer,
 			const std::uint64_t timestamp)
 		{
-			return offer && offer->period_start &&
+			// Local weapon Special Orders are one-time unlocks, not repeatable daily rewards.
+			return !(achievement_kind::special(record.kind) && record.status == achievement_status::finished) &&
+				offer && offer->period_start &&
 				record.activation_timestamp.value_or(timestamp) < offer->period_start &&
 				(record.status == achievement_status::finished || record.status == achievement_status::inactive);
 		}

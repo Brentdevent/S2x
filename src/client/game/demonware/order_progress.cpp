@@ -72,8 +72,16 @@ namespace demonware::order_progress
 		return false;
 	}
 
-	std::optional<server_predicate> server_rule(const std::string_view name, const int kind, const int event_id)
+	std::optional<server_predicate> server_rule(const std::string_view name, const int kind, const int event_id,
+		const std::string_view unit)
 	{
+		if (achievement_kind::special(kind) && event_id == 5 && unit == "AEC_UNIT_MATCHES_COMPLETED")
+		{
+			// Script 1128 emits end_game 1:1 for players present at the full match end.
+			// _gamelogic returns before this call at round/War halftime transitions.
+			return server_predicate{{0, 1, {1}, {1}}};
+		}
+
 		// These restored offers have no predicate in dwGameChallenges.csv: class 0
 		// is evaluated by the retail backend, not the client's prediction cache.
 		// Local policy bindings use the stock script 1128 producers: sniper
