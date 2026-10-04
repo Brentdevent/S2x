@@ -357,16 +357,6 @@ namespace game
 		WEAK symbol<int(mp::playerState_s* ps, const Weapon* weapon)> G_TakePlayerWeapon{ 0x5C6490 };
 		WEAK symbol<void(scr_entref_t entref)> PlayerCmd_Suicide{ 0x549F40 };
 
-		WEAK symbol<void(mp::gentity_s* self, mp::gentity_s* inflictor, mp::gentity_s* attacker, int damage, int dflags,
-			unsigned int mod, const Weapon* weapon, bool isAlternate, const float* point, const float* dir,
-			std::uint8_t hitLoc, int timeOffset)> Scr_PlayerDamage{ 0x5AFC90 };
-		WEAK symbol<void(mp::gentity_s* self, mp::gentity_s* inflictor, mp::gentity_s* attacker, int damage,
-			unsigned int mod, const Weapon* weapon, bool isAlternate, const float* dir, std::uint8_t hitLoc,
-			int timeOffset, int deathAnimDuration)> Scr_PlayerKilled{ 0x5AFF80 };
-		WEAK symbol<scr_string_t(std::uint8_t hitLoc)> G_GetHitLocationString{ 0x551E70 };
-		WEAK symbol<const char*(const Weapon* weapon, bool isAlternate, char* output, int maxStringLen)> BG_GetWeaponNameComplete{ 0x3B7410 };
-		WEAK symbol<const scr_string_t*> modNames{ 0xF8B8F0 };
-
 		WEAK symbol<mp::gentity_s*(const char* name, int customizationGroup)> SV_AddBot{ 0xF2650 };
 
 		WEAK symbol<int(mp::gentity_s* entity)> SV_SpawnTestClient{ 0xF6AA0 };
