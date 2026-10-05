@@ -27,6 +27,7 @@ namespace order_progress
 
 		constexpr unsigned native_queue_capacity = 40;
 		constexpr int native_controller_count = 2;
+		constexpr std::uint32_t timer_save_interval_seconds = 30;
 
 		struct native_entry
 		{
@@ -74,6 +75,7 @@ namespace order_progress
 			std::uint32_t seconds{};
 			std::vector<progress::usage> baseline;
 			std::vector<progress::usage> pending;
+			std::uint32_t checkpoint_seconds{};
 		};
 
 		std::atomic_uint64_t local_user{};
@@ -333,9 +335,7 @@ namespace order_progress
 
 		void settle_timer()
 		{
-			// Absolute remaining values make retries after stop or reconnect safe
-			const auto saved = progress::settle({}, static_cast<std::uint64_t>(time(nullptr)), timer.pending);
-			if (saved == mutation_result::save_failed)
+			if (timer.pending.empty())
 			{
 				return;
 			}
@@ -344,6 +344,23 @@ namespace order_progress
 			{
 				return value.remaining == 0;
 			});
+
+			// Coalesce timer-only saves. Objective progress carries its own usage
+			// snapshot; stopping or expiring a contract must still settle immediately.
+			if (timer.running && !any_expired &&
+				timer.seconds - timer.checkpoint_seconds < timer_save_interval_seconds)
+			{
+				return;
+			}
+
+			// Absolute remaining values make retries after stop or reconnect safe
+			const auto saved = progress::settle({}, static_cast<std::uint64_t>(time(nullptr)), timer.pending);
+			if (saved == mutation_result::save_failed)
+			{
+				return;
+			}
+
+			timer.checkpoint_seconds = timer.seconds;
 
 			if (saved == mutation_result::updated && any_expired)
 			{
@@ -471,8 +488,11 @@ namespace order_progress
 				entry->state = 1;
 				queue->due = 0;
 
-				value.progress.queue = queue;
-				pending.emplace_back(entry, std::move(value.progress));
+				if (!value.progress.targets.empty())
+				{
+					value.progress.queue = queue;
+					pending.emplace_back(entry, std::move(value.progress));
+				}
 			}
 		}
 
@@ -813,7 +833,11 @@ namespace order_progress
 
 		while (!remote_pending.empty())
 		{
-			pending.emplace_back(nullptr, std::move(remote_pending.front().progress));
+			if (!remote_pending.front().progress.targets.empty())
+			{
+				pending.emplace_back(nullptr, std::move(remote_pending.front().progress));
+			}
+
 			remote_pending.pop_front();
 		}
 
