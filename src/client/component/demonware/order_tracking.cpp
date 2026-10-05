@@ -307,7 +307,7 @@ namespace order_progress
 				const auto& [entry, occurrence] = pending.front();
 
 				const auto owned = occurrence.remote || occurrence.queue->user == occurrence.user;
-				if (!owned || !entry->state)
+				if (!owned || (entry && !entry->state))
 				{
 					pending.pop_front();
 					continue;
@@ -513,7 +513,7 @@ namespace order_progress
 			// Native success clears state 2 and retains state 1, so keep every unsaved entry
 			for (const auto& [entry, occurrence] : pending)
 			{
-				if (entry->state == 2 && (occurrence.remote || occurrence.queue->user == occurrence.user))
+				if (entry && entry->state == 2 && (occurrence.remote || occurrence.queue->user == occurrence.user))
 				{
 					entry->state = 1;
 				}
@@ -800,25 +800,43 @@ namespace order_progress
 			return;
 		}
 
+		// Native slots can be reset or reused after disconnect. Retain only the
+		// copied settlement data so failed saves can recover in admission order.
+		for (auto& [entry, occurrence] : pending)
+		{
+			if (occurrence.remote)
+			{
+				entry = nullptr;
+				occurrence.queue = nullptr;
+			}
+		}
+
+		while (!remote_pending.empty())
+		{
+			pending.emplace_back(nullptr, std::move(remote_pending.front().progress));
+			remote_pending.pop_front();
+		}
+
+		// Keep the final reported time after its events, even if a new match
+		// replaces the timer before persistence recovers.
+		if (!timer.pending.empty())
+		{
+			pending.emplace_back(nullptr, pending_occurrence{nullptr, local_user,
+				static_cast<std::uint64_t>(time(nullptr)), {}, timer.pending, true});
+		}
+
+		remote_stream = 0;
+		remote_sequence = 0;
+		timer.running = false;
+
 		try
 		{
-			drain_remote();
 			flush();
 		}
 		catch (const std::exception& error)
 		{
 			console::error("Order disconnect save failed: %s\n", error.what());
 		}
-
-		remote_pending.clear();
-		std::erase_if(pending, [](const auto& value)
-		{
-			return value.second.remote;
-		});
-
-		remote_stream = 0;
-		remote_sequence = 0;
-		timer.running = false;
 	}
 
 	class component final : public multiplayer_component
