@@ -32,8 +32,8 @@ namespace demonware::marketplace_store::detail
 
 	namespace persistence
 	{
-		// Read only the current schema. Loading never rewrites the file; errors
-		// leave the destination state and original file alone.
+		// Existing economy files use only the current schema and are never rewritten
+		// on load. Errors leave the destination state and original file alone.
 		store_status load(state* result);
 		save_result save(const state& value);
 	}

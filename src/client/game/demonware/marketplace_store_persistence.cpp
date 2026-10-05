@@ -1,6 +1,8 @@
 #include <std_include.hpp>
 
 #include "marketplace_store_persistence.hpp"
+#include "achievement_store.hpp"
+#include "reward_json.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -134,16 +136,16 @@ namespace demonware::marketplace_store::detail
 				return result;
 			}
 
-			bool read_bounded_file(std::string* data)
+			bool read_bounded_file(const std::filesystem::path& file, const std::size_t maximum, std::string* data)
 			{
-				std::ifstream stream{std::filesystem::path{marketplace_file}, std::ios::binary | std::ios::ate};
+				std::ifstream stream{file, std::ios::binary | std::ios::ate};
 				if (!stream.is_open())
 				{
 					return false;
 				}
 
 				const auto position = stream.tellg();
-				if (position < 0 || static_cast<std::uint64_t>(position) > max_store_file_size)
+				if (position < 0 || static_cast<std::uint64_t>(position) > maximum)
 				{
 					return false;
 				}
@@ -177,6 +179,87 @@ namespace demonware::marketplace_store::detail
 				}
 
 				return true;
+			}
+
+			// TODO: Remove this temporary importer after users have had time to upgrade
+			// from the standalone achievements.json store shipped on master.
+			store_status import_legacy_achievements(state* result)
+			{
+				constexpr auto legacy_file = L"players2/user/achievements.json";
+				std::error_code error{};
+				const auto exists = std::filesystem::exists(legacy_file, error);
+				if (error)
+				{
+					return store_status::io_error;
+				}
+
+				if (!exists)
+				{
+					*result = {};
+					return store_status::ready;
+				}
+
+				std::string data{};
+				if (!read_bounded_file(legacy_file, max_achievement_state_length, &data))
+				{
+					return store_status::io_error;
+				}
+
+				rapidjson::Document legacy{};
+				legacy.Parse(data.data(), data.size());
+				if (legacy.HasParseError() || !has_unique_members(legacy) || legacy.MemberCount() != 1 ||
+					!legacy.HasMember("achievements") || !legacy["achievements"].IsArray())
+				{
+					return store_status::corrupt;
+				}
+
+				rapidjson::Document document{rapidjson::kObjectType};
+				auto& allocator = document.GetAllocator();
+				rapidjson::Value records{rapidjson::kArrayType};
+				std::set<std::string_view> names{};
+				for (const auto& value : legacy["achievements"].GetArray())
+				{
+					if (!has_unique_members(value) || value.MemberCount() != 7 ||
+						!value.HasMember("name") || !value["name"].IsString() || !value["name"].GetStringLength() ||
+						!value.HasMember("kind") || !value["kind"].IsInt() ||
+						!value.HasMember("progress") || !value["progress"].IsUint() || value["progress"].GetUint() > UINT16_MAX ||
+						!value.HasMember("progressTarget") || !value["progressTarget"].IsUint() ||
+						!value["progressTarget"].GetUint() || value["progressTarget"].GetUint() > UINT16_MAX ||
+						!value.HasMember("fulfilledTimes") || !value["fulfilledTimes"].IsInt() ||
+						!value.HasMember("completionTimestamp") || !value["completionTimestamp"].IsUint64() ||
+						!value.HasMember("status") || !value["status"].IsString())
+					{
+						return store_status::corrupt;
+					}
+
+					const auto status = parse_achievement_status(reward_json::view(value["status"]));
+					if (!status || !names.emplace(reward_json::view(value["name"])).second)
+					{
+						return store_status::corrupt;
+					}
+
+					achievement_record record{};
+					record.name = reward_json::view(value["name"]);
+					record.kind = value["kind"].GetInt();
+					record.progress = static_cast<std::uint16_t>(value["progress"].GetUint());
+					record.progress_target = value["progressTarget"].GetUint();
+					record.fulfilled_times = value["fulfilledTimes"].GetInt();
+					record.completion_timestamp = value["completionTimestamp"].GetUint64();
+					record.status = *status;
+					records.PushBack(serialize_achievement(record, allocator), allocator);
+				}
+
+				document.AddMember("achievements", records, allocator);
+				document.AddMember("orderActivations", rapidjson::Value{rapidjson::kArrayType}, allocator);
+				state imported{};
+				imported.achievement_state = reward_json::encode(document);
+				if (save(imported) != save_result::saved)
+				{
+					return store_status::io_error;
+				}
+
+				*result = std::move(imported);
+				return store_status::ready;
 			}
 
 			bool parse_currency(const rapidjson::Value& value, currency_record* record)
@@ -508,8 +591,7 @@ namespace demonware::marketplace_store::detail
 
 			if (!exists)
 			{
-				*result = {};
-				return store_status::ready;
+				return import_legacy_achievements(result);
 			}
 
 			if (!std::filesystem::is_regular_file(marketplace_file, error) || error)
@@ -529,7 +611,7 @@ namespace demonware::marketplace_store::detail
 			}
 
 			std::string data{};
-			if (!read_bounded_file(&data))
+			if (!read_bounded_file(marketplace_file, max_store_file_size, &data))
 			{
 				return store_status::io_error;
 			}
