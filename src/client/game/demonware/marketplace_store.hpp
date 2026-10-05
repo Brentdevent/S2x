@@ -10,7 +10,7 @@
 namespace demonware::marketplace_store
 {
 	// One current S2x economy format; earlier development schemas are unsupported.
-	inline constexpr std::uint32_t schema_version = 4;
+	inline constexpr std::uint32_t schema_version = 1;
 	inline constexpr std::size_t max_achievement_state_length = 8 * 1024 * 1024;
 	inline constexpr std::size_t max_account_type_length = 10;
 	inline constexpr std::size_t max_item_data_length = 64;
