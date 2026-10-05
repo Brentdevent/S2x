@@ -93,6 +93,12 @@ namespace utils::hook
 		}
 
 		template <typename... Args>
+		asmjit::Error jge(Args&&... args)
+		{
+			return this->assembler_.jge(std::forward<Args>(args)...);
+		}
+
+		template <typename... Args>
 		asmjit::Error jne(Args&&... args)
 		{
 			return this->assembler_.jne(std::forward<Args>(args)...);

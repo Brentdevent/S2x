@@ -29,6 +29,8 @@ namespace server_list
 		constexpr auto master_timeout = 5s;
 		constexpr auto server_limit = 128ull;
 		constexpr auto query_limit = 3ull;
+		constexpr auto ping_sample_count = 3;
+		constexpr auto ping_sample_interval = 200ms;
 
 		struct server_info
 		{
@@ -49,6 +51,8 @@ namespace server_list
 		{
 			std::string challenge{};
 			std::chrono::steady_clock::time_point query_start{};
+			std::chrono::steady_clock::time_point next_query{};
+			int samples{};
 			bool queried{};
 		};
 
@@ -168,11 +172,18 @@ namespace server_list
 			});
 		}
 
-		void drop_server(const game::netadr_s& address)
+		void drop_server(const game::netadr_s& address, const std::string& challenge)
 		{
 			std::lock_guard<std::mutex> _{mutex};
 
-			master_state.queued_servers.erase(address);
+			const auto queued = master_state.queued_servers.find(address);
+			if (queued == master_state.queued_servers.end() || !queued->second.queried
+				|| queued->second.challenge != challenge)
+			{
+				return;
+			}
+
+			master_state.queued_servers.erase(queued);
 			remove_server_locked(address);
 		}
 
@@ -307,16 +318,19 @@ namespace server_list
 
 					if (queued.queried && now - queued.query_start > server_timeout)
 					{
-						remove_server_locked(entry->first);
+						// A lost follow-up probe must not discard an already discovered server.
+						if (!queued.samples)
+						{
+							remove_server_locked(entry->first);
+						}
 						entry = master_state.queued_servers.erase(entry);
 						continue;
 					}
 
-					if (!queued.queried && queries.size() < query_limit)
+					if (!queued.queried && queued.challenge.empty() && now >= queued.next_query
+						&& queries.size() < query_limit)
 					{
 						queued.challenge = utils::cryptography::random::get_challenge();
-						queued.query_start = now;
-						queued.queried = true;
 
 						queries.emplace_back(entry->first, queued.challenge);
 					}
@@ -327,6 +341,20 @@ namespace server_list
 
 			for (const auto& [address, challenge] : queries)
 			{
+				{
+					std::lock_guard<std::mutex> _{mutex};
+					const auto queued = master_state.queued_servers.find(address);
+					if (queued == master_state.queued_servers.end() || queued->second.queried
+						|| queued->second.challenge != challenge)
+					{
+						continue;
+					}
+
+					// Time each send separately, excluding preparation and earlier sends in the batch.
+					queued->second.query_start = std::chrono::steady_clock::now();
+					queued->second.queried = true;
+				}
+
 				network::send(address, "s2x_getInfo", challenge);
 			}
 		}
@@ -422,6 +450,8 @@ namespace server_list
 
 		void handle_info_response(const game::netadr_s& from, const std::string_view& data)
 		{
+			// Parsing and display-name lookups are local work, not part of the round trip.
+			const auto response_time = std::chrono::steady_clock::now();
 			auto address = from;
 			if (address.type == game::NA_BROADCAST)
 			{
@@ -446,18 +476,22 @@ namespace server_list
 				}
 
 				query_start = queued->second.query_start;
+				if (response_time < query_start || response_time - query_start > server_timeout)
+				{
+					return;
+				}
 			}
 
 			if (info.get("gamename") != master_server::game_name || info.get("s2x") != "1")
 			{
-				drop_server(address);
+				drop_server(address, challenge);
 				return;
 			}
 
 			const auto& mode = game::environment::get_online_mode_info();
 			if (info.get("mode") != std::string{mode.token})
 			{
-				drop_server(address);
+				drop_server(address, challenge);
 				return;
 			}
 
@@ -465,14 +499,14 @@ namespace server_list
 			if (!parse_info_int(info.get("protocol"), 0, std::numeric_limits<int>::max(), protocol)
 				|| protocol != PROTOCOL)
 			{
-				drop_server(address);
+				drop_server(address, challenge);
 				return;
 			}
 
 			int server_running{};
 			if (!parse_info_int(info.get("sv_running"), 0, 1, server_running))
 			{
-				drop_server(address);
+				drop_server(address, challenge);
 				return;
 			}
 
@@ -480,7 +514,7 @@ namespace server_list
 			if (session_kind == party::session::kind::invalid
 				|| (!server_running && session_kind == party::session::kind::none))
 			{
-				drop_server(address);
+				drop_server(address, challenge);
 				return;
 			}
 
@@ -496,20 +530,25 @@ namespace server_list
 				|| !parse_info_int(max_clients_value, 1, mode.max_players, max_clients)
 				|| clients > max_clients || bots > clients)
 			{
-				drop_server(address);
+				drop_server(address, challenge);
 				return;
 			}
 
 			const auto map_display_name = get_map_display_name(mapname);
 			const auto gametype_display_name = get_gametype_display_name(gametype);
-			const auto ping = std::min(
-				static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
-					std::chrono::steady_clock::now() - query_start).count()),
-				999
-			);
+			const auto ping = static_cast<int>(std::min(
+				std::chrono::duration_cast<std::chrono::milliseconds>(response_time - query_start),
+				999ms).count());
 
 			{
 				std::lock_guard<std::mutex> _{mutex};
+
+				const auto queued = master_state.queued_servers.find(address);
+				if (queued == master_state.queued_servers.end() || !queued->second.queried
+					|| queued->second.challenge != challenge)
+				{
+					return;
+				}
 
 				auto* server = get_server_by_address(address);
 				if (!server)
@@ -517,14 +556,24 @@ namespace server_list
 					return;
 				}
 
-				master_state.queued_servers.erase(address);
+				if (++queued->second.samples >= ping_sample_count)
+				{
+					master_state.queued_servers.erase(queued);
+				}
+				else
+				{
+					queued->second.queried = false;
+					queued->second.challenge.clear();
+					queued->second.next_query = response_time + ping_sample_interval;
+				}
 
 				server->hostname = hostname.empty() ? server->address_string : hostname;
 				server->mapname = map_display_name;
 				server->gametype = gametype_display_name;
 				server->clients = clients;
 				server->max_clients = max_clients;
-				server->ping = ping;
+				// The least delayed sample reduces frame/processing jitter in the browser estimate.
+				server->ping = server->valid ? std::min(server->ping, ping) : ping;
 				server->status = max_clients > 0 && clients >= max_clients ? "Full" : "Joinable";
 				server->valid = true;
 
