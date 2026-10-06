@@ -21,6 +21,7 @@ namespace launcher_resources
 			{"title.woff", LAUNCHER_TITLE_FONT},
 			{"body.ttf", LAUNCHER_BODY_FONT},
 			{"background.jpg", LAUNCHER_BACKGROUND},
+			{"wordmark.png", LAUNCHER_WORDMARK},
 			{"singleplayer.png", LAUNCHER_SINGLEPLAYER},
 			{"multiplayer.png", LAUNCHER_MULTIPLAYER},
 			{"zombies.png", LAUNCHER_ZOMBIES},

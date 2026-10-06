@@ -64,7 +64,7 @@
 
             <div id="menu-about" class="panel">
                 <div class="about">
-                    <div class="about-logo">S<span>2</span>x</div>
+                    <img class="about-logo" alt="S2x" src="wordmark.png" />
                     <p class="links">
                         <button action="github">GitHub</button>
                         <button action="discord">Discord</button>

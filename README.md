@@ -1,5 +1,3 @@
-<img width="1200" height="350" alt="s2x-readme-banner" src="https://github.com/user-attachments/assets/733e21a4-2703-4ba7-ab07-151b0f17e94a" />
-
 # S2x ⭐
 
 > [!WARNING]

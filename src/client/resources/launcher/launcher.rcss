@@ -1,4 +1,4 @@
-/* RmlUi styles. Artwork and the title font are carried over from the HTML launcher. */
+/* RmlUi launcher styles. */
 
 *
 {
@@ -54,7 +54,7 @@ button:focus-visible
     flex-direction: column;
     height: 100%;
     padding: 10dp 25dp 20dp;
-    background-color: #00000059;
+    background-color: #000000a6;
 }
 
 .nav
@@ -378,16 +378,10 @@ button.option-row:hover, button.option-row:focus-visible
 
 .about-logo
 {
-    margin-bottom: 4dp;
-    text-align: center;
-    font-size: 3.6vw;
-    line-height: 1;
-    letter-spacing: 2dp;
-}
-
-.about-logo span
-{
-    color: #c99631;
+    display: block;
+    width: auto;
+    height: 3.6vw;
+    margin: 0 auto 4dp auto;
 }
 
 .about p
