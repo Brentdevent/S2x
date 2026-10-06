@@ -7,6 +7,8 @@
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
 
+#include <process.h>
+
 #define ProcessDebugPort 7
 #define ProcessDebugObjectHandle 30
 #define ProcessDebugFlags 31
@@ -33,7 +35,6 @@ namespace arxan::anti_debug
 		utils::hook::detour nt_query_information_thread_hook;
 		utils::hook::detour nt_create_thread_ex_hook;
 		utils::hook::detour create_mutex_ex_a_hook;
-		utils::hook::detour create_thread_hook;
 		utils::hook::detour get_thread_context_hook;
 		utils::hook::detour virtual_alloc_hook;
 		utils::hook::detour check_remote_debugger_present_hook;
@@ -52,6 +53,8 @@ namespace arxan::anti_debug
 		HANDLE arxan_worker_park_event{};
 
 		void* original_first_tls_callback = nullptr;
+		decltype(&_beginthread) original_begin_thread = nullptr;
+		void** begin_thread_import = nullptr;
 
 		void** get_tls_callbacks()
 		{
@@ -175,22 +178,13 @@ namespace arxan::anti_debug
 		}
 
 
-		HANDLE WINAPI create_thread_stub(const LPSECURITY_ATTRIBUTES thread_attributes, const SIZE_T stack_size,
-			const LPTHREAD_START_ROUTINE start_address, const LPVOID parameter,
-			const DWORD creation_flags,
-			const LPDWORD thread_id)
+		uintptr_t __cdecl begin_thread_stub(void(__cdecl* start_address)(void*), const unsigned stack_size,
+			void* const parameter)
 		{
-			if (utils::nt::library::get_by_address(start_address) != utils::nt::library{"s2x.exe"})
-			{
-				restore_tls_callbacks();
-
-				create_thread_hook.clear();
-				return CreateThread(thread_attributes, stack_size, start_address, parameter, creation_flags,
-					thread_id);
-			}
-
-			return create_thread_hook.invoke<HANDLE>(thread_attributes, stack_size, start_address, parameter,
-				creation_flags, thread_id);
+			// Restore before the first game thread can start and create any further threads.
+			restore_tls_callbacks();
+			utils::hook::set(begin_thread_import, original_begin_thread);
+			return original_begin_thread(start_address, stack_size, parameter);
 		}
 
 		HANDLE create_mutex_ex_a_stub(const LPSECURITY_ATTRIBUTES attributes, const LPCSTR name, const DWORD flags,
@@ -655,9 +649,20 @@ namespace arxan::anti_debug
 			scheduler::loop(hide_being_debugged, scheduler::pipeline::async);
 
 			AddVectoredExceptionHandler(1, exception_filter);
-
 			create_mutex_ex_a_hook.create(CreateMutexExA, create_mutex_ex_a_stub);
-			create_thread_hook.create(CreateThread, create_thread_stub);
+
+			// Both game binaries start their first threads through this CRT import during
+			const auto begin_thread_hook = utils::hook::iat(utils::nt::library{},
+				"api-ms-win-crt-runtime-l1-1-0.dll", "_beginthread", begin_thread_stub);
+
+			if (!begin_thread_hook)
+			{
+				throw std::runtime_error("Unable to hook game _beginthread import");
+			}
+
+			begin_thread_import = static_cast<void**>(begin_thread_hook->first);
+			original_begin_thread = reinterpret_cast<decltype(original_begin_thread)>(begin_thread_hook->second);
+
 			enum_windows_hook.create(EnumWindows, enum_windows_stub);
 
 			const utils::nt::library ntdll("ntdll.dll");
@@ -683,6 +688,7 @@ namespace arxan::anti_debug
 			const auto function_rva = reinterpret_cast<size_t>(nt_set_information_thread) -
 				reinterpret_cast<size_t>(ntdll.get_ptr());
 			const auto image_size = ntdll.get_optional_header()->SizeOfImage;
+
 			// The game copies SizeOfRawData. Discover and validate the loaded code
 			// section once, since Wine's size and layout can differ from Windows'.
 			for (const auto* section : ntdll.get_section_headers())
@@ -703,10 +709,12 @@ namespace arxan::anti_debug
 					break;
 				}
 			}
+
 			if (!ntdll_code_address)
 			{
 				throw std::runtime_error("Unable to locate the NTDLL executable section for game startup");
 			}
+
 			nt_set_information_thread_hook.create(nt_set_information_thread, nt_set_information_thread_stub);
 			nt_set_information_thread_hook.move();
 
