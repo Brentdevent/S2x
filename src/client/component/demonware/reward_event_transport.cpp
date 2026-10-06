@@ -3,6 +3,7 @@
 #include "reward_event_transport.hpp"
 #include "order_tracking.hpp"
 #include "match_drops.hpp"
+#include "commendations.hpp"
 #include "component/command.hpp"
 #include "component/network.hpp"
 #include "component/scheduler.hpp"
@@ -223,7 +224,7 @@ namespace reward_event_relay
 		void deploy(const unsigned int local_client)
 		{
 			const command::params args;
-			if (match_drops::receive(local_client, args))
+			if (match_drops::receive(local_client, args) || commendations::receive(local_client, args))
 			{
 				return;
 			}
@@ -250,6 +251,7 @@ namespace reward_event_relay
 		{
 			if (!local_client)
 			{
+				commendations::disconnect();
 				order_progress::disconnect();
 			}
 
