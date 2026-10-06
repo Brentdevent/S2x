@@ -308,7 +308,7 @@ namespace order_progress
 			{
 				const auto& [entry, occurrence] = pending.front();
 
-				const auto owned = occurrence.remote || occurrence.queue->user == occurrence.user;
+				const auto owned = !entry || occurrence.remote || occurrence.queue->user == occurrence.user;
 				if (!owned || (entry && !entry->state))
 				{
 					pending.pop_front();
@@ -659,10 +659,17 @@ namespace order_progress
 			std::lock_guard lock{pending_mutex};
 
 			reward_event_relay::reset();
-			std::erase_if(pending, [](const auto& value)
+
+			// The native reset reuses server queue slots. Keep failed local saves
+			// in admission order, without retaining pointers into those queues.
+			for (auto& [entry, occurrence] : pending)
 			{
-				return !value.second.remote;
-			});
+				if (!occurrence.remote)
+				{
+					entry = nullptr;
+					occurrence.queue = nullptr;
+				}
+			}
 
 			if (!remote_stream)
 			{
