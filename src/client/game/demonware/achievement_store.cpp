@@ -109,7 +109,7 @@ namespace demonware::achievement_store
 		std::map<std::string, achievement_record> achievements{};
 		std::map<receipt_key, activation_receipt> activation_receipts{};
 		bool achievements_loaded{};
-		bool achievements_valid{true};
+		bool achievements_valid{};
 
 		std::uint64_t now()
 		{
@@ -249,16 +249,10 @@ namespace demonware::achievement_store
 			return activation_receipts.emplace(std::move(key), std::move(receipt)).second;
 		}
 
-		bool read_state()
+		bool read_state(const std::string& json)
 		{
-			const auto state = marketplace_store::get_achievement_state();
-			if (state.status != marketplace_store::store_status::ready)
-			{
-				return false;
-			}
-
 			rapidjson::Document document{};
-			document.Parse(state.json.data(), state.json.size());
+			document.Parse(json.data(), json.size());
 			if (document.HasParseError() || !reward_json::unique_members(document))
 			{
 				return false;
@@ -306,8 +300,14 @@ namespace demonware::achievement_store
 				return;
 			}
 
+			const auto state = marketplace_store::get_achievement_state();
+			if (state.status == marketplace_store::store_status::io_error)
+			{
+				return;
+			}
+
 			achievements_loaded = true;
-			achievements_valid = read_state();
+			achievements_valid = state.status == marketplace_store::store_status::ready && read_state(state.json);
 		}
 
 		rapidjson::Value serialize_receipt(const receipt_key& key, const activation_receipt& receipt,

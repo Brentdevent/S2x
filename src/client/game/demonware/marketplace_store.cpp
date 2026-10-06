@@ -27,9 +27,9 @@ namespace demonware::marketplace_store
 				return;
 			}
 
-			store_loaded = true;
 			store_state loaded{};
 			current_status = detail::persistence::load(&loaded);
+			store_loaded = current_status != store_status::io_error;
 			if (current_status == store_status::ready)
 			{
 				current_state = std::move(loaded);
