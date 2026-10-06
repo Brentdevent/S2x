@@ -353,6 +353,58 @@
             left: 22px;
         }
 
+        /* profiles */
+
+        .profile-controls {
+            white-space: nowrap;
+            margin-left: 16px;
+        }
+
+        .profile-controls input,
+        .profile-controls select,
+        .profile-controls button {
+            padding: 7px 10px;
+            border: 1px solid #686158;
+            border-radius: 6px;
+            background: #292622;
+            color: #ffffff;
+            font: 14px "Segoe UI", Arial, sans-serif;
+        }
+
+        .profile-controls input,
+        .profile-controls select {
+            width: 220px;
+        }
+
+        .profile-controls input {
+            cursor: text;
+            user-select: text;
+            -ms-user-select: text;
+        }
+
+        .profile-controls button {
+            margin-left: 6px;
+        }
+
+        .profile-controls button:hover {
+            border-color: #c99631;
+        }
+
+        .profile-controls :disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .profile-note {
+            clear: both;
+            padding-top: 12px;
+            line-height: 150%;
+        }
+
+        #profile-error {
+            color: #e8a68d;
+        }
+
         /* about */
 
         .about {
@@ -409,6 +461,7 @@
     <div class="main-container">
         <nav>
             <a class="nav-link _play active" onclick="showMenu('play')">Play</a>
+            <a class="nav-link _profiles" onclick="showMenu('profiles')">Profiles</a>
             <a class="nav-link _options" onclick="showMenu('options')">Options</a>
             <a class="nav-link _about" onclick="showMenu('about')">About</a>
         </nav>
@@ -440,6 +493,31 @@
                         </div>
                     </a>
                 </div>
+                <div id="active-profile" class="option-desc profile-note"></div>
+            </div>
+
+            <div class="_profiles">
+                <div class="option-row">
+                    <div>
+                        <label class="option-title" for="profile-list">Player profile</label>
+                        <div class="option-desc">Separate MP/Zombies stats, unlocks, loadouts and economy.</div>
+                    </div>
+                    <div class="profile-controls">
+                        <select id="profile-list" onchange="selectProfile()"></select>
+                    </div>
+                </div>
+                <div class="option-row">
+                    <div>
+                        <label class="option-title" for="profile-name">Create profile</label>
+                        <div class="option-desc">Letters, numbers, underscores and hyphens. Up to 32 characters.</div>
+                    </div>
+                    <div class="profile-controls">
+                        <input id="profile-name" type="text" maxlength="32" onkeydown="if (event.keyCode == 13) createProfile();" />
+                        <button id="create-profile" type="button" onclick="createProfile()">Create</button>
+                    </div>
+                </div>
+                <div id="profile-note" class="option-desc profile-note"></div>
+                <div id="profile-error" class="option-desc profile-note" role="alert"></div>
             </div>
 
             <div class="_options">
@@ -598,6 +676,61 @@
             setClass(document.getElementById('console-mode'), 'open', false);
         };
 
+        function loadProfiles() {
+            try {
+                var values = String(window.external.getProfiles()).split('|');
+                if (values[0] == '!error') {
+                    document.getElementById('profile-error').innerText = values.slice(1).join('|');
+                    return;
+                }
+
+                var list = document.getElementById('profile-list');
+                list.options.length = 0;
+                for (var i = 2; i < values.length; ++i) {
+                    var option = document.createElement('option');
+                    option.value = values[i];
+                    option.text = values[i] == 'default' ? 'Default (existing saves)' : values[i];
+                    list.add(option);
+                }
+
+                list.value = values[0];
+                var locked = values[1] == '1';
+                list.disabled = locked;
+                document.getElementById('profile-name').disabled = locked;
+                document.getElementById('create-profile').disabled = locked;
+                document.getElementById('active-profile').innerText = 'Profile: ' + values[0];
+                document.getElementById('profile-note').innerText = locked
+                    ? 'Selected by -profile. Omit that launch option to switch profiles here.'
+                    : 'Your selection is remembered for the next launch. Default keeps your existing saves. '
+                        + 'Use different profiles to run multiple clients at once. Game settings and campaign saves remain shared.';
+            } catch (e) {
+                document.getElementById('profile-error').innerText = 'Unable to load player profiles.';
+            }
+        }
+
+        function selectProfile() {
+            try {
+                var error = window.external.selectProfile(document.getElementById('profile-list').value);
+                loadProfiles();
+                document.getElementById('profile-error').innerText = error || '';
+            } catch (e) {
+                document.getElementById('profile-error').innerText = 'Unable to select the profile.';
+            }
+        }
+
+        function createProfile() {
+            try {
+                var error = window.external.createProfile(document.getElementById('profile-name').value);
+                loadProfiles();
+                document.getElementById('profile-error').innerText = error || '';
+                if (!error) {
+                    document.getElementById('profile-name').value = '';
+                }
+            } catch (e) {
+                document.getElementById('profile-error').innerText = 'Unable to create the profile.';
+            }
+        }
+
         function loadLaunchOptions() {
             try {
                 var serialized = window.external.getLaunchOptions();
@@ -631,6 +764,7 @@
         // The markup is already parsed here; do not wait for window.onload to show Play.
         setConsoleMode('syscon');
         loadLaunchOptions();
+        loadProfiles();
     </script>
 </body>
 

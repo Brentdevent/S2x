@@ -3,6 +3,7 @@
 #include "marketplace_store_persistence.hpp"
 #include "achievement_store.hpp"
 #include "reward_json.hpp"
+#include "game/player_profile.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -68,8 +69,6 @@ namespace demonware::marketplace_store::detail
 	{
 		namespace
 		{
-			constexpr auto marketplace_file = L"players2/user/marketplace.json";
-			constexpr auto marketplace_temporary_file = L"players2/user/marketplace.json.tmp";
 			constexpr std::size_t max_store_file_size = 64 * 1024 * 1024;
 
 			char hex_digit(const unsigned int value)
@@ -185,7 +184,7 @@ namespace demonware::marketplace_store::detail
 			// from the standalone achievements.json store shipped on master.
 			store_status import_legacy_achievements(state* result)
 			{
-				constexpr auto legacy_file = L"players2/user/achievements.json";
+				const auto legacy_file = player_profile::user_directory() / "achievements.json";
 				std::error_code error{};
 				const auto exists = std::filesystem::exists(legacy_file, error);
 				if (error)
@@ -200,7 +199,7 @@ namespace demonware::marketplace_store::detail
 				}
 
 				std::string data{};
-				if (!read_bounded_file(legacy_file, max_achievement_state_length, &data))
+				if (!read_bounded_file(legacy_file.c_str(), max_achievement_state_length, &data))
 				{
 					return store_status::io_error;
 				}
@@ -533,6 +532,8 @@ namespace demonware::marketplace_store::detail
 
 		save_result save(const state& state)
 		{
+			const auto marketplace_file = player_profile::user_directory() / "marketplace.json";
+			const auto marketplace_temporary_file = player_profile::user_directory() / "marketplace.json.tmp";
 			std::optional<std::string> serialized{};
 			try
 			{
@@ -555,7 +556,7 @@ namespace demonware::marketplace_store::detail
 				return save_result::io_error;
 			}
 
-			const auto temporary_file = CreateFileW(marketplace_temporary_file, GENERIC_WRITE, 0, nullptr,
+			const auto temporary_file = CreateFileW(marketplace_temporary_file.c_str(), GENERIC_WRITE, 0, nullptr,
 													CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 			if (temporary_file == INVALID_HANDLE_VALUE)
 			{
@@ -566,14 +567,14 @@ namespace demonware::marketplace_store::detail
 			const auto closed_file = CloseHandle(temporary_file) != FALSE;
 			if (!wrote_file || !closed_file)
 			{
-				DeleteFileW(marketplace_temporary_file);
+				DeleteFileW(marketplace_temporary_file.c_str());
 				return save_result::io_error;
 			}
 
-			if (MoveFileExW(marketplace_temporary_file, marketplace_file,
+			if (MoveFileExW(marketplace_temporary_file.c_str(), marketplace_file.c_str(),
 							MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE)
 			{
-				DeleteFileW(marketplace_temporary_file);
+				DeleteFileW(marketplace_temporary_file.c_str());
 				return save_result::io_error;
 			}
 
@@ -582,6 +583,7 @@ namespace demonware::marketplace_store::detail
 
 		store_status load(state* result)
 		{
+			const auto marketplace_file = player_profile::user_directory() / "marketplace.json";
 			std::error_code error{};
 			const auto exists = std::filesystem::exists(marketplace_file, error);
 			if (error)
@@ -611,7 +613,7 @@ namespace demonware::marketplace_store::detail
 			}
 
 			std::string data{};
-			if (!read_bounded_file(marketplace_file, max_store_file_size, &data))
+			if (!read_bounded_file(marketplace_file.c_str(), max_store_file_size, &data))
 			{
 				return store_status::io_error;
 			}

@@ -2,6 +2,7 @@
 #include "launcher.hpp"
 
 #include "resource.hpp"
+#include "game/player_profile.hpp"
 
 #include <utils/flags.hpp>
 #include <utils/io.hpp>
@@ -20,6 +21,7 @@ launcher::launcher() :
 	launch_options_(load_launch_options()),
 	main_window_("S2x", 880, 420)
 {
+	player_profile::name();
 	this->create_main_menu();
 }
 
@@ -110,6 +112,61 @@ void launcher::create_main_menu()
 			this->save_launch_options();
 
 			return {};
+		});
+
+	this->main_window_.get_html_frame()->register_callback(
+		"getProfiles", [](const std::vector<html_argument>&) -> CComVariant
+		{
+			try
+			{
+				auto result = player_profile::name() + (utils::flags::has_flag("-profile") ? "|1" : "|0");
+				for (const auto& name : player_profile::list())
+				{
+					result += "|" + name;
+				}
+
+				return CComVariant(result.c_str());
+			}
+			catch (const std::exception& error)
+			{
+				return CComVariant(("!error|"s + error.what()).c_str());
+			}
+		});
+
+	const auto change_profile = [](const std::vector<html_argument>& params, const bool create) -> CComVariant
+	{
+		if (params.size() != 1 || !params[0].is_string())
+		{
+			return CComVariant("Enter a profile name.");
+		}
+
+		try
+		{
+			if (create)
+			{
+				player_profile::create(params[0].get_string());
+			}
+			else
+			{
+				player_profile::select(params[0].get_string());
+			}
+
+			return CComVariant("");
+		}
+		catch (const std::exception& error)
+		{
+			return CComVariant(error.what());
+		}
+	};
+	this->main_window_.get_html_frame()->register_callback(
+		"selectProfile", [change_profile](const std::vector<html_argument>& params)
+		{
+			return change_profile(params, false);
+		});
+	this->main_window_.get_html_frame()->register_callback(
+		"createProfile", [change_profile](const std::vector<html_argument>& params)
+		{
+			return change_profile(params, true);
 		});
 
 	this->main_window_.get_html_frame()->load_html(utils::nt::load_resource(LAUNCHER_MENU));
