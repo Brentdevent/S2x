@@ -60,6 +60,7 @@ namespace dedicated_party
 		game::dvar_t* sv_maxplayers{};
 		game::dvar_t* sv_minplayers{};
 		game::dvar_t* sv_maprotation{};
+		game::dvar_t* sv_maprotation_current{};
 		bool map_rotate_requested{};
 
 		void set_stage(const dedicated_party_stage stage)
@@ -156,9 +157,14 @@ namespace dedicated_party
 			utils::hook::invoke<void>(0x6DA7A0_g, minimum);
 			if (is_active())
 			{
-				// SV_Startup re-registers the dvar before reading it for allocations.
-				// Reapply the human limit after that registration as well as at handoff.
+				// SV_Startup will allocate using this player limit. Clear the modified flag
+				// so the first round restart does not reload the map and reset the match.
 				game::Dvar_SetIntByName("sv_maxclients", dedicated_party_state.player_capacity);
+
+				if (auto* max_clients = game::Dvar_FindMalleableVar("sv_maxclients"))
+				{
+					game::Dvar_ClearModified(max_clients);
+				}
 			}
 		}
 
@@ -444,17 +450,10 @@ namespace dedicated_party
 			return true;
 		}
 
-		bool parse_multiplayer_map_rotation(std::vector<dedicated_match_t>& rotation)
+		bool parse_multiplayer_map_rotation(const std::string& value, std::vector<dedicated_match_t>& rotation)
 		{
 			rotation.clear();
-			if (!sv_maprotation || !sv_maprotation->current.string
-				|| !sv_maprotation->current.string[0])
-			{
-				console::error("Dedicated map rotation: sv_maprotation is empty.\n");
-				return false;
-			}
-
-			std::istringstream stream{ sv_maprotation->current.string };
+			std::istringstream stream{ value };
 			std::string token{};
 			auto gametype = utils::string::to_lower(party::loaded_gametype());
 			bool gametype_needs_map = false;
@@ -529,17 +528,10 @@ namespace dedicated_party
 			return true;
 		}
 
-		bool parse_zombies_map_rotation(std::vector<dedicated_match_t>& rotation)
+		bool parse_zombies_map_rotation(const std::string& value, std::vector<dedicated_match_t>& rotation)
 		{
 			rotation.clear();
-			if (!sv_maprotation || !sv_maprotation->current.string
-				|| !sv_maprotation->current.string[0])
-			{
-				console::error("Dedicated map rotation: sv_maprotation is empty.\n");
-				return false;
-			}
-
-			std::istringstream stream{ sv_maprotation->current.string };
+			std::istringstream stream{ value };
 			std::string token{};
 			const auto gametype = std::string{
 				game::environment::get_online_mode_info().default_gametype };
@@ -621,18 +613,85 @@ namespace dedicated_party
 			return true;
 		}
 
-		bool parse_map_rotation(std::vector<dedicated_match_t>& rotation)
+		bool parse_map_rotation(const std::string& value, std::vector<dedicated_match_t>& rotation)
 		{
 			switch (game::environment::get_mode())
 			{
 			case game::environment::mode::multiplayer:
-				return parse_multiplayer_map_rotation(rotation);
+				return parse_multiplayer_map_rotation(value, rotation);
 
 			case game::environment::mode::zombies:
-				return parse_zombies_map_rotation(rotation);
+				return parse_zombies_map_rotation(value, rotation);
 			}
 
 			return false;
+		}
+
+		bool parse_map_rotation(std::vector<dedicated_match_t>& rotation)
+		{
+			rotation.clear();
+			if (!sv_maprotation || !sv_maprotation->current.string
+				|| !sv_maprotation->current.string[0])
+			{
+				console::error("Dedicated map rotation: sv_maprotation is empty.\n");
+				return false;
+			}
+
+			return parse_map_rotation(sv_maprotation->current.string, rotation);
+		}
+
+		std::string build_map_rotation(const std::vector<dedicated_match_t>& rotation, const std::size_t start)
+		{
+			std::string result{};
+
+			for (auto i = start; i < rotation.size(); ++i)
+			{
+				if (!result.empty())
+				{
+					result.push_back(' ');
+				}
+
+				if (!game::environment::is_zombies())
+				{
+					result.append("gametype ");
+					result.append(rotation[i].gametype);
+					result.push_back(' ');
+				}
+
+				result.append("map ");
+				result.append(rotation[i].map_name);
+			}
+
+			return result;
+		}
+
+		std::optional<dedicated_match_t> take_map_rotation_current()
+		{
+			if (!sv_maprotation_current || !sv_maprotation_current->current.string
+				|| !sv_maprotation_current->current.string[0])
+			{
+				return {};
+			}
+
+			const std::string value = sv_maprotation_current->current.string;
+
+			std::vector<dedicated_match_t> rotation{};
+			const auto parsed = parse_map_rotation(value, rotation);
+
+			const auto remaining = parsed ? build_map_rotation(rotation, 1) : std::string{};
+			game::Dvar_SetString(sv_maprotation_current, remaining.data());
+
+			if (!parsed || rotation.empty())
+			{
+				console::error("Dedicated map rotation: ignoring invalid sv_mapRotationCurrent '%s'.\n",
+					value.data());
+				return {};
+			}
+
+			console::info("Dedicated map rotation: next match from sv_mapRotationCurrent is %s %s.\n",
+				rotation.front().map_name.data(), rotation.front().gametype.data());
+
+			return rotation.front();
 		}
 
 		void handle_map_rotate()
@@ -827,6 +886,11 @@ namespace dedicated_party
 				auto match = std::move(*dedicated_party_state.requested_next_match);
 				dedicated_party_state.requested_next_match.reset();
 				return match;
+			}
+
+			if (auto match = take_map_rotation_current())
+			{
+				return std::move(*match);
 			}
 
 			if (dedicated_party_state.requested_rotation_match.has_value())
@@ -1313,6 +1377,8 @@ namespace dedicated_party
 			{
 				sv_maprotation = game::Dvar_RegisterString(
 					"sv_maprotation", "", game::DVAR_FLAG_NONE);
+				sv_maprotation_current = game::Dvar_RegisterString(
+					"sv_mapRotationCurrent", "", game::DVAR_FLAG_NONE);
 			}, scheduler::pipeline::main);
 
 			if (game::environment::is_multiplayer())
