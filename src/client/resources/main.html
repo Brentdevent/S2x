@@ -361,7 +361,6 @@
         }
 
         .profile-controls input,
-        .profile-controls select,
         .profile-controls button {
             padding: 7px 10px;
             border: 1px solid #686158;
@@ -371,12 +370,8 @@
             font: 14px "Segoe UI", Arial, sans-serif;
         }
 
-        .profile-controls input,
-        .profile-controls select {
-            width: 220px;
-        }
-
         .profile-controls input {
+            width: 220px;
             cursor: text;
             user-select: text;
             -ms-user-select: text;
@@ -395,13 +390,42 @@
             cursor: default;
         }
 
-        .profile-note {
-            clear: both;
-            padding-top: 12px;
-            line-height: 150%;
+        #profile-picker button {
+            width: 100%;
+            font: inherit;
+            text-align: left;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        #profile-error {
+        #profile-picker .dropdown-list {
+            max-height: 160px;
+            overflow-y: auto;
+            background-color: #22201d;
+        }
+
+        #profile-picker .dropdown-item {
+            display: block;
+            border: 0;
+            background: transparent;
+        }
+
+        #profile-picker .dropdown-item:hover,
+        #profile-picker .dropdown-item:focus {
+            background-color: rgba(255, 255, 255, 0.12);
+        }
+
+        #profile-picker .dropdown-button:disabled {
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .profile-error {
+            display: none;
+            margin-top: 8px;
+            max-width: 290px;
+            white-space: normal;
             color: #e8a68d;
         }
 
@@ -493,31 +517,36 @@
                         </div>
                     </a>
                 </div>
-                <div id="active-profile" class="option-desc profile-note"></div>
             </div>
 
             <div class="_profiles">
                 <div class="option-row">
                     <div>
-                        <label class="option-title" for="profile-list">Player profile</label>
-                        <div class="option-desc">Separate MP/Zombies stats, unlocks, loadouts and economy.</div>
+                        <label class="option-title" for="profile-button">Player profile</label>
+                        <div id="profile-description" class="option-desc">Choose who's playing.</div>
                     </div>
-                    <div class="profile-controls">
-                        <select id="profile-list" onchange="selectProfile()"></select>
+                    <div>
+                        <div id="profile-picker" class="dropdown" onkeydown="profileDropdownKey(event)">
+                            <button id="profile-button" class="dropdown-button" type="button" aria-expanded="false"
+                                onclick="toggleDropdown(event, 'profile-picker')">Default</button>
+                            <div id="profile-list" class="dropdown-list"></div>
+                        </div>
+                        <div id="profile-error" class="option-desc profile-error" role="alert"></div>
                     </div>
                 </div>
                 <div class="option-row">
                     <div>
                         <label class="option-title" for="profile-name">Create profile</label>
-                        <div class="option-desc">Letters, numbers, underscores and hyphens. Up to 32 characters.</div>
+                        <div class="option-desc">Start with your own Multiplayer and Zombies progress.</div>
                     </div>
                     <div class="profile-controls">
-                        <input id="profile-name" type="text" maxlength="32" onkeydown="if (event.keyCode == 13) createProfile();" />
+                        <input id="profile-name" type="text" placeholder="Profile name" maxlength="32"
+                            oninput="showProfileError('create-profile-error', '')"
+                            onkeydown="if (event.keyCode == 13) createProfile();" />
                         <button id="create-profile" type="button" onclick="createProfile()">Create</button>
+                        <div id="create-profile-error" class="option-desc profile-error" role="alert"></div>
                     </div>
                 </div>
-                <div id="profile-note" class="option-desc profile-note"></div>
-                <div id="profile-error" class="option-desc profile-note" role="alert"></div>
             </div>
 
             <div class="_options">
@@ -628,15 +657,61 @@
         }
 
         function showMenu(menu) {
-            setClass(document.getElementById('console-mode'), 'open', false);
+            closeDropdowns();
             activateElement(menu, document.querySelectorAll('.menus > div'));
             activateElement(menu, document.querySelectorAll('nav .nav-link'));
         }
 
-        function toggleDropdown(event) {
-            var dropdown = document.getElementById('console-mode');
-            setClass(dropdown, 'open', !hasClass(dropdown, 'open'));
+        function closeDropdowns() {
+            var dropdowns = document.querySelectorAll('.dropdown');
+            for (var i = 0; i < dropdowns.length; ++i) {
+                setClass(dropdowns[i], 'open', false);
+                dropdowns[i].querySelector('.dropdown-button').setAttribute('aria-expanded', 'false');
+            }
+        }
+
+        function toggleDropdown(event, id) {
+            var dropdown = document.getElementById(id || 'console-mode');
+            var open = !hasClass(dropdown, 'open');
+            closeDropdowns();
+            setClass(dropdown, 'open', open);
+            dropdown.querySelector('.dropdown-button').setAttribute('aria-expanded', String(open));
             event.stopPropagation();
+        }
+
+        function profileDropdownKey(event) {
+            var dropdown = document.getElementById('profile-picker');
+            var button = document.getElementById('profile-button');
+            if (button.disabled) {
+                return;
+            }
+
+            if (event.keyCode == 27) {
+                closeDropdowns();
+                button.focus();
+            } else if (event.keyCode == 38 || event.keyCode == 40) {
+                var items = dropdown.querySelectorAll('.dropdown-item');
+                if (!items.length) {
+                    return;
+                }
+
+                var index = -1;
+                for (var i = 0; i < items.length; ++i) {
+                    if (items[i] == document.activeElement) {
+                        index = i;
+                    }
+                }
+
+                setClass(dropdown, 'open', true);
+                button.setAttribute('aria-expanded', 'true');
+                index = index < 0 ? (event.keyCode == 40 ? 0 : items.length - 1)
+                    : Math.max(0, Math.min(items.length - 1, index + (event.keyCode == 40 ? 1 : -1)));
+                items[index].focus();
+            } else {
+                return;
+            }
+
+            event.preventDefault();
         }
 
         function setConsoleMode(value) {
@@ -672,62 +747,83 @@
             }
         }
 
-        document.onclick = function () {
-            setClass(document.getElementById('console-mode'), 'open', false);
+        document.onclick = closeDropdowns;
+        document.onfocusin = function (event) {
+            var dropdown = document.getElementById('profile-picker');
+            if (!dropdown.contains(event.target)) {
+                closeDropdowns();
+            }
         };
+
+        function showProfileError(id, message) {
+            var element = document.getElementById(id);
+            element.innerText = message;
+            element.style.display = message ? 'block' : 'none';
+        }
 
         function loadProfiles() {
             try {
                 var values = String(window.external.getProfiles()).split('|');
                 if (values[0] == '!error') {
-                    document.getElementById('profile-error').innerText = values.slice(1).join('|');
+                    showProfileError('profile-error', "Couldn't load your profiles.");
                     return;
                 }
 
                 var list = document.getElementById('profile-list');
-                list.options.length = 0;
+                while (list.firstChild) {
+                    list.removeChild(list.firstChild);
+                }
                 for (var i = 2; i < values.length; ++i) {
-                    var option = document.createElement('option');
-                    option.value = values[i];
-                    option.text = values[i] == 'default' ? 'Default (existing saves)' : values[i];
-                    list.add(option);
+                    var option = document.createElement('button');
+                    option.type = 'button';
+                    option.className = 'dropdown-item';
+                    option.setAttribute('data-value', values[i]);
+                    option.innerText = values[i] == 'default' ? 'Default' : values[i];
+                    option.title = option.innerText;
+                    setClass(option, 'selected', values[i] == values[0]);
+                    option.onclick = function () { selectProfile(this.getAttribute('data-value')); };
+                    list.appendChild(option);
                 }
 
-                list.value = values[0];
                 var locked = values[1] == '1';
-                list.disabled = locked;
+                var button = document.getElementById('profile-button');
+                button.innerText = values[0] == 'default' ? 'Default' : values[0];
+                button.title = button.innerText;
+                button.disabled = locked;
                 document.getElementById('profile-name').disabled = locked;
                 document.getElementById('create-profile').disabled = locked;
-                document.getElementById('active-profile').innerText = 'Profile: ' + values[0];
-                document.getElementById('profile-note').innerText = locked
-                    ? 'Selected by -profile. Omit that launch option to switch profiles here.'
-                    : 'Your selection is remembered for the next launch. Default keeps your existing saves. '
-                        + 'Use different profiles to run multiple clients at once. Game settings and campaign saves remain shared.';
+                document.getElementById('profile-description').innerText = locked
+                    ? 'To switch here, remove -profile from your launch options.' : "Choose who's playing.";
+                showProfileError('profile-error', '');
             } catch (e) {
-                document.getElementById('profile-error').innerText = 'Unable to load player profiles.';
+                showProfileError('profile-error', "Couldn't load your profiles.");
             }
         }
 
-        function selectProfile() {
+        function selectProfile(name) {
+            closeDropdowns();
             try {
-                var error = window.external.selectProfile(document.getElementById('profile-list').value);
+                var error = window.external.selectProfile(name);
                 loadProfiles();
-                document.getElementById('profile-error').innerText = error || '';
+                if (error) {
+                    showProfileError('profile-error', error);
+                }
             } catch (e) {
-                document.getElementById('profile-error').innerText = 'Unable to select the profile.';
+                showProfileError('profile-error', "Couldn't switch profiles. Please try again.");
             }
+            document.getElementById('profile-button').focus();
         }
 
         function createProfile() {
             try {
                 var error = window.external.createProfile(document.getElementById('profile-name').value);
                 loadProfiles();
-                document.getElementById('profile-error').innerText = error || '';
+                showProfileError('create-profile-error', error || '');
                 if (!error) {
                     document.getElementById('profile-name').value = '';
                 }
             } catch (e) {
-                document.getElementById('profile-error').innerText = 'Unable to create the profile.';
+                showProfileError('create-profile-error', "Couldn't create the profile. Please try again.");
             }
         }
 
