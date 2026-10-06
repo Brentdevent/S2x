@@ -393,6 +393,11 @@ button.option-row:hover, button.option-row:focus-visible
     line-height: 1.45;
 }
 
+.about p:last-child
+{
+    margin-bottom: 0;
+}
+
 .about p.links
 {
     margin-bottom: 10dp;
