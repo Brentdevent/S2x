@@ -11,12 +11,6 @@
 
 namespace
 {
-	std::string get_launcher_title()
-	{
-		const auto& profile = player_profile::name();
-		return "S2x Launcher - "s + (profile == "default" ? "Default" : profile);
-	}
-
 	std::filesystem::path get_launch_options_file()
 	{
 		return game::get_appdata_path() / "launcher-options.txt";
@@ -25,8 +19,9 @@ namespace
 
 launcher::launcher() :
 	launch_options_(load_launch_options()),
-	main_window_(get_launcher_title(), 880, 420)
+	main_window_("S2x Launcher", 880, 420)
 {
+	player_profile::name();
 	this->create_main_menu();
 }
 
@@ -138,7 +133,7 @@ void launcher::create_main_menu()
 			}
 		});
 
-	const auto change_profile = [this](const std::vector<html_argument>& params, const bool create) -> CComVariant
+	const auto change_profile = [](const std::vector<html_argument>& params, const bool create) -> CComVariant
 	{
 		if (params.size() != 1 || !params[0].is_string())
 		{
@@ -156,7 +151,6 @@ void launcher::create_main_menu()
 				player_profile::select(params[0].get_string());
 			}
 
-			SetWindowTextA(*this->main_window_.get_window(), get_launcher_title().c_str());
 			return CComVariant("");
 		}
 		catch (const std::exception& error)
