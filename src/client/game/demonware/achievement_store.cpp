@@ -927,6 +927,13 @@ namespace demonware::achievement_store
 		return committed;
 	}
 
+	bool is_available()
+	{
+		std::lock_guard lock{achievement_mutex};
+		load_achievements();
+		return achievements_valid;
+	}
+
 	std::vector<achievement_record> get_all()
 	{
 		std::lock_guard lock{achievement_mutex};

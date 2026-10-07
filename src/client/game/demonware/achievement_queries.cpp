@@ -48,6 +48,12 @@ namespace demonware::achievement_queries
 
 	reward::action_result handle(const std::string_view action, const std::string_view json)
 	{
+		// An unavailable store must not become a successful empty cache refresh.
+		if (!achievement_store::is_available())
+		{
+			return {game::demonware::BD_SERVICE_NOT_AVAILABLE};
+		}
+
 		auto response = respond(action, json);
 		if (!response)
 		{

@@ -118,6 +118,7 @@ namespace demonware
 			std::uint64_t event_timestamp, bool payroll,
 			const std::function<bool(marketplace_store::transaction&, const achievement_record&, bool)>& reward);
 
+		bool is_available();
 		std::vector<achievement_record> get_all();
 
 		mutation_result merge_completion_bits(const std::vector<achievement_record>& records,

@@ -215,6 +215,12 @@ namespace demonware
 			return;
 		}
 
+		if (!achievement_store::is_available())
+		{
+			server->create_reply(this->task_id(), BD_SERVICE_NOT_AVAILABLE).send();
+			return;
+		}
+
 		const auto response = achievement_response::make_get_user_achievements_for_users_response(request, user_id,
 			achievement_store::get_all());
 		if (!response)
