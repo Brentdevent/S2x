@@ -65,7 +65,8 @@ namespace match_drops
 			}
 
 			const auto result = reward::grant(award);
-			if (result.status == demonware::marketplace_store::transaction_status::save_failed)
+			if (result.status == demonware::marketplace_store::transaction_status::save_failed ||
+				result.status == demonware::marketplace_store::transaction_status::store_unavailable)
 			{
 				return false;
 			}
