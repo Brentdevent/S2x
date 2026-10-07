@@ -1,0 +1,463 @@
+/* RmlUi launcher styles. */
+
+*
+{
+    box-sizing: border-box;
+    cursor: arrow;
+}
+
+body
+{
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #141210;
+    decorator: image(background.jpg cover center center);
+    color: #ffffff;
+    font-family: launcher-title;
+    font-size: 18dp;
+}
+
+div, p
+{
+    display: block;
+}
+
+button
+{
+    display: inline-block;
+    tab-index: auto;
+    cursor: pointer;
+    color: #ffffff;
+    background-color: transparent;
+    border: 0px;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+}
+
+button *
+{
+    cursor: pointer;
+}
+
+button:focus-visible
+{
+    border-color: #e0b458;
+}
+
+.main-container
+{
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 10dp 25dp 20dp;
+    background-color: #000000a6;
+}
+
+.nav
+{
+    display: flex;
+    flex-shrink: 0;
+    border-bottom: 1dp #ffffff40;
+}
+
+.nav-link
+{
+    margin-right: 18dp;
+    margin-bottom: -1dp;
+    padding: 10dp 0;
+    color: #ffffff99;
+    font-size: 2.2vw;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+    border-bottom: 1dp transparent;
+    transition: color 0.15s;
+}
+
+.nav-link:hover, .nav-link:focus-visible
+{
+    color: #ffffff;
+    border-bottom-color: #c99631;
+}
+
+.nav-link.active
+{
+    color: #ffffff;
+    border-bottom-color: #ffffff;
+}
+
+.menus
+{
+    flex: 1;
+    min-height: 0;
+    margin-top: 20dp;
+}
+
+.panel
+{
+    display: none;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.panel.active
+{
+    display: block;
+}
+
+#menu-play
+{
+    overflow: visible;
+}
+
+.cards
+{
+    display: flex;
+    width: 100%;
+}
+
+.card
+{
+    display: block;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    border: 1dp #4a4640;
+    border-radius: 8dp;
+    box-shadow: 0dp 0dp 5dp #00000080;
+    transition: border-color 0.3s;
+}
+
+.card + .card
+{
+    margin-left: 20dp;
+}
+
+.card:hover, .card:focus-visible
+{
+    border-color: #8a7a5c;
+    box-shadow: 0dp 9dp 19dp #0000004d;
+}
+
+.card:focus-visible
+{
+    border-color: #e0b458;
+}
+
+.card img
+{
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.card-content
+{
+    position: relative;
+    overflow: hidden;
+    padding: 12dp 10dp 38dp;
+    background-color: #302e2b9e;
+    text-align: center;
+    transition: background-color 0.3s;
+}
+
+.card:hover .card-content, .card:focus-visible .card-content
+{
+    background-color: #b9b2a5d9;
+}
+
+.card-content span
+{
+    font-size: 2.6vw;
+    letter-spacing: 2dp;
+    text-transform: uppercase;
+    font-effect: shadow(2dp 2dp #040404cc);
+}
+
+.card-action
+{
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -40dp;
+    padding: 6dp;
+    border-top: 1dp #00000040;
+    font-size: 1.6vw;
+    text-transform: uppercase;
+    letter-spacing: 1dp;
+    transition: bottom 0.3s cubic-out;
+}
+
+.card:hover .card-action, .card:focus-visible .card-action
+{
+    bottom: 0;
+}
+
+#menu-options
+{
+    overflow: visible;
+}
+
+.option-row
+{
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14dp 18dp;
+    border: 1dp #4a4640;
+    border-radius: 8dp;
+    background-color: #302e2b9e;
+}
+
+.option-row + .option-row
+{
+    margin-top: 10dp;
+}
+
+button.option-row:hover, button.option-row:focus-visible
+{
+    border-color: #8a7a5c;
+}
+
+.option-text
+{
+    flex: 1;
+    min-width: 0;
+    padding-right: 16dp;
+}
+
+.option-title
+{
+    font-size: 1.9vw;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+}
+
+.option-desc
+{
+    margin-top: 4dp;
+    color: #ffffff99;
+    font-family: launcher-body;
+    font-size: 1.35vw;
+}
+
+.dropdown
+{
+    position: relative;
+    width: 220dp;
+    flex-shrink: 0;
+    font-family: launcher-body;
+    font-size: 1.4vw;
+}
+
+.dropdown-button
+{
+    display: block;
+    width: 100%;
+    position: relative;
+    padding: 7dp 34dp 7dp 12dp;
+    border: 1dp #ffffff38;
+    border-radius: 6dp;
+    background-color: #ffffff12;
+    transition: background-color border-color 0.2s;
+}
+
+.dropdown-button:hover, .dropdown-button:focus-visible, .dropdown.open .dropdown-button
+{
+    border-color: #ffffff66;
+    background-color: #ffffff21;
+}
+
+.arrow
+{
+    position: absolute;
+    right: 14dp;
+    top: 50%;
+    width: 6dp;
+    height: 6dp;
+    margin-top: -5dp;
+    border-right: 2dp #ffffffbf;
+    border-bottom: 2dp #ffffffbf;
+    transform: rotate(45deg);
+}
+
+.dropdown.open .arrow
+{
+    margin-top: -1dp;
+    transform: rotate(225deg);
+}
+
+.dropdown-list
+{
+    display: none;
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    z-index: 10;
+    margin-top: 6dp;
+    padding: 4dp;
+    border: 1dp #ffffff38;
+    border-radius: 6dp;
+    background-color: #22201df5;
+    box-shadow: 0dp 10dp 24dp #0000008c;
+}
+
+.dropdown.open .dropdown-list
+{
+    display: block;
+}
+
+.dropdown-item
+{
+    display: block;
+    width: 100%;
+    padding: 6dp 10dp;
+    border: 1dp transparent;
+    border-radius: 4dp;
+    color: #ffffffcc;
+    transition: background-color color 0.15s;
+}
+
+.dropdown-item:hover, .dropdown-item:focus-visible
+{
+    color: #ffffff;
+    background-color: #ffffff1f;
+}
+
+.dropdown-item.selected
+{
+    color: #e0b458;
+}
+
+.switch
+{
+    position: relative;
+    display: block;
+    width: 44dp;
+    height: 24dp;
+    flex-shrink: 0;
+    border: 1dp #ffffff4d;
+    border-radius: 12dp;
+    background-color: #ffffff1f;
+    transition: background-color border-color 0.25s;
+}
+
+.switch-knob
+{
+    position: absolute;
+    display: block;
+    left: 2dp;
+    top: 2dp;
+    width: 18dp;
+    height: 18dp;
+    border-radius: 9dp;
+    background-color: #ffffff;
+    transition: left 0.25s;
+}
+
+.checked .switch
+{
+    border-color: #c99631;
+    background-color: #c99631;
+}
+
+.checked .switch-knob
+{
+    left: 22dp;
+}
+
+.about
+{
+    padding: 0 20dp;
+}
+
+.about-logo
+{
+    display: block;
+    width: auto;
+    height: 3.6vw;
+    margin: 0 auto 4dp auto;
+}
+
+.about p
+{
+    margin: 0 0 8dp;
+    color: #ffffffeb;
+    font-family: launcher-body;
+    font-size: 1.6vw;
+    line-height: 1.45;
+}
+
+.about p:last-child
+{
+    margin-bottom: 0;
+}
+
+.about p.links
+{
+    margin-bottom: 10dp;
+    text-align: center;
+    font-family: launcher-title;
+    font-size: 1.9vw;
+    letter-spacing: 1dp;
+    text-transform: uppercase;
+}
+
+.links button
+{
+    margin: 0 10dp;
+    color: #b0aaa0;
+    border-bottom: 1dp transparent;
+}
+
+.links button:hover, .links button:focus-visible, .text-link:hover, .text-link:focus-visible
+{
+    color: #ffffff;
+    border-bottom-color: #c99631;
+}
+
+.text-link
+{
+    color: #b0aaa0;
+    font-family: launcher-body;
+    font-size: 13dp;
+    border-bottom: 1dp transparent;
+}
+
+#licenses-text
+{
+    white-space: pre-wrap;
+    font-family: launcher-body;
+    font-size: 13dp;
+    line-height: 1.4;
+    margin-top: 12dp;
+}
+
+scrollbarvertical
+{
+    width: 7dp;
+    margin-left: 5dp;
+}
+
+scrollbarvertical slidertrack
+{
+    background-color: #ffffff12;
+    border-radius: 3dp;
+}
+
+scrollbarvertical sliderbar
+{
+    background-color: #8a7a5c;
+    border-radius: 3dp;
+    min-height: 20dp;
+}
+
+scrollbarvertical sliderarrowdec, scrollbarvertical sliderarrowinc
+{
+    display: none;
+}
