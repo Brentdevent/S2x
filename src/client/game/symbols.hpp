@@ -178,6 +178,8 @@ namespace game
 	WEAK symbol<int(const netadr_s* a, const netadr_s* b)> NET_CompareBaseAdr{ 0x66DB50 };
 	WEAK symbol<int(const char* address, netadr_s* out)> NET_StringToAdr{ 0x66E3E0 };
 	WEAK symbol<void(const netadr_s* address, sockaddr* s)> NetadrToSockadr{ 0x75F9E0 };
+	WEAK symbol<void(const netadr_s* from, msg_t* msg)> SV_ConnectionlessPacket{ 0x6DEE70 };
+	WEAK symbol<void(const netadr_s* from, const msg_t* msg)> NET_QueueClientPacket{ 0x66DC40 };
 
 	WEAK symbol<PartyData*(int unk)> Lobby_GetPartyData{ 0x47D050 };
 	WEAK symbol<void*(int localClientNum)> Lobby_GetLocalClientData{ 0x470D30 };
@@ -205,6 +207,7 @@ namespace game
 	WEAK symbol<void(PartyData* partyData, unsigned int localControllerIndex)> PartyHost_PreMatch{ 0x48D8C0 };
 	WEAK symbol<void(PartyData* partyData, void* activeClient)> PartyHost_StartMatch{ 0x4917B0 };
 	WEAK symbol<std::int64_t(PartyData* partyData, void* activeClient)> PartyHost_AutoStart{ 0x491A80 };
+	WEAK symbol<void(PartyData* partyData, std::uint8_t memberIndex, unsigned int notify, const char* reason)> PartyHost_KickMember{ 0x48CE90 };
 	WEAK symbol<std::int64_t(PartyData* partyData, void* commandData, netadr_s* from, msg_t* msg)> PartyClient_HandleGo{ 0x4728F0 };
 	WEAK symbol<void(PartyData* partyData, std::uint32_t* activeClient, netadr_s* from)> PartyClient_ProcessPartyState{ 0x4777E0 };
 	WEAK symbol<std::int64_t(int controllerIndex)> PartyClient_SetLocalReadyUpFlag{ 0x483CE0 };

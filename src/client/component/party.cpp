@@ -1114,9 +1114,15 @@ namespace party
 				&& info.max_members <= game::environment::get_online_mode_info().max_players;
 		}
 
-		void send_info_response(const game::netadr_s& from, const std::string_view& data, const std::string& response_command)
+		void send_info_response(const game::netadr_s& from, std::string_view data, const std::string& response_command)
 		{
-			if (data.empty() || data.size() > 128)
+			// The challenge is optional: rcon tools such as IW4MAdmin send a bare "getinfo\0".
+			while (!data.empty() && data.back() == '\0')
+			{
+				data.remove_suffix(1);
+			}
+
+			if (data.size() > 128)
 			{
 				return;
 			}
@@ -1153,7 +1159,10 @@ namespace party
 				}
 			}
 
-			info.set("challenge", std::string{ data });
+			if (!data.empty())
+			{
+				info.set("challenge", std::string{ data });
+			}
 			info.set("gamename", "S2");
 			info.set("mode", std::string{ mode.token });
 			info.set("hostname", hostname);

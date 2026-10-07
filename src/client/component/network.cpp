@@ -18,6 +18,7 @@ namespace network
 	{
 		utils::hook::detour sys_send_packet_hook;
 		utils::hook::detour cl_dispatch_connectionless_packet_hook;
+		utils::hook::detour sv_connectionless_packet_hook;
 		utils::hook::detour net_compare_adr_hook;
 
 		bool is_raw_network_address(const game::netadr_s* address)
@@ -190,6 +191,37 @@ namespace network
 			}
 
 			return cl_dispatch_connectionless_packet_hook.invoke<bool>(local_client_num, from, message, time);
+		}
+
+		std::string get_oob_command(const game::msg_t* message)
+		{
+			constexpr auto header_size = 4;
+			if (!message || !message->data || message->cursize <= header_size)
+			{
+				return {};
+			}
+
+			const std::string_view payload(message->data + header_size,
+				static_cast<std::size_t>(message->cursize - header_size));
+			auto length = 0ull;
+			while (length < payload.size() && static_cast<unsigned char>(payload[length]) > ' ')
+			{
+				++length;
+			}
+
+			return utils::string::to_lower(std::string{payload.substr(0, length)});
+		}
+
+		void sv_connectionless_packet_stub(const game::netadr_s* from, game::msg_t* message)
+		{
+			// A running server answers getinfo itself (or drops it), so S2x's handler would never see it.
+			if (get_oob_command(message) == "getinfo")
+			{
+				game::NET_QueueClientPacket(from, message);
+				return;
+			}
+
+			sv_connectionless_packet_hook.invoke<void>(from, message);
 		}
 
 		int sys_send_packet_stub(const game::netsrc_t sock, const int length, const char* data, const game::netadr_s* to)
@@ -420,6 +452,7 @@ namespace network
 			cl_dispatch_connectionless_packet_hook.create(
 				game::CL_DispatchConnectionlessPacket, cl_dispatch_connectionless_packet_stub
 			);
+			sv_connectionless_packet_hook.create(game::SV_ConnectionlessPacket, sv_connectionless_packet_stub);
 
 			sys_send_packet_hook.create(game::Sys_SendPacket, sys_send_packet_stub);
 
