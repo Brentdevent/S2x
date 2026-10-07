@@ -28,3 +28,9 @@
 [submodule "deps/gsc-tool"]
 	path = deps/gsc-tool
 	url = https://github.com/Brentdevent/gsc-tool
+[submodule "deps/rmlui"]
+	path = deps/rmlui
+	url = https://github.com/mikke89/RmlUi.git
+[submodule "deps/freetype"]
+	path = deps/freetype
+	url = https://github.com/freetype/freetype.git

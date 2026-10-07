@@ -1,5 +1,5 @@
 #pragma once
-#include "html/html_window.hpp"
+#include "rml_window.hpp"
 #include "game/game.hpp"
 
 #include <optional>
@@ -29,10 +29,18 @@ private:
 
 	launch_options launch_options_{};
 	std::optional<game::environment::mode> mode_{};
-	html_window main_window_;
+	rml_window main_window_;
+	Rml::ElementDocument* document_{};
 
 	void select_mode(game::environment::mode mode);
 	void create_main_menu();
+	void process_event(Rml::Event& event);
+	void show_menu(const std::string& name);
+	void update_options();
+	void update_profiles();
+	void change_profile(const std::string& name, bool create);
+	void show_profile_error(const char* id, const std::string& message);
+	void close_dropdowns();
 	void save_launch_options() const;
 
 	static launch_options load_launch_options();
@@ -40,6 +48,4 @@ private:
 	static std::string serialize_launch_options(const launch_options& options);
 	static std::optional<console_mode> parse_console_mode(const std::string& value);
 	static const char* get_console_mode_name(console_mode mode);
-
-	static std::string load_content(int res);
 };

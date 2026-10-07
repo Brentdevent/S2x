@@ -32,9 +32,6 @@
 #define WIN32_LEAN_AND_MEAN
 
 #include <Windows.h>
-#include <MsHTML.h>
-#include <MsHtmHst.h>
-#include <ExDisp.h>
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #include <corecrt_io.h>
@@ -45,9 +42,7 @@
 #include <winternl.h>
 #include <VersionHelpers.h>
 #include <Psapi.h>
-#include <urlmon.h>
 #include <atlbase.h>
-#include <atlsafe.h>
 #include <iphlpapi.h>
 #include <wincrypt.h>
 #include <dwmapi.h>
@@ -106,7 +101,6 @@
 
 #pragma comment(lib, "ntdll.lib")
 #pragma comment(lib, "ws2_32.lib")
-#pragma comment(lib, "urlmon.lib" )
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "Crypt32.lib")
 #pragma comment(lib, "d3d11.lib")

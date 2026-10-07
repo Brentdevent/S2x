@@ -112,7 +112,16 @@ DW_MARKETPLACE_CATALOG_MANIFEST RCDATA "resources/dw/marketplace_catalog_manifes
 DW_ACHIEVEMENT_OFFERS           RCDATA "resources/dw/achievement_offers.json"
 DW_ZOMBIE_CONSUMABLE_REFERENCES RCDATA "resources/dw/zombie_consumable_references.txt"
 
-LAUNCHER_MENU         RCDATA "resources/main.html"
+LAUNCHER_DOCUMENT     RCDATA "resources/launcher/launcher.rml"
+LAUNCHER_STYLES       RCDATA "resources/launcher/launcher.rcss"
+LAUNCHER_TITLE_FONT   RCDATA "resources/launcher/title.woff"
+LAUNCHER_BODY_FONT    RCDATA "../../deps/rmlui/Samples/assets/LatoLatin-Regular.ttf"
+LAUNCHER_BACKGROUND   RCDATA "resources/launcher/background.jpg"
+LAUNCHER_WORDMARK     RCDATA "resources/launcher/wordmark.png"
+LAUNCHER_SINGLEPLAYER RCDATA "resources/launcher/singleplayer.png"
+LAUNCHER_MULTIPLAYER  RCDATA "resources/launcher/multiplayer.png"
+LAUNCHER_ZOMBIES      RCDATA "resources/launcher/zombies.png"
+LAUNCHER_LICENSES     RCDATA "resources/launcher/licenses.txt"
 
 #ifdef _DEBUG
 TLS_DLL               RCDATA "../../build/bin/x64/Debug/tlsdll.dll"
@@ -123,12 +132,14 @@ TLS_DLL               RCDATA "../../build/bin/x64/Release/tlsdll.dll"
 #endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////
 
+
+
 #ifndef APSTUDIO_INVOKED
 /////////////////////////////////////////////////////////////////////////////
 //
 // Generated from the TEXTINCLUDE 3 resource.
 //
 
+
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
-
