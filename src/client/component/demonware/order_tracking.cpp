@@ -838,14 +838,15 @@ namespace order_progress
 			}
 		}
 
-		while (!remote_pending.empty())
+		// Keep payloads for native Task 12 delivery after the queue has room.
+		// Detach their progress so later delivery cannot settle it a second time.
+		for (auto& value : remote_pending)
 		{
-			if (!remote_pending.front().progress.targets.empty())
+			if (!value.progress.targets.empty())
 			{
-				pending.emplace_back(nullptr, std::move(remote_pending.front().progress));
+				pending.emplace_back(nullptr, std::move(value.progress));
+				value.progress = {};
 			}
-
-			remote_pending.pop_front();
 		}
 
 		// Keep the final reported time after its events, even if a new match
