@@ -3,6 +3,7 @@
 
 #include "dedicated_party.hpp"
 #include "dedicated_party_client.hpp"
+#include "network.hpp"
 #include "party.hpp"
 #include "command.hpp"
 #include "scheduler.hpp"
@@ -410,6 +411,45 @@ namespace dedicated_party
 			}
 
 			return false;
+		}
+
+		game::PartyData* get_hosted_game_lobby()
+		{
+			return dedicated_party_state.game_lobby
+				? dedicated_party_state.game_lobby
+				: game::Lobby_GetPartyData(0);
+		}
+
+		bool is_remote_lobby_member(game::PartyData* party_data, const int index)
+		{
+			return party_data->members[index].state >= 2
+				&& !game::Party_IsHost(party_data, index)
+				&& !game::Party_IsMemberLocalPlayer(party_data, index);
+		}
+
+		game::PartyData* get_waiting_game_lobby()
+		{
+			if (!game::environment::is_dedicated() || !is_active() || game::is_server_running())
+			{
+				return nullptr;
+			}
+
+			return get_hosted_game_lobby();
+		}
+
+		std::string lobby_kick_reason{};
+
+		void send_lobby_kick_stub(const game::netadr_s* to, const char* data, const int sock, void* relay)
+		{
+			// Stock clients match only the first token, so the quoted reason is ignored by them.
+			if (lobby_kick_reason.empty())
+			{
+				utils::hook::invoke<void>(0x76E200_g, to, data, sock, relay);
+				return;
+			}
+
+			const auto message = std::format("{} \"{}\"", data, lobby_kick_reason);
+			utils::hook::invoke<void>(0x76E200_g, to, message.data(), sock, relay);
 		}
 
 		bool has_local_gameplay_client()
@@ -1199,6 +1239,72 @@ namespace dedicated_party
 		return dedicated_party_state.stage != dedicated_party_stage::inactive;
 	}
 
+	std::optional<lobby_status> get_lobby_status()
+	{
+		auto* party_data = get_waiting_game_lobby();
+		if (!party_data)
+		{
+			return {};
+		}
+
+		lobby_status status{};
+		status.map_name = dedicated_party_state.current_match.map_name;
+		status.gametype = dedicated_party_state.current_match.gametype;
+
+		for (auto index = 0; index < party_member_limit; ++index)
+		{
+			if (!is_remote_lobby_member(party_data, index))
+			{
+				continue;
+			}
+
+			const auto& member = party_data->members[index];
+			if (!member.xuid || !party_data->session)
+			{
+				continue;
+			}
+
+			// The game matches party and session members by xuid.
+			const auto& session_members = party_data->session->members;
+			const auto session_member = std::ranges::find_if(session_members, [&](const game::SessionMember& candidate)
+			{
+				return candidate.active && candidate.xuid == member.xuid;
+			});
+
+			// Rcon tools need a real IP to use the xuid as guid; S2x stores raw peers as NA_IP or NA_BROADCAST.
+			if (session_member == std::end(session_members)
+				|| (session_member->address.type != game::NA_IP && session_member->address.type != game::NA_BROADCAST))
+			{
+				continue;
+			}
+
+			status.members.push_back({
+				index,
+				static_cast<int>(session_member - std::begin(session_members)),
+				member.xuid,
+				std::string{member.name, strnlen(member.name, sizeof(member.name))},
+				network::net_adr_to_string(session_member->address),
+				member.state < 5,
+			});
+		}
+
+		return status;
+	}
+
+	bool kick_lobby_member(const int index, const std::string& reason)
+	{
+		auto* party_data = get_waiting_game_lobby();
+		if (!party_data || index < 0 || index >= party_member_limit || !is_remote_lobby_member(party_data, index))
+		{
+			return false;
+		}
+
+		lobby_kick_reason = reason;
+		game::PartyHost_KickMember(party_data, static_cast<std::uint8_t>(index), 1, "EXE_PLAYERKICKED");
+		lobby_kick_reason.clear();
+		return true;
+	}
+
 	std::string get_current_gametype()
 	{
 		if (!is_active())
@@ -1345,6 +1451,7 @@ namespace dedicated_party
 
 			party_host_start_party_hook.create(0x491DE0_g, party_host_start_party_stub);
 			utils::hook::call(0x4924A9_g, party_host_initialize_stub);
+			utils::hook::call(0x48CF62_g, send_lobby_kick_stub);
 
 			// Native counts include the owner. Check the configured human limit plus
 			// that member for join probes, individual joins, and atomic party joins.
