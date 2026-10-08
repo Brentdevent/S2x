@@ -1116,7 +1116,7 @@ namespace party
 
 		void send_info_response(const game::netadr_s& from, std::string_view data, const std::string& response_command)
 		{
-			// The challenge is optional: rcon tools such as IW4MAdmin send a bare "getinfo\0".
+			// The challenge is optional: rcon tools such as IW4MAdmin send a bare "s2x_getInfo\0".
 			while (!data.empty() && data.back() == '\0')
 			{
 				data.remove_suffix(1);
