@@ -332,7 +332,7 @@ namespace order_progress
 				// Forget before a post-commit refresh can throw
 				pending.pop_front();
 
-				if (saved == mutation_result::updated)
+				if (saved == mutation_result::updated && accepting)
 				{
 					achievement_sync::request_refresh();
 				}
@@ -370,7 +370,7 @@ namespace order_progress
 
 			timer.checkpoint_seconds = timer.seconds;
 
-			if (saved == mutation_result::updated && any_expired)
+			if (saved == mutation_result::updated && any_expired && accepting)
 			{
 				achievement_sync::request_refresh();
 			}
@@ -426,6 +426,10 @@ namespace order_progress
 			try
 			{
 				std::lock_guard lock{pending_mutex};
+				if (!accepting)
+				{
+					return;
+				}
 
 				// A reused slot is a distinct occurrence, including identical payloads
 				std::erase_if(pending, [=](const auto& value)
@@ -692,6 +696,10 @@ namespace order_progress
 		void reset() noexcept
 		{
 			std::lock_guard lock{pending_mutex};
+			if (!accepting)
+			{
+				return;
+			}
 
 			reward_event_relay::reset();
 			relayed.clear();
@@ -710,6 +718,48 @@ namespace order_progress
 			if (!remote_stream)
 			{
 				timer.running = false;
+			}
+		}
+
+		void shutdown() noexcept
+		{
+			std::lock_guard lock{pending_mutex};
+			if (!accepting.exchange(false))
+			{
+				return;
+			}
+
+			try
+			{
+				// Native queues and clocks may already be gone. Settle only copied
+				// observations, in order, without queuing UI or transport work.
+				for (auto& [entry, occurrence] : pending)
+				{
+					entry = nullptr;
+					occurrence.queue = nullptr;
+				}
+
+				for (auto& value : remote_pending)
+				{
+					if (!value.progress.targets.empty())
+					{
+						pending.emplace_back(nullptr, std::move(value.progress));
+					}
+				}
+
+				remote_pending.clear();
+				relayed.clear();
+				timer.running = false;
+				flush();
+
+				if (!pending.empty() || !timer.pending.empty())
+				{
+					console::error("Unable to save pending Order progress before shutdown.\n");
+				}
+			}
+			catch (const std::exception& error)
+			{
+				console::error("Order shutdown save failed: %s\n", error.what());
 			}
 		}
 
@@ -826,6 +876,7 @@ namespace order_progress
 
 	std::optional<std::uint64_t> receive(const wire::batch& batch)
 	{
+		std::lock_guard lock{pending_mutex};
 		if (!accepting || !local_user || batch.user != local_user || batch.zombies != game::environment::is_zombies())
 		{
 			return {};
@@ -836,7 +887,6 @@ namespace order_progress
 			return {};
 		}
 
-		std::lock_guard lock{pending_mutex};
 		if (!begin_remote_stream(batch))
 		{
 			return {};
@@ -866,7 +916,7 @@ namespace order_progress
 	void disconnect()
 	{
 		std::lock_guard lock{pending_mutex};
-		if (!remote_stream)
+		if (!accepting || !remote_stream)
 		{
 			return;
 		}
@@ -965,8 +1015,7 @@ namespace order_progress
 
 		void pre_destroy() override
 		{
-			accepting = false;
-			reset();
+			shutdown();
 		}
 	};
 }
