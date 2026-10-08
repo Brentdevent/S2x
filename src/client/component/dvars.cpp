@@ -108,14 +108,15 @@ namespace dvars
 			{
 				if (auto* dvar = game::Dvar_FindMalleableVar(params[0]))
 				{
-					const auto to_string = [dvar](game::DvarValue* dvar_value)
+					const auto to_string = [dvar](game::DvarValue* dvar_value, const bool decode)
 					{
-						const auto* text = game::Dvar_ValueToString(dvar, true, dvar_value);
+						const auto* text = game::Dvar_ValueToString(dvar, decode, dvar_value);
 						return std::string{text ? text : ""};
 					};
 
-					const auto value = to_string(&dvar->current);
-					const auto reset = to_string(&dvar->reset);
+					const auto value = to_string(&dvar->current, true);
+					// Decoding a protected dvar always reads its current value, so the default is read as stored.
+					const auto reset = to_string(&dvar->reset, false);
 					const auto name = game::lookup::dvars::resolve_display_name(dvar->name);
 
 					console::info("\"%.*s\" is: \"%s^7\" default: \"%s^7\"\n",

@@ -136,6 +136,25 @@ namespace server_commands
 			return &client;
 		}
 
+		struct client_identity
+		{
+			std::array<char, sizeof(game::mp::client_t::guid)> guid{};
+			game::netadr_s address{};
+			int qport{};
+			int connect_time{};
+		};
+
+		client_identity get_client_identity(const game::mp::client_t& client)
+		{
+			return { std::to_array(client.guid), client.remoteAddress, client.qport, client.lastConnectTime };
+		}
+
+		bool has_client_identity(const game::mp::client_t& client, const client_identity& identity)
+		{
+			return std::to_array(client.guid) == identity.guid && client.remoteAddress == identity.address
+				&& client.qport == identity.qport && client.lastConnectTime == identity.connect_time;
+		}
+
 		void drop_client(game::mp::client_t& client, const std::string& reason)
 		{
 			// SV_KickClient can blacklist GUIDs via sv_blacklistReasons. Only disconnect here.
@@ -197,8 +216,7 @@ namespace server_commands
 			}
 
 			// Keep the connection identity, not a client pointer, across the thread handoff.
-			scheduler::once([slot, guid = std::to_array(client->guid), address = client->remoteAddress,
-				qport = client->qport, connect_time = client->lastConnectTime, reason = std::move(reason)]
+			scheduler::once([slot, identity = get_client_identity(*client), reason = std::move(reason)]
 			{
 				auto* target = get_kick_client(slot);
 				if (!target)
@@ -206,8 +224,7 @@ namespace server_commands
 					return;
 				}
 
-				if (std::to_array(target->guid) != guid || target->remoteAddress != address ||
-					target->qport != qport || target->lastConnectTime != connect_time)
+				if (!has_client_identity(*target, identity))
 				{
 					console::info("Client slot %u changed before the kick could run. Use status and try again.\n", slot);
 					return;
@@ -313,6 +330,22 @@ namespace server_commands
 			queue_kick(static_cast<unsigned int>(matches.front()), get_kick_reason(params, 2));
 		}
 
+		game::mp::client_t* get_chat_client(const unsigned int slot)
+		{
+			if (!game::is_server_running())
+			{
+				return nullptr;
+			}
+
+			auto* clients = *game::mp::svs_clients;
+			if (!clients || slot >= static_cast<unsigned int>(*game::sv_maxclients) || clients[slot].state < client_primed)
+			{
+				return nullptr;
+			}
+
+			return &clients[slot];
+		}
+
 		void send_chat(const std::optional<unsigned int> slot, const std::string& message)
 		{
 			if (!game::is_server_running())
@@ -328,27 +361,35 @@ namespace server_commands
 				return;
 			}
 
-			scheduler::once([slot, message]
+			if (!slot)
 			{
-				if (!game::is_server_running())
+				scheduler::once([message]
 				{
+					if (game::is_server_running())
+					{
+						game::SV_SendServerCommand(nullptr, game::SV_CMD_CAN_IGNORE, "%c \"%s\"", chat_command, message.data());
+					}
+				}, scheduler::server);
+				return;
+			}
+
+			const auto* client = get_chat_client(*slot);
+			if (!client)
+			{
+				console::info("Client slot %u is not in the game.\n", *slot);
+				return;
+			}
+
+			scheduler::once([client_num = *slot, identity = get_client_identity(*client), message]
+			{
+				auto* target = get_chat_client(client_num);
+				if (!target || !has_client_identity(*target, identity))
+				{
+					console::info("Client slot %u changed before the message could be sent.\n", client_num);
 					return;
 				}
 
-				if (!slot)
-				{
-					game::SV_SendServerCommand(nullptr, game::SV_CMD_CAN_IGNORE, "%c \"%s\"", chat_command, message.data());
-					return;
-				}
-
-				auto* clients = *game::mp::svs_clients;
-				if (!clients || *slot >= static_cast<unsigned int>(*game::sv_maxclients) || clients[*slot].state < client_primed)
-				{
-					console::info("Client slot %u is not in the game.\n", *slot);
-					return;
-				}
-
-				game::SV_SendServerCommand(&clients[*slot], game::SV_CMD_CAN_IGNORE, "%c \"%s\"", chat_command, message.data());
+				game::SV_SendServerCommand(target, game::SV_CMD_CAN_IGNORE, "%c \"%s\"", chat_command, message.data());
 			}, scheduler::server);
 		}
 
@@ -594,15 +635,28 @@ namespace server_commands
 		{
 			// Cbuf splits on every newline, so a multi-line quoted argument would run its tail as commands.
 			auto quoted = false;
-			for (auto& character : text)
+			auto token_start = true;
+			for (std::size_t i = 0; i < text.size(); ++i)
 			{
-				if (character == '"')
+				const auto character = text[i];
+				if (!quoted)
 				{
-					quoted = !quoted;
+					// Like Cmd_TokenizeString, a quote only opens an argument at the start of a token.
+					quoted = character == '"' && token_start;
+					token_start = quoted || static_cast<unsigned char>(character) <= ' ';
 				}
-				else if (quoted && (character == '\n' || character == '\r'))
+				else if (character == '\\' && i + 1 < text.size() && text[i + 1] == '"')
 				{
-					character = ' ';
+					++i;
+				}
+				else if (character == '"')
+				{
+					quoted = false;
+					token_start = true;
+				}
+				else if (character == '\n' || character == '\r')
+				{
+					text[i] = ' ';
 				}
 			}
 		}
