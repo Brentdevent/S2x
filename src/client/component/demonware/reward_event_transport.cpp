@@ -24,7 +24,8 @@ namespace reward_event_relay
 	{
 		namespace wire = demonware::reward_event_relay;
 
-		constexpr auto minimum_client_state = 4;
+		constexpr auto connected_client_state = 3;
+		constexpr auto ready_client_state = 4;
 		constexpr auto reliable_command_budget = 64;
 		constexpr auto retry_interval = 1s;
 		constexpr auto maximum_event_count = 10;
@@ -47,6 +48,7 @@ namespace reward_event_relay
 			std::uint64_t acknowledged{};
 			std::chrono::steady_clock::time_point retry_at{};
 			bool running{};
+			bool zombies{};
 			std::uint32_t start{};
 			std::uint32_t seconds{};
 			std::deque<wire::record> pending;
@@ -78,7 +80,7 @@ namespace reward_event_relay
 
 		bool is_remote_client(const game::mp::client_t& client)
 		{
-			return client.state >= minimum_client_state && !client.testClient &&
+			return client.state >= connected_client_state && !client.testClient &&
 				client.remoteAddress.type != game::NA_BOT &&
 				client.remoteAddress.type != game::NA_LOOPBACK;
 		}
@@ -120,16 +122,29 @@ namespace reward_event_relay
 			return &client;
 		}
 
-		bool same_connection(const connection& a, const connection& b)
+		game::mp::client_t* find_client(const connection& peer)
 		{
-			return a.slot == b.slot && a.guid == b.guid && a.address == b.address &&
-				a.qport == b.qport && a.connected == b.connected;
+			auto* clients = *game::mp::svs_clients;
+			if (!clients || peer.slot >= *game::sv_maxclients)
+			{
+				return nullptr;
+			}
+
+			auto& client = clients[peer.slot];
+			if (!is_remote_client(client) || peer.guid != std::to_array(client.guid) ||
+				peer.address != client.remoteAddress || peer.qport != client.qport ||
+				peer.connected != client.lastConnectTime)
+			{
+				return nullptr;
+			}
+
+			return &client;
 		}
 
 		void send_batch(game::mp::client_t& client, const std::uint64_t user, event_stream& stream)
 		{
 			const auto now = std::chrono::steady_clock::now();
-			if (stream.pending.empty() || now < stream.retry_at ||
+			if (client.state < ready_client_state || stream.pending.empty() || now < stream.retry_at ||
 				client.reliableSequence - client.reliableAcknowledge >= reliable_command_budget)
 			{
 				return;
@@ -137,7 +152,7 @@ namespace reward_event_relay
 
 			const auto count = std::min(stream.pending.size(), wire::batch_limit);
 			const std::vector<wire::record> records{stream.pending.begin(), stream.pending.begin() + count};
-			const auto payload = wire::encode(user, stream.id, game::environment::is_zombies(), records);
+			const auto payload = wire::encode(user, stream.id, stream.zombies, records);
 			if (!payload.empty())
 			{
 				// Keep the batch until the client accepts it, even after native transport acknowledgement.
@@ -151,13 +166,20 @@ namespace reward_event_relay
 		{
 			std::lock_guard lock{mutex};
 
+			// A full map load temporarily makes the server unavailable without disconnecting its clients.
+			if (!game::SV_Loaded())
+			{
+				return false;
+			}
+
 			bool pending{};
 			for (auto it = streams.begin(); it != streams.end();)
 			{
-				connection peer;
-				auto* client = find_client(it->first, peer);
 				auto& stream = it->second;
-				if (!client || !same_connection(peer, stream.peer))
+				// The native connection survives a map load even while the party is being rebuilt.
+				auto* client = find_client(stream.peer);
+				if (!client ||
+					stream.zombies != game::environment::is_zombies())
 				{
 					it = streams.erase(it);
 					continue;
@@ -187,7 +209,7 @@ namespace reward_event_relay
 				return record.sequence;
 			}
 
-			// Gameplay backlog is bounded by the native slots retained until client acceptance.
+			// Native slots provide backpressure within a map; copied records survive queue resets.
 			record.sequence = ++stream.sequence;
 			stream.pending.push_back(record);
 
@@ -202,9 +224,16 @@ namespace reward_event_relay
 
 		event_stream* find_or_create_stream(const std::uint64_t user)
 		{
-			if (!accepting_events)
+			if (!accepting_events || !game::SV_Loaded())
 			{
 				return nullptr;
+			}
+
+			const auto found = streams.find(user);
+			if (found != streams.end() && find_client(found->second.peer) &&
+				found->second.zombies == game::environment::is_zombies())
+			{
+				return &found->second;
 			}
 
 			connection peer;
@@ -215,13 +244,11 @@ namespace reward_event_relay
 			}
 
 			auto& entry = streams[user];
-			if (!entry.id || !same_connection(peer, entry.peer))
-			{
-				entry = {};
-				entry.peer = peer;
-				utils::cryptography::random::get_data(&entry.id, sizeof(entry.id));
-				entry.id |= 1;
-			}
+			entry = {};
+			entry.peer = peer;
+			entry.zombies = game::environment::is_zombies();
+			utils::cryptography::random::get_data(&entry.id, sizeof(entry.id));
+			entry.id |= 1;
 
 			return &entry;
 		}
@@ -255,8 +282,8 @@ namespace reward_event_relay
 					continue;
 				}
 
-				connection peer;
-				if (!find_client(user, peer) || !same_connection(peer, stream.peer))
+				if (!game::SV_Loaded() || !find_client(stream.peer) ||
+					stream.zombies != game::environment::is_zombies())
 				{
 					return;
 				}
@@ -331,8 +358,8 @@ namespace reward_event_relay
 			return {};
 		}
 
-		const auto seconds = stream->running ? elapsed_seconds(*stream) : stream->seconds;
-		const auto sequence = enqueue(*stream, {0, wire::operation::event, seconds, static_cast<std::uint8_t>(event_class), event});
+		stream->seconds = stream->running ? elapsed_seconds(*stream) : stream->seconds;
+		const auto sequence = enqueue(*stream, {0, wire::operation::event, stream->seconds, static_cast<std::uint8_t>(event_class), event});
 		return {stream->id, sequence};
 	}
 
@@ -379,6 +406,10 @@ namespace reward_event_relay
 	void tick()
 	{
 		std::lock_guard lock{mutex};
+		if (!game::SV_Loaded())
+		{
+			return;
+		}
 
 		for (auto& [user, stream] : streams)
 		{
@@ -401,7 +432,18 @@ namespace reward_event_relay
 	void reset()
 	{
 		std::lock_guard lock{mutex};
-		streams.clear();
+		for (auto& [user, stream] : streams)
+		{
+			if (!stream.running)
+			{
+				continue;
+			}
+
+			// G_InitGame has already reset the clock. Close the old mission at its last
+			// observed time, retaining delivery order and sequence numbers across maps.
+			stream.running = false;
+			enqueue(stream, {0, wire::operation::stop, stream.seconds});
+		}
 	}
 
 	class component final : public multiplayer_component
