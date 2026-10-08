@@ -12,7 +12,9 @@
 
 #include <utils/cryptography.hpp>
 #include <utils/hook.hpp>
+#include <utils/string.hpp>
 
+#include <charconv>
 #include <deque>
 #include <mutex>
 
@@ -24,7 +26,7 @@ namespace reward_event_relay
 
 		constexpr auto minimum_client_state = 4;
 		constexpr auto reliable_command_budget = 64;
-		constexpr auto maximum_batches_per_frame = 4u;
+		constexpr auto retry_interval = 1s;
 		constexpr auto maximum_event_count = 10;
 
 		struct connection
@@ -41,6 +43,9 @@ namespace reward_event_relay
 			connection peer;
 			std::uint64_t id{};
 			std::uint64_t sequence{};
+			std::uint64_t sent_sequence{};
+			std::uint64_t acknowledged{};
+			std::chrono::steady_clock::time_point retry_at{};
 			bool running{};
 			std::uint32_t start{};
 			std::uint32_t seconds{};
@@ -121,34 +126,24 @@ namespace reward_event_relay
 				a.qport == b.qport && a.connected == b.connected;
 		}
 
-		std::vector<wire::record> take_records(event_stream& stream)
+		void send_batch(game::mp::client_t& client, const std::uint64_t user, event_stream& stream)
 		{
-			std::vector<wire::record> records;
-			while (records.size() < wire::batch_limit && !stream.pending.empty())
+			const auto now = std::chrono::steady_clock::now();
+			if (stream.pending.empty() || now < stream.retry_at ||
+				client.reliableSequence - client.reliableAcknowledge >= reliable_command_budget)
 			{
-				records.push_back(stream.pending.front());
-				stream.pending.pop_front();
+				return;
 			}
 
-			return records;
-		}
-
-		void send_batches(game::mp::client_t& client, const std::uint64_t user, event_stream& stream)
-		{
-			// Bounds each frame's use of the native 128-command reliable ring
-			for (unsigned packets = 0; packets < maximum_batches_per_frame && !stream.pending.empty(); ++packets)
+			const auto count = std::min(stream.pending.size(), wire::batch_limit);
+			const std::vector<wire::record> records{stream.pending.begin(), stream.pending.begin() + count};
+			const auto payload = wire::encode(user, stream.id, game::environment::is_zombies(), records);
+			if (!payload.empty())
 			{
-				if (client.reliableSequence - client.reliableAcknowledge >= reliable_command_budget)
-				{
-					break;
-				}
-
-				const auto records = take_records(stream);
-				const auto payload = wire::encode(user, stream.id, game::environment::is_zombies(), records);
-				if (!payload.empty())
-				{
-					game::SV_SendServerCommand(&client, game::SV_CMD_RELIABLE, "%s %s", wire::command, payload.c_str());
-				}
+				// Keep the batch until the client accepts it, even after native transport acknowledgement.
+				game::SV_SendServerCommand(&client, game::SV_CMD_RELIABLE, "%s %s", wire::command, payload.c_str());
+				stream.sent_sequence = records.back().sequence;
+				stream.retry_at = now + retry_interval;
 			}
 		}
 
@@ -168,7 +163,7 @@ namespace reward_event_relay
 					continue;
 				}
 
-				send_batches(*client, it->first, stream);
+				send_batch(*client, it->first, stream);
 
 				pending |= !stream.pending.empty();
 				++it;
@@ -178,24 +173,21 @@ namespace reward_event_relay
 			return !pending;
 		}
 
-		void enqueue(event_stream& stream, wire::record record)
+		std::uint64_t enqueue(event_stream& stream, wire::record record)
 		{
 			// Every non-start record carries absolute elapsed time. Replace only an unsent
 			// tail timer to preserve gameplay ordering and mission boundaries.
 			if (record.type != wire::operation::start && !stream.pending.empty() &&
+				stream.pending.back().sequence > stream.sent_sequence &&
 				stream.pending.back().type == wire::operation::time &&
 				record.seconds >= stream.pending.back().seconds)
 			{
 				record.sequence = stream.pending.back().sequence;
 				stream.pending.back() = record;
-				return;
+				return record.sequence;
 			}
 
-			if (stream.pending.size() >= wire::pending_limit)
-			{
-				return;
-			}
-
+			// Gameplay backlog is bounded by the native slots retained until client acceptance.
 			record.sequence = ++stream.sequence;
 			stream.pending.push_back(record);
 
@@ -204,6 +196,8 @@ namespace reward_event_relay
 				flush_scheduled = true;
 				scheduler::schedule(flush, scheduler::pipeline::server);
 			}
+
+			return record.sequence;
 		}
 
 		event_stream* find_or_create_stream(const std::uint64_t user)
@@ -232,6 +226,52 @@ namespace reward_event_relay
 			return &entry;
 		}
 
+		bool read_number(const std::string_view text, std::uint64_t& value)
+		{
+			const auto end = text.data() + text.size();
+			const auto parsed = std::from_chars(text.data(), end, value, 16);
+			return !text.empty() && text.size() <= 16 && parsed.ec == std::errc{} && parsed.ptr == end;
+		}
+
+		void acknowledge(const int slot, const command::params_sv& args)
+		{
+			std::uint64_t id{}, sequence{};
+			if (args.size() != 3 || !read_number(args[1], id) || !id || !read_number(args[2], sequence))
+			{
+				return;
+			}
+
+			std::lock_guard lock{mutex};
+			if (!accepting_events)
+			{
+				return;
+			}
+
+			for (auto& [user, stream] : streams)
+			{
+				if (stream.id != id || stream.peer.slot != slot || sequence <= stream.acknowledged ||
+					sequence > stream.sent_sequence)
+				{
+					continue;
+				}
+
+				connection peer;
+				if (!find_client(user, peer) || !same_connection(peer, stream.peer))
+				{
+					return;
+				}
+
+				stream.acknowledged = sequence;
+				while (!stream.pending.empty() && stream.pending.front().sequence <= sequence)
+				{
+					stream.pending.pop_front();
+				}
+
+				stream.retry_at = {};
+				return;
+			}
+		}
+
 		void deploy(const unsigned int local_client)
 		{
 			const command::params args;
@@ -254,7 +294,13 @@ namespace reward_event_relay
 			const auto payload = wire::decode(args[1]);
 			if (payload)
 			{
-				order_progress::receive(*payload);
+				const auto accepted = order_progress::receive(*payload);
+				if (accepted)
+				{
+					const std::string text = utils::string::va("%s %llx %llx", wire::command, payload->stream, *accepted);
+					const command::params tokens{text};
+					game::CL_ForwardCommandToServer(0, text.c_str());
+				}
 			}
 		}
 
@@ -270,11 +316,11 @@ namespace reward_event_relay
 		}
 	}
 
-	void admit(const std::uint64_t user, const demonware::order_progress::event& event, const int event_class)
+	delivery admit(const std::uint64_t user, const demonware::order_progress::event& event, const int event_class)
 	{
 		if (event.id < 0 || event.count > maximum_event_count || event_class < 0 || event_class > 1)
 		{
-			return;
+			return {};
 		}
 
 		std::lock_guard lock{mutex};
@@ -282,11 +328,20 @@ namespace reward_event_relay
 		auto* stream = find_or_create_stream(user);
 		if (!stream)
 		{
-			return;
+			return {};
 		}
 
 		const auto seconds = stream->running ? elapsed_seconds(*stream) : stream->seconds;
-		enqueue(*stream, {0, wire::operation::event, seconds, static_cast<std::uint8_t>(event_class), event});
+		const auto sequence = enqueue(*stream, {0, wire::operation::event, seconds, static_cast<std::uint8_t>(event_class), event});
+		return {stream->id, sequence};
+	}
+
+	bool is_pending(const std::uint64_t user, const delivery& value)
+	{
+		std::lock_guard lock{mutex};
+		const auto found = streams.find(user);
+		return found != streams.end() && found->second.id == value.stream &&
+			value.sequence > found->second.acknowledged;
 	}
 
 	void start(const std::uint64_t user)
@@ -355,6 +410,7 @@ namespace reward_event_relay
 		void post_unpack() override
 		{
 			accepting_events = true;
+			command::add_sv(wire::command, acknowledge);
 
 			if (game::environment::is_dedicated())
 			{

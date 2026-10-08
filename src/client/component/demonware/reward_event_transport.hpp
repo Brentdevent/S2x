@@ -4,8 +4,15 @@
 
 namespace reward_event_relay
 {
-	// Called at native server queue admission and playtime boundaries
-	void admit(std::uint64_t user, const demonware::order_progress::event& event, int event_class);
+	struct delivery
+	{
+		std::uint64_t stream{};
+		std::uint64_t sequence{};
+	};
+
+	// Retain the native occurrence until the owning client accepts its delivery.
+	delivery admit(std::uint64_t user, const demonware::order_progress::event& event, int event_class);
+	bool is_pending(std::uint64_t user, const delivery& value);
 	void start(std::uint64_t user);
 	void stop(std::uint64_t user);
 	void tick();

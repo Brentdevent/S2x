@@ -68,6 +68,13 @@ namespace order_progress
 			pending_occurrence progress;
 		};
 
+		struct relayed_occurrence
+		{
+			native_queue* queue;
+			std::uint64_t user;
+			reward_event_relay::delivery delivery;
+		};
+
 		struct match_timer
 		{
 			bool running{};
@@ -85,6 +92,7 @@ namespace order_progress
 		// Admission order matters when a failed save spans a contract deadline
 		std::deque<std::pair<native_entry*, pending_occurrence>> pending;
 		std::deque<remote_occurrence> remote_pending;
+		std::unordered_map<native_entry*, relayed_occurrence> relayed;
 		std::uint64_t remote_stream{};
 		std::uint64_t remote_sequence{};
 		match_timer timer;
@@ -425,6 +433,8 @@ namespace order_progress
 					return value.first == entry;
 				});
 
+				relayed.erase(entry);
+
 				if (!is_admissible(queue, entry, event_class))
 				{
 					return;
@@ -432,7 +442,12 @@ namespace order_progress
 
 				if (queue->user != local_user.load())
 				{
-					reward_event_relay::admit(queue->user, entry->event, event_class);
+					const auto delivery = reward_event_relay::admit(queue->user, entry->event, event_class);
+					if (delivery.sequence)
+					{
+						relayed.emplace(entry, relayed_occurrence{queue, queue->user, delivery});
+					}
+
 					return;
 				}
 
@@ -529,6 +544,26 @@ namespace order_progress
 			}
 
 			retry_pending_saves();
+
+			for (auto it = relayed.begin(); it != relayed.end();)
+			{
+				auto* entry = it->first;
+				const auto& occurrence = it->second;
+				if (occurrence.queue->user != occurrence.user || !entry->state ||
+					!reward_event_relay::is_pending(occurrence.user, occurrence.delivery))
+				{
+					it = relayed.erase(it);
+					continue;
+				}
+
+				// Task 11 success must not retire an occurrence the remote client has not accepted.
+				if (entry->state == 2)
+				{
+					entry->state = 1;
+				}
+
+				++it;
+			}
 
 			// Native success clears state 2 and retains state 1, so keep every unsaved entry
 			for (const auto& [entry, occurrence] : pending)
@@ -659,6 +694,7 @@ namespace order_progress
 			std::lock_guard lock{pending_mutex};
 
 			reward_event_relay::reset();
+			relayed.clear();
 
 			// The native reset reuses server queue slots. Keep failed local saves
 			// in admission order, without retaining pointers into those queues.
@@ -745,11 +781,6 @@ namespace order_progress
 
 		void queue_remote_event(const wire::batch& batch, const wire::record& value)
 		{
-			if (remote_pending.size() >= wire::pending_limit)
-			{
-				return;
-			}
-
 			// Event names come from stock data, never from arbitrary server strings
 			if (!is_relay_gameplay_event(value.event.id))
 			{
@@ -761,12 +792,17 @@ namespace order_progress
 			remote_pending.push_back({value.event, std::move(occurrence)});
 		}
 
-		void apply_remote_record(const wire::batch& batch, const wire::record& value)
+		bool apply_remote_record(const wire::batch& batch, const wire::record& value)
 		{
+			if (value.type == wire::operation::event && pending.size() + remote_pending.size() >= wire::pending_limit)
+			{
+				return false;
+			}
+
 			if (value.type == wire::operation::start)
 			{
 				begin_timer();
-				return;
+				return true;
 			}
 
 			if (timer.running && value.seconds >= timer.seconds)
@@ -784,27 +820,26 @@ namespace order_progress
 				timer.running = false;
 			}
 
-			drain_remote();
-			flush();
+			return true;
 		}
 	}
 
-	void receive(const wire::batch& batch)
+	std::optional<std::uint64_t> receive(const wire::batch& batch)
 	{
 		if (!accepting || !local_user || batch.user != local_user || batch.zombies != game::environment::is_zombies())
 		{
-			return;
+			return {};
 		}
 
 		if (batch.records.empty())
 		{
-			return;
+			return {};
 		}
 
 		std::lock_guard lock{pending_mutex};
 		if (!begin_remote_stream(batch))
 		{
-			return;
+			return {};
 		}
 
 		for (const auto& value : batch.records)
@@ -814,9 +849,18 @@ namespace order_progress
 				continue;
 			}
 
+			// Accept only a contiguous prefix. A full queue leaves the rest on the sender.
+			if (value.sequence != remote_sequence + 1 || !apply_remote_record(batch, value))
+			{
+				break;
+			}
+
 			remote_sequence = value.sequence;
-			apply_remote_record(batch, value);
+			drain_remote();
+			flush();
 		}
+
+		return remote_sequence;
 	}
 
 	void disconnect()
