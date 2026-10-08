@@ -180,6 +180,17 @@ namespace reward_event_relay
 
 		void enqueue(event_stream& stream, wire::record record)
 		{
+			// Every non-start record carries absolute elapsed time. Replace only an unsent
+			// tail timer to preserve gameplay ordering and mission boundaries.
+			if (record.type != wire::operation::start && !stream.pending.empty() &&
+				stream.pending.back().type == wire::operation::time &&
+				record.seconds >= stream.pending.back().seconds)
+			{
+				record.sequence = stream.pending.back().sequence;
+				stream.pending.back() = record;
+				return;
+			}
+
 			if (stream.pending.size() >= wire::pending_limit)
 			{
 				return;
