@@ -9,8 +9,8 @@
 
 #include "game/game.hpp"
 #include "game/string_table.hpp"
-#include "game/demonware/achievement_store.hpp"
-#include "game/demonware/reward_game_event.hpp"
+#include "game/demonware/achievement/store.hpp"
+#include "game/demonware/reward/game_event.hpp"
 
 #include <mutex>
 #include <unordered_map>

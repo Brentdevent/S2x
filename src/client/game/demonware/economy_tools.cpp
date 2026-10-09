@@ -1,6 +1,6 @@
 #include <std_include.hpp>
 #include "economy_tools.hpp"
-#include "loot_catalog.hpp"
+#include "game/demonware/loot/catalog.hpp"
 
 #include <utils/string.hpp>
 

@@ -2,7 +2,7 @@
 #include "loader/component_loader.hpp"
 #include "unlock_loot.hpp"
 
-#include "game/demonware/loot_catalog.hpp"
+#include "game/demonware/loot/catalog.hpp"
 
 #include "game/game.hpp"
 

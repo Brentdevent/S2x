@@ -3,8 +3,8 @@
 
 #include "component/scheduler.hpp"
 
-#include "game/demonware/loot_catalog_engine.hpp"
-#include "game/demonware/loot_catalog_lifecycle.hpp"
+#include "game/demonware/loot/catalog_engine.hpp"
+#include "game/demonware/loot/catalog_lifecycle.hpp"
 #include "game/demonware/runtime_context.hpp"
 #include "game/game.hpp"
 #include "steam/steam.hpp"

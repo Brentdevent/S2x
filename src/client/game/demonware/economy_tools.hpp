@@ -1,6 +1,6 @@
 #pragma once
 
-#include "marketplace_store.hpp"
+#include "game/demonware/marketplace/store.hpp"
 
 namespace demonware::economy_tools
 {

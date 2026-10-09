@@ -5,7 +5,7 @@
 
 #include "game/game.hpp"
 #include "game/string_table.hpp"
-#include "game/demonware/achievement_store.hpp"
+#include "game/demonware/achievement/store.hpp"
 
 #include <unordered_set>
 #include <vector>

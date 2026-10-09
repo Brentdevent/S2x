@@ -7,7 +7,7 @@
 #include "component/console/console.hpp"
 #include "component/scheduler.hpp"
 #include "game/game.hpp"
-#include "game/demonware/order_progress.hpp"
+#include "game/demonware/achievement/order_progress.hpp"
 #include "steam/steam.hpp"
 
 #include <utils/hook.hpp>

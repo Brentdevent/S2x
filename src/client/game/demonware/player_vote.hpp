@@ -1,7 +1,7 @@
 #pragma once
 
 #include "byte_buffer.hpp"
-#include "marketplace_store.hpp"
+#include "game/demonware/marketplace/store.hpp"
 
 namespace demonware::player_vote
 {

@@ -6,10 +6,10 @@
 #include "component/scheduler.hpp"
 #include "game/game.hpp"
 #include "game/string_table.hpp"
-#include "game/demonware/achievement_store.hpp"
-#include "game/demonware/loot_catalog.hpp"
+#include "game/demonware/achievement/store.hpp"
+#include "game/demonware/loot/catalog.hpp"
 #include "game/demonware/runtime_context.hpp"
-#include "game/demonware/supply_drop_inventory.hpp"
+#include "game/demonware/loot/supply_drop_inventory.hpp"
 
 namespace zombies_progression
 {

@@ -1,13 +1,13 @@
 #include <std_include.hpp>
 #include "../dw_include.hpp"
 
-#include "game/demonware/marketplace_catalog.hpp"
-#include "game/demonware/marketplace_collection.hpp"
-#include "game/demonware/marketplace_inventory.hpp"
-#include "game/demonware/marketplace_pawn.hpp"
-#include "game/demonware/marketplace_purchase.hpp"
-#include "game/demonware/marketplace_queries.hpp"
-#include "game/demonware/promotional_vouchers.hpp"
+#include "game/demonware/marketplace/catalog.hpp"
+#include "game/demonware/marketplace/collection.hpp"
+#include "game/demonware/marketplace/inventory.hpp"
+#include "game/demonware/marketplace/pawn.hpp"
+#include "game/demonware/marketplace/purchase.hpp"
+#include "game/demonware/marketplace/queries.hpp"
+#include "game/demonware/marketplace/promotional_vouchers.hpp"
 #include "game/demonware/runtime_context.hpp"
 
 #include "game/game.hpp"

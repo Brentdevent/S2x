@@ -1,6 +1,6 @@
 #pragma once
 
-#include "game/demonware/order_progress.hpp"
+#include "game/demonware/achievement/order_progress.hpp"
 
 namespace reward_event_relay
 {

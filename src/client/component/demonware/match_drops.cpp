@@ -8,8 +8,8 @@
 #include "component/scheduler.hpp"
 #include "game/game.hpp"
 #include "game/demonware/economy_tools.hpp"
-#include "game/demonware/loot_catalog.hpp"
-#include "game/demonware/match_drop_reward.hpp"
+#include "game/demonware/loot/catalog.hpp"
+#include "game/demonware/reward/match_drop.hpp"
 #include "game/demonware/runtime_context.hpp"
 
 #include <utils/cryptography.hpp>

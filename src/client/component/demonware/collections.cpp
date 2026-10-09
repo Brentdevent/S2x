@@ -3,8 +3,8 @@
 #include "component/scheduler.hpp"
 #include "component/console/console.hpp"
 
-#include "game/demonware/collection_catalog.hpp"
-#include "game/demonware/loot_compatibility.hpp"
+#include "game/demonware/marketplace/collection_catalog.hpp"
+#include "game/demonware/loot/compatibility.hpp"
 #include "game/game.hpp"
 
 #include <charconv>

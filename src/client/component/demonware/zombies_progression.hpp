@@ -1,7 +1,7 @@
 #pragma once
 
-#include "game/demonware/reward_game_event.hpp"
-#include "game/demonware/achievement_store.hpp"
+#include "game/demonware/reward/game_event.hpp"
+#include "game/demonware/achievement/store.hpp"
 
 namespace zombies_progression
 {

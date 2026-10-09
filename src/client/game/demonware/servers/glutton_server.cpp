@@ -3,8 +3,8 @@
 
 #include "glutton_server.hpp"
 
-#include "../achievement_response.hpp"
-#include "../achievement_store.hpp"
+#include "../achievement/response.hpp"
+#include "../achievement/store.hpp"
 
 #include "component/console/console.hpp"
 

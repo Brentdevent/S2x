@@ -6,13 +6,13 @@
 #include "component/hidden_challenges.hpp"
 
 #include "game/game.hpp"
-#include "game/demonware/achievement_claim.hpp"
-#include "game/demonware/achievement_response.hpp"
-#include "game/demonware/hq_rewards.hpp"
-#include "game/demonware/reward_game_event.hpp"
-#include "game/demonware/reward_json.hpp"
-#include "game/demonware/reward_push.hpp"
-#include "game/demonware/reward_task4.hpp"
+#include "game/demonware/achievement/claim.hpp"
+#include "game/demonware/achievement/response.hpp"
+#include "game/demonware/reward/hq_rewards.hpp"
+#include "game/demonware/reward/game_event.hpp"
+#include "game/demonware/reward/json.hpp"
+#include "game/demonware/reward/push.hpp"
+#include "game/demonware/reward/task4.hpp"
 #include "game/demonware/runtime_context.hpp"
 
 namespace demonware

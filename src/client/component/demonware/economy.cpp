@@ -8,11 +8,11 @@
 #include "game/ui_scripting/execution.hpp"
 #include "component/ui_scripting.hpp"
 #include "game/demonware/economy_tools.hpp"
-#include "game/demonware/loot_catalog.hpp"
-#include "game/demonware/loot_compatibility.hpp"
-#include "game/demonware/loot_policy.hpp"
+#include "game/demonware/loot/catalog.hpp"
+#include "game/demonware/loot/compatibility.hpp"
+#include "game/demonware/loot/policy.hpp"
 #include "game/demonware/runtime_context.hpp"
-#include "game/demonware/zombies_loot_policy.hpp"
+#include "game/demonware/loot/zombies_policy.hpp"
 
 #include <utils/cryptography.hpp>
 #include <utils/hook.hpp>

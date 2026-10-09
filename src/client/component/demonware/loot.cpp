@@ -2,7 +2,7 @@
 #include "loader/component_loader.hpp"
 
 #include "component/console/console.hpp"
-#include "game/demonware/inventory_cache.hpp"
+#include "game/demonware/marketplace/inventory_cache.hpp"
 #include "game/game.hpp"
 #include "game/ui_scripting/execution.hpp"
 

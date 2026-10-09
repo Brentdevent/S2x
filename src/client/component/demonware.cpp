@@ -14,7 +14,7 @@
 #include "game/demonware/servers/uno_server.hpp"
 #include "game/demonware/servers/glutton_server.hpp"
 #include "game/demonware/server_registry.hpp"
-#include "game/demonware/marketplace_catalog.hpp"
+#include "game/demonware/marketplace/catalog.hpp"
 
 #include "master_server.hpp"
 
