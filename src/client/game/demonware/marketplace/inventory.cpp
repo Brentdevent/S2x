@@ -68,8 +68,10 @@ namespace demonware::marketplace_inventory
 				push.write_uint16(item.collision_field);
 				push.write_uint32(item.mod_date_time);
 			}
+
 			result.push_back(push.get_buffer());
 		}
+
 		return result;
 	}
 
@@ -81,6 +83,7 @@ namespace demonware::marketplace_inventory
 		{
 			return BD_SERVICE_NOT_AVAILABLE;
 		}
+
 		// S2 0x278480 holds ten IDs and ten quantities. SDK 0xA41B20 writes
 		// context, ClientTx, uint32 count/IDs, then uint32 count/quantities;
 		// the native adapter 0x20BE10 supplies no result object.
@@ -92,6 +95,7 @@ namespace demonware::marketplace_inventory
 		{
 			return BD_PARAM_PARSE_ERROR;
 		}
+
 		for (std::uint32_t index = 0; index < count; ++index)
 		{
 			if (!buffer->read_uint32(&ids[index]) || !ids[index] ||
@@ -100,10 +104,12 @@ namespace demonware::marketplace_inventory
 				return BD_PARAM_PARSE_ERROR;
 			}
 		}
+
 		if (!buffer->read_uint32(&quantity_count) || quantity_count != count)
 		{
 			return BD_PARAM_PARSE_ERROR;
 		}
+
 		std::string fingerprint{"consume:"};
 		for (std::uint32_t index = 0; index < count; ++index)
 		{
@@ -111,9 +117,11 @@ namespace demonware::marketplace_inventory
 			{
 				return BD_PARAM_PARSE_ERROR;
 			}
+
 			fingerprint += std::to_string(ids[index]) + ":" +
 				std::to_string(quantities[index]) + ";";
 		}
+
 		if (!buffer->has_only_zero_padding(16))
 		{
 			return BD_PARAM_PARSE_ERROR;
@@ -125,6 +133,7 @@ namespace demonware::marketplace_inventory
 		{
 			return BD_SERVICE_NOT_AVAILABLE;
 		}
+
 		const auto now = static_cast<std::uint32_t>(current_time);
 		std::uint32_t error = BD_MARKETPLACE_STORAGE_ERROR;
 		const auto result = marketplace_store::transact("marketplace:96:" + client_tx, fingerprint,
@@ -138,11 +147,13 @@ namespace demonware::marketplace_inventory
 						error = BD_MARKETPLACE_INSUFFICIENT_ITEM_QUANTITY;
 						return false;
 					}
+
 					if ((record->player_id && record->player_id != local_user_id) ||
 						(!record->account_type.empty() && record->account_type != "steam"))
 					{
 						return false;
 					}
+
 					// Preserve legacy 0/0 permanent records; otherwise use S2's
 					// verified expiry predicate (0x279650), without inventing a timer.
 					if ((record->expire_date_time || record->expiry_duration) &&
@@ -152,6 +163,7 @@ namespace demonware::marketplace_inventory
 						error = BD_MARKETPLACE_ITEMS_EXPIRED;
 						return false;
 					}
+
 					record->quantity -= quantities[index];
 					record->mod_date_time = now;
 					if (transaction.set_inventory(*record) != marketplace_store::edit_result::updated)
@@ -159,21 +171,25 @@ namespace demonware::marketplace_inventory
 						return false;
 					}
 				}
+
 				// Task 96 has no result object; the ledger records the debit, while
 				// the inventory push below always projects current absolute stock.
 				receipt = "{}";
 				return true;
 			});
+
 		const auto status = transaction_error(result.status, error);
 		if (status)
 		{
 			return status;
 		}
+
 		const auto state = marketplace_store::get_snapshot();
 		if (state.status != marketplace_store::store_status::ready)
 		{
 			return BD_MARKETPLACE_STORAGE_ERROR;
 		}
+
 		std::vector<marketplace_store::inventory_record> changed;
 		for (std::uint32_t index = 0; index < count; ++index)
 		{
@@ -190,6 +206,7 @@ namespace demonware::marketplace_inventory
 			}
 			changed.push_back(std::move(row));
 		}
+
 		// Replaying an older debit must not restore stock or metadata from before
 		// a later use/grant. The matched request supplies even the deleted IDs.
 		updates = item_updates(changed, local_user_id);
@@ -202,6 +219,7 @@ namespace demonware::marketplace_inventory
 		{
 			return BD_SERVICE_NOT_AVAILABLE;
 		}
+
 		const auto initial_remaining = buffer ? buffer->remaining_size() : 0;
 		std::string client_tx;
 		std::uint32_t count{};
@@ -209,6 +227,7 @@ namespace demonware::marketplace_inventory
 		{
 			return BD_PARAM_PARSE_ERROR;
 		}
+
 		struct item_data_update
 		{
 			std::uint32_t id{};
@@ -235,10 +254,12 @@ namespace demonware::marketplace_inventory
 				return BD_PARAM_PARSE_ERROR;
 			}
 		}
+
 		if (!buffer->has_only_zero_padding(16))
 		{
 			return BD_PARAM_PARSE_ERROR;
 		}
+
 		// Hash the complete typed request, excluding transport padding. Retaining
 		// its receipt prevents an old retry from overwriting newer native metadata.
 		const auto& wire = buffer->get_buffer();
@@ -258,11 +279,13 @@ namespace demonware::marketplace_inventory
 						error = BD_MARKETPLACE_RESOURCE_NOT_FOUND;
 						return false;
 					}
+
 					if (record->collision_field != update.collision)
 					{
 						error = BD_MARKETPLACE_RESOURCE_CONFLICT;
 						return false;
 					}
+
 					record->item_data = update.data;
 					const auto edited = transaction.set_inventory(*record);
 					if (edited != marketplace_store::edit_result::updated &&
@@ -271,9 +294,11 @@ namespace demonware::marketplace_inventory
 						return false;
 					}
 				}
+
 				receipt = "{}";
 				return true;
 			});
+
 		// S2 binds no audit-log result. Its success callback 0x27BED0 clears
 		// in-flight metadata only after this persistent update has succeeded.
 		return transaction_error(result.status, error);

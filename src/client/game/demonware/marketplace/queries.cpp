@@ -19,11 +19,13 @@ namespace demonware::marketplace_queries
 		{
 			return {BD_PARAM_PARSE_ERROR};
 		}
+
 		const auto state = marketplace_store::get_snapshot();
 		if (state.status != marketplace_store::store_status::ready)
 		{
 			return {BD_MARKETPLACE_STORAGE_ERROR};
 		}
+
 		result response;
 		const auto count = std::min<std::size_t>(state.currencies.size(), maximum_results);
 		for (std::size_t index = 0; index < count; ++index)
@@ -33,6 +35,7 @@ namespace demonware::marketplace_queries
 			record->m_value = state.currencies[index].value;
 			response.records.emplace_back(std::move(record));
 		}
+
 		return response;
 	}
 
@@ -48,6 +51,7 @@ namespace demonware::marketplace_queries
 		{
 			return {BD_PARAM_PARSE_ERROR};
 		}
+
 		const auto pagination = marketplace_pagination::parse_wire_fields(
 			first_wire_field, second_wire_field);
 		if (!pagination)
@@ -62,17 +66,20 @@ namespace demonware::marketplace_queries
 		{
 			return {BD_MARKETPLACE_STORAGE_ERROR};
 		}
+
 		const auto state = marketplace_store::get_snapshot();
 		if (state.status != marketplace_store::store_status::ready)
 		{
 			return {BD_MARKETPLACE_STORAGE_ERROR};
 		}
+
 		const auto page = marketplace_pagination::get_page_range(state.inventory.size(),
 			pagination->items_per_page, pagination->page_number);
 		if (!page)
 		{
 			return {BD_PARAM_PARSE_ERROR};
 		}
+
 		result response;
 		for (auto index = page->first; index < page->last; ++index)
 		{
@@ -83,6 +90,7 @@ namespace demonware::marketplace_queries
 			{
 				return {BD_SERVICE_NOT_AVAILABLE};
 			}
+
 			auto record = std::make_unique<bdMarketplaceInventory>();
 			record->m_playerId = entry.player_id ? entry.player_id : fallback_user_id;
 			record->unk = entry.account_type.empty() ? "steam" : entry.account_type;
@@ -97,6 +105,7 @@ namespace demonware::marketplace_queries
 			record->m_modDateTime = entry.mod_date_time;
 			response.records.emplace_back(std::move(record));
 		}
+
 		return response;
 	}
 }

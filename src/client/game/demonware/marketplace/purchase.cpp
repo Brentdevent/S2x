@@ -69,6 +69,7 @@ namespace demonware::marketplace_purchase
 				wire.write_uint32(item.mod_date_time);
 				wire.write_uint32(0); // InventoryV3 +200: native default, unused by S2's projection.
 			}
+
 			wire.write_uint32(0); // Entitlements (0xA74070).
 			wire.write_uint32(0); // Existing coupons.
 			wire.write_uint32(0); // Granted coupons.
@@ -93,11 +94,13 @@ namespace demonware::marketplace_purchase
 			{
 				return {};
 			}
+
 			const auto state = marketplace_store::get_snapshot();
 			if (state.status != marketplace_store::store_status::ready)
 			{
 				return {};
 			}
+
 			std::vector<marketplace_store::inventory_record> items;
 			for (std::uint32_t i = 0; i < count; ++i)
 			{
@@ -113,11 +116,13 @@ namespace demonware::marketplace_purchase
 				{
 					return {};
 				}
+
 				const auto found = std::ranges::find(state.inventory, id, &marketplace_store::inventory_record::item_id);
 				auto item = found == state.inventory.end() ? marketplace_store::inventory_record{} : *found;
 				item.item_id = id; // Include zero for an exhausted row.
 				items.push_back(std::move(item));
 			}
+
 			for (auto i = 0; i < 3; ++i)
 			{
 				if (!wire.read_uint32(&ignored) || ignored)
@@ -125,10 +130,12 @@ namespace demonware::marketplace_purchase
 					return {};
 				}
 			}
+
 			if (wire.has_more_data())
 			{
 				return {};
 			}
+
 			const auto currency = std::ranges::find(state.currencies, currency_id, &marketplace_store::currency_record::currency_id);
 			return response(input, {currency_id, 0}, currency == state.currencies.end() ? 0 : currency->value, items);
 		}
@@ -160,6 +167,7 @@ namespace demonware::marketplace_purchase
 		{
 			return false;
 		}
+
 		output = std::move(parsed);
 		return true;
 	}
@@ -177,6 +185,7 @@ namespace demonware::marketplace_purchase
 		{
 			return failure(BD_SERVICE_NOT_AVAILABLE);
 		}
+
 		// 0x276290 completes a non-collection purchase only for error 8003; other
 		// errors requeue the SAME transaction. Reject permanent failures with that
 		// native terminal error and retain retryable errors for persistence failures.
@@ -200,6 +209,7 @@ namespace demonware::marketplace_purchase
 					error = supported_sku(input.sku_id) ? BD_SERVICE_NOT_AVAILABLE : terminal_error;
 					return false;
 				}
+
 				const auto collection = sku->sku_type == marketplace_sku::collection_sku_type;
 				// Type 150 bypasses the native product cache (0x276580/0x27C640).
 				// The captured SKU is the collectible GUID; no rarity-derived price.
@@ -208,6 +218,7 @@ namespace demonware::marketplace_purchase
 					error = BD_SERVICE_NOT_AVAILABLE;
 					return false;
 				}
+
 				if (sku->sku_id != input.sku_id || sku->sold_out ||
 					sku->maximum_quantity != UINT32_MAX || sku->prices.size() != 1 ||
 					sku->prices[0].currency != (collection || contract || cwl ? 6 : 2) || !sku->prices[0].value ||
@@ -218,6 +229,7 @@ namespace demonware::marketplace_purchase
 					error = terminal_error;
 					return false;
 				}
+
 				std::vector<marketplace_product::pair> contents;
 				if (collection)
 				{
@@ -227,6 +239,7 @@ namespace demonware::marketplace_purchase
 						error = terminal_error;
 						return false;
 					}
+
 					contents.emplace_back(input.sku_id, 1);
 				}
 				else
@@ -236,11 +249,13 @@ namespace demonware::marketplace_purchase
 						error = terminal_error;
 						return false;
 					}
+
 					if (!product)
 					{
 						error = BD_SERVICE_NOT_AVAILABLE;
 						return false;
 					}
+
 					if (product->product_id != sku->field_36 || product->items.empty() || product->items.size() > (cwl ? cwl->items.size() : 2) ||
 						product->field_20 || product->field_24 || !product->blob_3.empty() ||
 						!product->pairs_1.empty() || !product->pairs_2.empty())
@@ -248,6 +263,7 @@ namespace demonware::marketplace_purchase
 						error = terminal_error;
 						return false;
 					}
+
 					contents = product->items;
 				}
 
@@ -261,6 +277,7 @@ namespace demonware::marketplace_purchase
 						error = terminal_error;
 						return false;
 					}
+
 					for (std::size_t i = 0; i < contents.size(); ++i)
 					{
 						if (contents[i].first != cwl->items[i] || contents[i].second != 1)
@@ -284,6 +301,7 @@ namespace demonware::marketplace_purchase
 					{
 						return false;
 					}
+
 					std::uint32_t active{};
 					for (const auto& achievement : achievements["achievements"].GetArray())
 					{
@@ -291,20 +309,24 @@ namespace demonware::marketplace_purchase
 						{
 							return false;
 						}
+
 						if (!achievement.HasMember("kind") || !achievement["kind"].IsInt() || achievement["kind"].GetInt() != contract->achievement.kind)
 						{
 							continue;
 						}
+
 						if (!achievement.HasMember("name") || !achievement["name"].IsString() ||
 							!achievement.HasMember("status") || !achievement["status"].IsString())
 						{
 							return false;
 						}
+
 						const std::string_view status = achievement["status"].GetString();
 						if (status == "inProgress" || status == "claimable")
 						{
 							++active;
 						}
+
 						const auto repeat = contract->period_start && (status == "finished" || status == "inactive") &&
 							achievement.HasMember("activationTimestamp") && achievement["activationTimestamp"].IsUint64() &&
 							achievement["activationTimestamp"].GetUint64() < contract->period_start;
@@ -314,23 +336,27 @@ namespace demonware::marketplace_purchase
 							return false;
 						}
 					}
+
 					if (active >= contract->activation_limit)
 					{
 						error = terminal_error;
 						return false;
 					}
 				}
+
 				const auto owned_token = contract ? transaction.get_inventory(contract->cost_item_id) : std::nullopt;
 				if ((!owned_token || !owned_token->quantity) && transaction.get_currency(price.currency) < price.value)
 				{
 					error = collection ? BD_MARKETPLACE_INSUFFICIENT_FUNDS_ERROR : terminal_error;
 					return false;
 				}
+
 				const auto now = std::time(nullptr);
 				if (now <= 0 || static_cast<std::uint64_t>(now) >= UINT32_MAX)
 				{
 					return false;
 				}
+
 				std::vector<marketplace_store::inventory_record> items;
 				for (const auto& [item_id, quantity] : contents)
 				{
@@ -340,6 +366,7 @@ namespace demonware::marketplace_purchase
 						error = terminal_error;
 						return false;
 					}
+
 					auto item = transaction.get_inventory(item_id).value_or(marketplace_store::inventory_record{});
 					if ((item.player_id && item.player_id != local_user_id) ||
 						(!item.account_type.empty() && item.account_type != "steam") || item.collision_field ||
@@ -350,11 +377,13 @@ namespace demonware::marketplace_purchase
 						error = terminal_error;
 						return false;
 					}
+
 					if (collection && item.quantity)
 					{
 						error = BD_MARKETPLACE_ITEM_MULTIPLE_PURCHASE_ERROR;
 						return false;
 					}
+
 					if (!item.item_id)
 					{
 						item.item_id = item_id;
@@ -363,11 +392,13 @@ namespace demonware::marketplace_purchase
 						item.expire_date_time = UINT32_MAX;
 						item.expiry_duration = INT64_MAX;
 					}
+
 					if (contract && item.quantity > 1)
 					{
 						error = terminal_error;
 						return false;
 					}
+
 					if ((!contract && !cwl) || !item.quantity)
 					{
 						item.quantity += quantity;
@@ -379,8 +410,10 @@ namespace demonware::marketplace_purchase
 					{
 						return false;
 					}
+
 					items.push_back(std::move(item));
 				}
+
 				if ((!owned_token || !owned_token->quantity) && transaction.consume_currency(price.currency, price.value) != marketplace_store::edit_result::updated)
 				{
 					return false;
@@ -393,6 +426,7 @@ namespace demonware::marketplace_purchase
 				receipt = "{\"reply\":\"" + encoded + "\"}";
 				return true;
 			});
+
 		using enum marketplace_store::transaction_status;
 		if (settled.status != committed && settled.status != replayed)
 		{
@@ -400,8 +434,10 @@ namespace demonware::marketplace_purchase
 			{
 				return failure(terminal_error);
 			}
+
 			return failure(settled.status == marketplace_store::transaction_status::rejected ? error : BD_MARKETPLACE_STORAGE_ERROR);
 		}
+
 		rapidjson::Document receipt;
 		receipt.Parse(settled.response_json.data(), settled.response_json.size());
 		if (receipt.HasParseError() || !receipt.IsObject() || !receipt.HasMember("reply") ||
@@ -409,12 +445,14 @@ namespace demonware::marketplace_purchase
 		{
 			return failure(BD_MARKETPLACE_STORAGE_ERROR);
 		}
+
 		result output;
 		output.wire = refresh_response(input, utils::cryptography::base64::decode(receipt["reply"].GetString()));
 		if (output.wire.empty())
 		{
 			return failure(BD_MARKETPLACE_STORAGE_ERROR);
 		}
+
 		return output;
 	}
 }

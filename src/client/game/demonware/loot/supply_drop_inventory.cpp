@@ -12,11 +12,13 @@ namespace demonware::supply_drop_inventory
 		{
 			return false;
 		}
+
 		const auto current = marketplace_store::get_snapshot();
 		if (current.status != marketplace_store::store_status::ready)
 		{
 			return false;
 		}
+
 		for (auto& row : document["DetailedInventory"].GetArray())
 		{
 			if (!row.IsObject() || !row.HasMember("item_id") || !row["item_id"].IsUint() ||
@@ -25,6 +27,7 @@ namespace demonware::supply_drop_inventory
 			{
 				return false;
 			}
+
 			const auto found = std::ranges::find(current.inventory, row["item_id"].GetUint(),
 				&marketplace_store::inventory_record::item_id);
 			if (found == current.inventory.end())
@@ -32,13 +35,16 @@ namespace demonware::supply_drop_inventory
 				row["item_quantity"].SetUint(0);
 				continue;
 			}
+
 			if ((found->player_id && found->player_id != user) ||
 				(!found->account_type.empty() && found->account_type != "steam"))
 			{
 				return false;
 			}
+
 			row["item_quantity"].SetUint(found->quantity);
 			row["collision_field"].SetUint(found->collision_field);
+
 			if (found->expiry_duration)
 			{
 				row["expiry_duration"].SetUint64(found->expiry_duration);
@@ -47,8 +53,10 @@ namespace demonware::supply_drop_inventory
 			{
 				row["expiry_duration"].SetNull();
 			}
+
 			row["mod_date_time"].SetUint(found->mod_date_time);
 		}
+
 		// 0x27C1D0 applies absolute inventory without checking modification time.
 		// Replaying the old quantities can resurrect already-pawned duplicates in
 		// the native cache. Keep the committed cards/transaction unchanged; only
@@ -60,6 +68,7 @@ namespace demonware::supply_drop_inventory
 		{
 			return false;
 		}
+
 		response.assign(buffer.GetString(), buffer.GetSize());
 		return true;
 	}

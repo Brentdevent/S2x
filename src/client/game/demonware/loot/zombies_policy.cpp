@@ -29,13 +29,16 @@ namespace demonware::zombies_loot_policy
 				{
 					continue;
 				}
+
 				if (const auto owned = transaction.get_inventory(item.item_id);
 					owned && !supply_drop_inventory::can_stack(*owned))
 				{
 					continue;
 				}
+
 				result.push_back(item);
 			}
+
 			std::ranges::sort(result, {}, &loot_item::item_id);
 			result.erase(std::unique(result.begin(), result.end(), [](const auto& a, const auto& b)
 				{ return a.item_id == b.item_id; }), result.end());
@@ -48,24 +51,29 @@ namespace demonware::zombies_loot_policy
 		const supply_drop_slot any{}, pack{0, 24, {}, false}, rare{2, 0, {}, false};
 		const supply_drop_slot epic{4, 0, {}, false}, heroic{5, 0, {}, true};
 		const supply_drop_slot consumable{0, 23, {}, false}, rare_consumable{2, 23, {}, false};
+
 		// Exact native supplyDropTypes.csv descriptors. Slot type 24 expands to
 		// three cards; it is not booster-pack type 24 (an unrelated MP bribe).
 		if (drop.type == 2 && drop.backend_id == "sd_zombie" && drop.item_id == 5)
 		{
 			return drop.contains_zm_consumables && drop.slots == std::array{pack, any, any};
 		}
+
 		if (drop.type == 3 && drop.backend_id == "sd_zombie_rare" && drop.item_id == 6)
 		{
 			return drop.contains_zm_consumables && drop.slots == std::array{rare, pack, any};
 		}
+
 		if (drop.type == 11 && drop.backend_id == "sd_zombie_heroic" && drop.item_id == 71)
 		{
 			return drop.contains_zm_consumables && drop.slots == std::array{heroic, pack, any};
 		}
+
 		if (drop.type == 19 && drop.backend_id == "sd_zombie_epic" && drop.item_id == 79)
 		{
 			return drop.contains_zm_consumables && drop.slots == std::array{epic, pack, any};
 		}
+
 		return drop.type == 62 && drop.backend_id == "sd_zombie_consumables" && drop.item_id == 122 &&
 			!drop.contains_zm_consumables && drop.slots == std::array{rare_consumable, consumable, consumable};
 	}
@@ -77,6 +85,7 @@ namespace demonware::zombies_loot_policy
 		{
 			return std::nullopt;
 		}
+
 		auto consumable_pool = consumables(source, transaction);
 		std::vector<loot_item> cosmetic_pool;
 		if (drop.type != 62)
@@ -86,10 +95,12 @@ namespace demonware::zombies_loot_policy
 			{
 				return std::nullopt;
 			}
+
 			// Reuse the existing local MP collectible/duplicate eligibility only.
 			// Slot composition remains specific to Zombies.
 			cosmetic_pool = loot_policy::eligible_items(source, *mp, transaction);
 		}
+
 		std::vector<loot_item> result;
 		for (const auto& slot : drop.slots)
 		{
@@ -112,7 +123,9 @@ namespace demonware::zombies_loot_policy
 				{
 					return std::nullopt;
 				}
+
 				result.push_back(pool[*index]);
+
 				// Consumables repeat/stack once per exact rarity card; cosmetics stay
 				// distinct within the pack and use the existing native pawn path.
 				if (!slot.type)
@@ -124,6 +137,7 @@ namespace demonware::zombies_loot_policy
 				}
 			}
 		}
+
 		return result;
 	}
 }

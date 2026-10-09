@@ -97,6 +97,7 @@ namespace demonware::marketplace_catalog
 				{
 					return false;
 				}
+
 				offset_ += expected.size();
 				return true;
 			}
@@ -124,6 +125,7 @@ namespace demonware::marketplace_catalog
 				{
 					return false;
 				}
+
 				value.assign(bytes_.data() + offset_, length);
 				offset_ += length;
 				return true;
@@ -169,9 +171,11 @@ namespace demonware::marketplace_catalog
 					{
 						return nullptr;
 					}
+
 					result = &entry->value;
 				}
 			}
+
 			return result;
 		}
 
@@ -202,6 +206,7 @@ namespace demonware::marketplace_catalog
 			{
 				return false;
 			}
+
 			parsed.resource_hash = uppercase_hash(std::move(parsed.resource_hash));
 			parsed.records_hash = uppercase_hash(std::move(parsed.records_hash));
 
@@ -214,6 +219,7 @@ namespace demonware::marketplace_catalog
 				{
 					return false;
 				}
+
 				parsed.type_100_count = type_100_count->GetUint();
 				parsed.type_150_count = type_150_count->GetUint();
 			}
@@ -315,6 +321,7 @@ namespace demonware::marketplace_catalog
 				error = "SKU resource counts, boundary, or aggregate hash mismatch";
 				return false;
 			}
+
 			return true;
 		}
 
@@ -371,6 +378,7 @@ namespace demonware::marketplace_catalog
 				error = "product resource boundary or aggregate hash mismatch";
 				return false;
 			}
+
 			return true;
 		}
 
@@ -428,6 +436,7 @@ namespace demonware::marketplace_catalog
 		{
 			return {load_status::missing, nullptr, "captured catalog resources are absent"};
 		}
+
 		if (manifest.empty() || sku_resource.empty() || product_resource.empty())
 		{
 			return {load_status::invalid, nullptr,
@@ -457,6 +466,7 @@ namespace demonware::marketplace_catalog
 			return {load_status::invalid, nullptr,
 				"captured catalog has no type-100 SKU index"};
 		}
+
 		for (const auto index : *type_100)
 		{
 			if (index >= builder.value.skus().size() ||
@@ -491,6 +501,7 @@ namespace demonware::marketplace_catalog
 			{
 				continue;
 			}
+
 			sku_record sku{};
 			sku.fields.sku_id = entry.product;
 			sku.fields.field_36 = entry.product;
@@ -509,6 +520,7 @@ namespace demonware::marketplace_catalog
 			{
 				return {load_status::invalid, {}, "CWL policy identity collision"};
 			}
+
 			sku_record sku;
 			sku.fields.sku_id = sku.fields.field_36 = id;
 			char limiter[16]{};
@@ -526,6 +538,7 @@ namespace demonware::marketplace_catalog
 			{
 				product.fields.items.push_back({item, 1});
 			}
+
 			byte_buffer product_wire;
 			product.fields.serialize(&product_wire);
 			product.raw = product_wire.get_buffer();
@@ -551,6 +564,7 @@ namespace demonware::marketplace_catalog
 		{
 			return {selection_status::invalid_request, {}};
 		}
+
 		if (!indices)
 		{
 			return {selection_status::success, {}};
@@ -565,8 +579,10 @@ namespace demonware::marketplace_catalog
 			{
 				return {selection_status::invalid_catalog, {}};
 			}
+
 			result.records.push_back(&value.skus()[record_index]);
 		}
+
 		return result;
 	}
 
@@ -595,8 +611,10 @@ namespace demonware::marketplace_catalog
 			{
 				return {selection_status::record_not_found, product_id, {}};
 			}
+
 			result.records.push_back(record);
 		}
+
 		return result;
 	}
 
@@ -623,6 +641,7 @@ namespace demonware::marketplace_catalog
 		{
 			return result;
 		}
+
 		if (loaded.status != load_status::ready || !loaded.value)
 		{
 			result.status = task_handler_status::marketplace_error;
@@ -636,6 +655,7 @@ namespace demonware::marketplace_catalog
 			result.status = task_handler_status::parameter_error;
 			return result;
 		}
+
 		if (selected.status != selection_status::success)
 		{
 			result.status = task_handler_status::marketplace_error;
@@ -652,8 +672,10 @@ namespace demonware::marketplace_catalog
 				result.records.clear();
 				return result;
 			}
+
 			result.records.emplace_back(record->raw);
 		}
+
 		result.status = task_handler_status::success;
 		return result;
 	}
@@ -665,6 +687,7 @@ namespace demonware::marketplace_catalog
 		{
 			return result;
 		}
+
 		if (loaded.status != load_status::ready || !loaded.value)
 		{
 			result.status = task_handler_status::marketplace_error;
@@ -678,11 +701,13 @@ namespace demonware::marketplace_catalog
 			result.status = task_handler_status::service_unavailable;
 			return result;
 		}
+
 		if (selected.status == selection_status::invalid_request)
 		{
 			result.status = task_handler_status::parameter_error;
 			return result;
 		}
+
 		if (selected.status != selection_status::success)
 		{
 			result.status = task_handler_status::marketplace_error;
@@ -698,8 +723,10 @@ namespace demonware::marketplace_catalog
 				result.records.clear();
 				return result;
 			}
+
 			result.records.emplace_back(record->raw);
 		}
+
 		result.status = task_handler_status::success;
 		return result;
 	}

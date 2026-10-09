@@ -40,6 +40,7 @@ namespace demonware::promotional_vouchers
 					// Native Inventory_RedeemVoucherItem -> 0x2768B0 -> 0x278180.
 					row.rule = collection_catalog::rule_id(utils::string::va("voucher_%X", row.id));
 				}
+
 				return rows;
 			}();
 			return result;
@@ -61,12 +62,14 @@ namespace demonware::promotional_vouchers
 			{
 				return false;
 			}
+
 			// A manually supplied voucher already represents the pending delivery.
 			// Cosmetic ownership/unlock-all never serves as the one-time receipt.
 			if (delivery && row.quantity)
 			{
 				return true;
 			}
+
 			row.item_id = id;
 			row.player_id = user;
 			row.account_type = "steam";
@@ -84,10 +87,12 @@ namespace demonware::promotional_vouchers
 			{
 				return BD_NO_ERROR;
 			}
+
 			if (status == client_tx_conflict)
 			{
 				return BD_MARKETPLACE_IDEMPOTENT_REQUEST_COLLISION;
 			}
+
 			return status == marketplace_store::transaction_status::rejected ? rejected_error : BD_MARKETPLACE_STORAGE_ERROR;
 		}
 	}
@@ -98,6 +103,7 @@ namespace demonware::promotional_vouchers
 		{
 			return false;
 		}
+
 		const auto saved = marketplace_store::transact("promotions:beta-ambassador:delivery",
 			std::to_string(user), [&](marketplace_store::transaction& state, std::string& receipt)
 			{
@@ -106,6 +112,7 @@ namespace demonware::promotional_vouchers
 				{
 					return false;
 				}
+
 				for (const auto& row : vouchers())
 				{
 					if (!grant(state, row.id, user, static_cast<std::uint32_t>(now), true))
@@ -113,9 +120,11 @@ namespace demonware::promotional_vouchers
 						return false;
 					}
 				}
+
 				receipt = "{}";
 				return true;
 			});
+
 		return !error(saved.status, BD_MARKETPLACE_STORAGE_ERROR);
 	}
 
@@ -128,17 +137,20 @@ namespace demonware::promotional_vouchers
 		{
 			return {};
 		}
+
 		marketplace_collection::result output;
 		if (!user)
 		{
 			output.error = BD_SERVICE_NOT_AVAILABLE;
 			return output;
 		}
+
 		if (input.quantity != 1)
 		{
 			output.error = BD_MARKETPLACE_INVALID_PARAMETER;
 			return output;
 		}
+
 		std::uint32_t rejected = BD_MARKETPLACE_STORAGE_ERROR;
 		// Claim identity is the promotion, not the native UI's newly generated
 		// ClientTx. Reopening/restarting/retrying cannot redeem it a second time.
@@ -151,16 +163,19 @@ namespace demonware::promotional_vouchers
 					rejected = BD_MARKETPLACE_INSUFFICIENT_ITEM_QUANTITY;
 					return false;
 				}
+
 				if (!permanent(*item, user))
 				{
 					rejected = BD_MARKETPLACE_INVALID_PARAMETER;
 					return false;
 				}
+
 				const auto now = std::time(nullptr);
 				if (now <= 0 || static_cast<std::uint64_t>(now) >= UINT32_MAX)
 				{
 					return false;
 				}
+
 				// One-time mail is cleared completely, including manually added copies.
 				item->quantity = 0;
 				item->mod_date_time = static_cast<std::uint32_t>(now);
@@ -168,6 +183,7 @@ namespace demonware::promotional_vouchers
 				{
 					return false;
 				}
+
 				auto wire = marketplace_collection::inventory_update(*item, user);
 				for (const auto id : found->rewards)
 				{
@@ -175,16 +191,20 @@ namespace demonware::promotional_vouchers
 					{
 						return false;
 					}
+
 					wire += marketplace_collection::inventory_update(*state.get_inventory(id), user);
 				}
+
 				receipt = "{\"reply\":\"" + utils::cryptography::base64::encode(wire) + "\"}";
 				return true;
 			});
+
 		output.error = error(saved.status, rejected);
 		if (output.error)
 		{
 			return output;
 		}
+
 		// Task 242's native completion applies these absolute rows, refreshes
 		// unlocks and voucher counts, then signals the stock Post menu to clear.
 		return marketplace_collection::refresh_response(saved.response_json, user);

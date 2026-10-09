@@ -86,6 +86,7 @@ namespace demonware::marketplace_store
 		{
 			return false;
 		}
+
 		state_->state->achievement_state = json;
 		return true;
 	}
@@ -104,12 +105,14 @@ namespace demonware::marketplace_store
 		{
 			return false;
 		}
+
 		std::lock_guard lock{store_mutex};
 		load_store();
 		if (current_status != store_status::ready)
 		{
 			return false;
 		}
+
 		auto staged = current_state;
 		staged.achievement_state = json;
 		transaction::state_view view{&staged};
@@ -118,10 +121,12 @@ namespace demonware::marketplace_store
 		{
 			return false;
 		}
+
 		if (detail::persistence::save(staged) != save_result::saved)
 		{
 			return false;
 		}
+
 		current_state = std::move(staged);
 		return true;
 	}
@@ -295,6 +300,7 @@ namespace demonware::marketplace_store
 		{
 			return std::nullopt;
 		}
+
 		const auto found = current_state.processed_transactions.find(client_tx);
 		return found == current_state.processed_transactions.end() ? std::nullopt :
 			std::optional{found->second};

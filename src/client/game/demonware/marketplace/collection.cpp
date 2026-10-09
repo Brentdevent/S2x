@@ -101,12 +101,14 @@ namespace demonware::marketplace_collection
 		{
 			return failure(BD_MARKETPLACE_STORAGE_ERROR);
 		}
+
 		const auto committed = utils::cryptography::base64::decode(receipt["reply"].GetString());
 		const auto state = marketplace_store::get_snapshot();
 		if (committed.empty() || state.status != marketplace_store::store_status::ready)
 		{
 			return failure(BD_MARKETPLACE_STORAGE_ERROR);
 		}
+
 		// Our committed Task 242 result identifies the affected currency/item.
 		// Preserve those identities, but project current absolute state just as
 		// Task 165 does. No catalog, second conversion or receipt mutation is needed.
@@ -123,6 +125,7 @@ namespace demonware::marketplace_collection
 			{
 				return failure(BD_MARKETPLACE_STORAGE_ERROR);
 			}
+
 			struct_buffer_reader fields{row};
 			std::optional<std::uint32_t> id;
 			while (!fields.empty())
@@ -132,6 +135,7 @@ namespace demonware::marketplace_collection
 				{
 					return failure(BD_MARKETPLACE_STORAGE_ERROR);
 				}
+
 				if (field == 3)
 				{
 					std::uint64_t value{};
@@ -140,6 +144,7 @@ namespace demonware::marketplace_collection
 					{
 						return failure(BD_MARKETPLACE_STORAGE_ERROR);
 					}
+
 					id = static_cast<std::uint32_t>(value);
 				}
 				else if (!fields.skip_field(type))
@@ -147,10 +152,12 @@ namespace demonware::marketplace_collection
 					return failure(BD_MARKETPLACE_STORAGE_ERROR);
 				}
 			}
+
 			if (!id || !seen.insert((std::uint64_t{tag} << 32) | *id).second)
 			{
 				return failure(BD_MARKETPLACE_STORAGE_ERROR);
 			}
+
 			if (tag == 4)
 			{
 				const auto currency = std::ranges::find(state.currencies, *id, &marketplace_store::currency_record::currency_id);
@@ -165,6 +172,7 @@ namespace demonware::marketplace_collection
 				output.wire += inventory_update(item, user);
 			}
 		}
+
 		return output;
 	}
 
@@ -178,6 +186,7 @@ namespace demonware::marketplace_collection
 		{
 			return false;
 		}
+
 		std::size_t cursor{};
 		const auto string = [&](const unsigned char key, const std::size_t maximum, std::string& value)
 		{
@@ -185,11 +194,13 @@ namespace demonware::marketplace_collection
 			{
 				return false;
 			}
+
 			const auto length = static_cast<unsigned char>(bytes[cursor++]);
 			if (!length || length > maximum || length > bytes.size() - cursor)
 			{
 				return false;
 			}
+
 			value.assign(bytes, cursor, length);
 			cursor += length;
 			return std::ranges::all_of(value, [](const unsigned char c) { return c >= 0x21 && c <= 0x7E; });
@@ -203,6 +214,7 @@ namespace demonware::marketplace_collection
 		{
 			return false;
 		}
+
 		parsed.quantity = 0;
 		unsigned shift{};
 		for (;; shift += 7)
@@ -211,11 +223,13 @@ namespace demonware::marketplace_collection
 			{
 				return false;
 			}
+
 			const auto value = static_cast<unsigned char>(bytes[cursor++]);
 			if (shift == 28 && value > 15)
 			{
 				return false;
 			}
+
 			parsed.quantity |= static_cast<std::uint32_t>(value & 127) << shift;
 			if (!(value & 128))
 			{
@@ -226,10 +240,12 @@ namespace demonware::marketplace_collection
 				break;
 			}
 		}
+
 		if (!parsed.quantity || cursor != bytes.size())
 		{
 			return false;
 		}
+
 		output = std::move(parsed);
 		return true;
 	}
@@ -245,10 +261,12 @@ namespace demonware::marketplace_collection
 		{
 			return failure(BD_SERVICE_NOT_AVAILABLE);
 		}
+
 		if (input.quantity != 1)
 		{
 			return failure(BD_MARKETPLACE_INVALID_PARAMETER);
 		}
+
 		std::uint32_t error = BD_MARKETPLACE_STORAGE_ERROR;
 		const auto settled = marketplace_store::transact("marketplace:242:" + input.client_tx,
 			"collection:" + std::to_string(user_id) + ":" + input.rule + ":1",
@@ -259,18 +277,21 @@ namespace demonware::marketplace_collection
 					error = BD_SERVICE_NOT_AVAILABLE;
 					return false;
 				}
+
 				const auto found = std::ranges::find(catalog->collections, input.rule, &collection_catalog::collection::rule);
 				if (found == catalog->collections.end())
 				{
 					error = BD_SERVICE_NOT_AVAILABLE;
 					return false;
 				}
+
 				auto reward = transaction.get_inventory(found->reward).value_or(marketplace_store::inventory_record{});
 				if (!permanent(reward, user_id))
 				{
 					error = BD_MARKETPLACE_INVALID_PARAMETER;
 					return false;
 				}
+
 				// 0x276780 permits an already-owned reward to be redeemed again.
 				// Ownership is the completion state: never increment it a second time.
 				if (!reward.quantity)
@@ -284,11 +305,13 @@ namespace demonware::marketplace_collection
 							return false;
 						}
 					}
+
 					const auto now = std::time(nullptr);
 					if (now <= 0 || static_cast<std::uint64_t>(now) >= UINT32_MAX)
 					{
 						return false;
 					}
+
 					reward.item_id = found->reward;
 					reward.player_id = user_id;
 					reward.account_type = "steam";
@@ -301,11 +324,13 @@ namespace demonware::marketplace_collection
 						return false;
 					}
 				}
+
 				// Required pieces remain owned/equippable. The stock collection
 				// progress path (0x274A70) continues counting them after redemption.
 				receipt = "{\"reply\":\"" + utils::cryptography::base64::encode(inventory_update(reward, user_id)) + "\"}";
 				return true;
 			});
+
 		using enum marketplace_store::transaction_status;
 		if (settled.status != committed && settled.status != replayed)
 		{
@@ -313,12 +338,15 @@ namespace demonware::marketplace_collection
 			{
 				return failure(BD_MARKETPLACE_IDEMPOTENT_REQUEST_COLLISION);
 			}
+
 			if (settled.status == invalid_argument)
 			{
 				return failure(BD_MARKETPLACE_INVALID_PARAMETER);
 			}
+
 			return failure(settled.status == rejected ? error : BD_MARKETPLACE_STORAGE_ERROR);
 		}
+
 		return refresh_response(settled.response_json, user_id);
 	}
 }

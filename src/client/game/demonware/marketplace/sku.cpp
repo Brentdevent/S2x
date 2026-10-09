@@ -112,6 +112,7 @@ namespace demonware::marketplace_sku
 			{
 				return false;
 			}
+
 			parsed.prices.emplace_back(entry);
 		}
 

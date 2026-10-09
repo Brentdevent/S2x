@@ -31,17 +31,20 @@ namespace demonware::order_progress
 		{
 			return native.count == 0 && native.operation == 0;
 		}
+
 		if (definition.size() > 31 || !native.count || native.count > 3 ||
 			(native.operation != 0 && native.operation != 1))
 		{
 			return false;
 		}
+
 		for (unsigned i = 0; i < native.count; ++i)
 		{
 			if (!definition.starts_with('('))
 			{
 				return false;
 			}
+
 			definition.remove_prefix(1);
 			unsigned selector{};
 			auto parsed = std::from_chars(definition.data(), definition.data() + definition.size(), selector);
@@ -50,6 +53,7 @@ namespace demonware::order_progress
 			{
 				return false;
 			}
+
 			definition.remove_prefix(parsed.ptr - definition.data() + 1);
 			std::int32_t value{};
 			parsed = std::from_chars(definition.data(), definition.data() + definition.size(), value);
@@ -58,17 +62,21 @@ namespace demonware::order_progress
 			{
 				return false;
 			}
+
 			definition.remove_prefix(parsed.ptr - definition.data() + 1);
 			if (i + 1 == native.count)
 			{
 				return definition.empty();
 			}
+
 			if (!definition.starts_with(native.operation ? "||" : "&&"))
 			{
 				return false;
 			}
+
 			definition.remove_prefix(2);
 		}
+
 		return false;
 	}
 
@@ -116,6 +124,7 @@ namespace demonware::order_progress
 			// any_objective_completed (20), which belongs to stage objectives.
 			{"weekly_zm_ch_objective_2", 9, 38, {{1, 2, {1, 1}, {9, 13}}}},
 		};
+
 		for (const auto& rule : rules)
 		{
 			if (rule.name == name && rule.kind == kind && rule.event == event_id)
@@ -123,6 +132,7 @@ namespace demonware::order_progress
 				return rule.condition;
 			}
 		}
+
 		return {};
 	}
 
@@ -133,10 +143,12 @@ namespace demonware::order_progress
 		{
 			return false;
 		}
+
 		if (!rule.count)
 		{
 			return true;
 		}
+
 		bool any{};
 		for (unsigned i = 0; i < rule.count; ++i)
 		{
@@ -147,14 +159,18 @@ namespace demonware::order_progress
 				{
 					continue;
 				}
+
 				matched |= rule.selectors[i] < 128 ? rule.values[i] == occurrence.values[j] : (rule.values[i] & occurrence.values[j]) != 0;
 			}
+
 			if (!matched && !rule.operation)
 			{
 				return false;
 			}
+
 			any |= matched;
 		}
+
 		return any;
 	}
 
@@ -164,10 +180,12 @@ namespace demonware::order_progress
 		{
 			return false;
 		}
+
 		if (!rule.counter_minimum)
 		{
 			return true;
 		}
+
 		for (unsigned i = 0; i < occurrence.count; ++i)
 		{
 			if (occurrence.selectors[i] == rule.counter_selector)
@@ -176,6 +194,7 @@ namespace demonware::order_progress
 					occurrence.values[i] <= static_cast<std::uint32_t>(std::numeric_limits<std::int32_t>::max());
 			}
 		}
+
 		return false;
 	}
 
@@ -186,17 +205,20 @@ namespace demonware::order_progress
 		{
 			return achievement_store::mutation_result::unchanged;
 		}
+
 		return achievement_store::mutate_all([&](achievement_record& record)
 		{
 			if (!eligible(record))
 			{
 				return false;
 			}
+
 			const auto same_activation = [&](const target& expected)
 			{
 				return record.name == expected.name && record.kind == expected.kind &&
 					record.activation_timestamp == expected.activation && record.progress_target == expected.progress_target;
 			};
+
 			bool changed{};
 			if (timed(record))
 			{
@@ -209,9 +231,11 @@ namespace demonware::order_progress
 				{
 					return false;
 				}
+
 				const auto remaining = std::min(*record.usage_time_remaining, usage->remaining);
 				changed = remaining != *record.usage_time_remaining;
 				record.usage_time_remaining = remaining;
+
 				// Local boundary policy: native AE expiry tests elapsed >= remaining.
 				// Settle that deadline before an occurrence at the same whole second.
 				// Earlier claimable completions are frozen by eligible(), including retries.
@@ -224,10 +248,12 @@ namespace demonware::order_progress
 					return true;
 				}
 			}
+
 			if (std::ranges::find_if(targets, same_activation) == targets.end())
 			{
 				return changed;
 			}
+
 			++record.progress;
 			if (record.progress == record.progress_target)
 			{
@@ -235,6 +261,7 @@ namespace demonware::order_progress
 				record.completion_timestamp = completion_time;
 				record.fulfilled_times = 1;
 			}
+
 			return true;
 		});
 	}

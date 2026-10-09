@@ -33,6 +33,7 @@ namespace demonware::marketplace_product
 			{
 				return false;
 			}
+
 			parsed.product_ids.push_back(product_id);
 		}
 
@@ -118,8 +119,10 @@ namespace demonware::marketplace_product
 				{
 					return false;
 				}
+
 				output_pairs.emplace_back(entry);
 			}
+
 			return true;
 		};
 

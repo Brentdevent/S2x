@@ -25,6 +25,7 @@ namespace demonware::supply_drop_inventory
 		{
 			return false;
 		}
+
 		result = owned.value_or(marketplace_store::inventory_record{});
 		result.item_id = item_id;
 		result.player_id = user;

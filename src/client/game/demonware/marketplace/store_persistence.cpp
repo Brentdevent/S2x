@@ -58,6 +58,7 @@ namespace demonware::marketplace_store::detail
 		{
 			return false;
 		}
+
 		rapidjson::Document value;
 		value.Parse(json.data(), json.size());
 		return !value.HasParseError() && value.IsObject() &&
@@ -362,6 +363,7 @@ namespace demonware::marketplace_store::detail
 				{
 					return store_status::corrupt;
 				}
+
 				parsed.achievement_state.assign(document["achievementState"].GetString(),
 					document["achievementState"].GetStringLength());
 				if (!is_valid_achievement_state(parsed.achievement_state))
@@ -436,6 +438,7 @@ namespace demonware::marketplace_store::detail
 				{
 					return std::nullopt;
 				}
+
 				add_string(&document, "achievementState", state.achievement_state, allocator);
 
 				rapidjson::Value currencies{rapidjson::kArrayType};
