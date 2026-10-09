@@ -62,8 +62,7 @@ namespace demonware::marketplace_pawn
 				return BD_MARKETPLACE_RESOURCE_CONFLICT;
 			}
 
-			if ((item->expire_date_time || item->expiry_duration) &&
-				(item->expire_date_time != UINT32_MAX || item->expiry_duration != INT64_MAX))
+			if (!marketplace_store::is_permanent(*item))
 			{
 				return BD_MARKETPLACE_INVALID_PARAMETER;
 			}

@@ -359,18 +359,11 @@ namespace zombies_progression
 			return true;
 		}
 
-		bool has_valid_expiry(const marketplace_store::inventory_record& item)
-		{
-			const auto never_expires = !item.expire_date_time && !item.expiry_duration;
-			const auto max_expiry = item.expire_date_time == UINT32_MAX && item.expiry_duration == INT64_MAX;
-			return never_expires || max_expiry;
-		}
-
 		bool conflicts_with_grant(const marketplace_store::inventory_record& item, const std::uint64_t user)
 		{
 			return (item.player_id && item.player_id != user) ||
 				(!item.account_type.empty() && item.account_type != "steam") ||
-				item.collision_field || !has_valid_expiry(item);
+				item.collision_field || !marketplace_store::is_permanent(item);
 		}
 
 		bool grant_reward_item(marketplace_store::transaction& state, const std::uint32_t reward_item,

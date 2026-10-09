@@ -2,6 +2,7 @@
 #include "purchase.hpp"
 #include "cwl.hpp"
 #include "store.hpp"
+#include "inventory_expiry.hpp"
 #include "game/demonware/achievement/orders.hpp"
 #include "game/types/demonware.hpp"
 
@@ -61,10 +62,9 @@ namespace demonware::marketplace_purchase
 				wire.write_uint32(item.quantity);
 				wire.write_uint32(item.item_xp);
 				wire.write_blob(item.item_data);
-				// Legacy local 0/0 records also represent permanent inventory.
-				const auto legacy = !item.expire_date_time && !item.expiry_duration;
-				wire.write_uint32(legacy ? UINT32_MAX : item.expire_date_time);
-				wire.write_int64(legacy ? INT64_MAX : static_cast<std::int64_t>(item.expiry_duration));
+				const auto expiry = inventory_expiry::to_wire(item.expire_date_time, item.expiry_duration);
+				wire.write_uint32(expiry.date);
+				wire.write_int64(expiry.duration);
 				wire.write_uint16(item.collision_field);
 				wire.write_uint32(item.mod_date_time);
 				wire.write_uint32(0); // InventoryV3 +200: native default, unused by S2's projection.
@@ -370,8 +370,7 @@ namespace demonware::marketplace_purchase
 					auto item = transaction.get_inventory(item_id).value_or(marketplace_store::inventory_record{});
 					if ((item.player_id && item.player_id != local_user_id) ||
 						(!item.account_type.empty() && item.account_type != "steam") || item.collision_field ||
-						((item.expire_date_time || item.expiry_duration) &&
-							(item.expire_date_time != UINT32_MAX || item.expiry_duration != INT64_MAX)) ||
+						!marketplace_store::is_permanent(item) ||
 						item.quantity > INT32_MAX - quantity)
 					{
 						error = terminal_error;

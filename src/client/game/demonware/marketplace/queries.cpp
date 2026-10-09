@@ -98,7 +98,7 @@ namespace demonware::marketplace_queries
 			record->m_itemQuantity = entry.quantity;
 			record->m_itemXp = entry.item_xp;
 			record->m_itemData = entry.item_data;
-			const auto expiry = inventory_expiry::for_task165(entry.expire_date_time, entry.expiry_duration);
+			const auto expiry = inventory_expiry::to_wire(entry.expire_date_time, entry.expiry_duration);
 			record->m_expireDateTime = expiry.date;
 			record->m_expiryDuration = expiry.duration;
 			record->m_collisionField = entry.collision_field;

@@ -46,8 +46,7 @@ namespace demonware::marketplace_collection
 		{
 			return (!item.player_id || item.player_id == user) &&
 				(item.account_type.empty() || item.account_type == "steam") && !item.collision_field &&
-				((!item.expire_date_time && !item.expiry_duration) ||
-					(item.expire_date_time == UINT32_MAX && item.expiry_duration == INT64_MAX));
+				marketplace_store::is_permanent(item);
 		}
 
 	}
@@ -67,7 +66,7 @@ namespace demonware::marketplace_collection
 		field(row, 5, item.item_xp);
 		field(row, 6, item.item_data);
 		field(row, 7, 0); // Non-rental inventory.
-		const auto expiry = inventory_expiry::for_task165(item.expire_date_time, item.expiry_duration);
+		const auto expiry = inventory_expiry::to_wire(item.expire_date_time, item.expiry_duration);
 		field(row, 8, expiry.date);
 		field(row, 10, item.mod_date_time);
 		field(row, 11, item.collision_field);

@@ -50,8 +50,7 @@ namespace demonware::promotional_vouchers
 		{
 			return (!row.player_id || row.player_id == user) &&
 				(row.account_type.empty() || row.account_type == "steam") && !row.collision_field &&
-				((!row.expire_date_time && !row.expiry_duration) ||
-					(row.expire_date_time == UINT32_MAX && row.expiry_duration == INT64_MAX));
+				marketplace_store::is_permanent(row);
 		}
 
 		bool grant(marketplace_store::transaction& state, const std::uint32_t id,

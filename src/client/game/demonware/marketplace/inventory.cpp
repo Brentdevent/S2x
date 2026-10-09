@@ -2,6 +2,7 @@
 #include "inventory.hpp"
 #include "game/demonware/byte_buffer.hpp"
 #include "store.hpp"
+#include "inventory_expiry.hpp"
 #include "game/types/demonware.hpp"
 
 #include <utils/cryptography.hpp>
@@ -58,13 +59,13 @@ namespace demonware::marketplace_inventory
 			for (auto index = first; index < last; ++index)
 			{
 				const auto& item = changed[index];
-				const auto legacy = !item.expire_date_time && !item.expiry_duration;
+				const auto expiry = inventory_expiry::to_wire(item.expire_date_time, item.expiry_duration);
 				push.write_uint32(item.item_id);
 				push.write_uint32(item.quantity);
 				push.write_uint32(item.item_xp);
 				push.write_blob(item.item_data);
-				push.write_uint32(legacy ? UINT32_MAX : item.expire_date_time);
-				push.write_int64(legacy ? INT64_MAX : static_cast<std::int64_t>(item.expiry_duration));
+				push.write_uint32(expiry.date);
+				push.write_int64(expiry.duration);
 				push.write_uint16(item.collision_field);
 				push.write_uint32(item.mod_date_time);
 			}

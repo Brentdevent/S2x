@@ -34,7 +34,10 @@ namespace demonware::collection_catalog
 		{
 			result += hex[digest[i] >> 4];
 			result += hex[digest[i] & 15];
-			if (i == 3 || i == 5 || i == 7 || i == 9) result += '-';
+			if (i == 3 || i == 5 || i == 7 || i == 9)
+			{
+				result += '-';
+			}
 		}
 		return result;
 	}

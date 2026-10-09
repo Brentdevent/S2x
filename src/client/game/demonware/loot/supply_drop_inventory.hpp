@@ -12,8 +12,7 @@ namespace demonware::supply_drop_inventory
 		// The verified duplicate queues consume permanent, collision-zero rows.
 		// Do not turn a rental/expired row into permanent ownership by stacking.
 		return !item.collision_field && item.quantity && item.quantity < INT32_MAX &&
-			((!item.expire_date_time && !item.expiry_duration) ||
-				(item.expire_date_time == UINT32_MAX && item.expiry_duration == INT64_MAX));
+			marketplace_store::is_permanent(item);
 	}
 
 	inline bool grant(marketplace_store::transaction& transaction, const std::uint32_t item_id,
