@@ -49,6 +49,7 @@ namespace dvars
 			return entry != overrides.end() ? &entry->second : nullptr;
 		}
 
+		utils::hook::detour dvar_command_hook;
 		utils::hook::detour dvar_find_malleable_var_hook;
 		utils::hook::detour dvar_register_hook;
 		utils::hook::detour dvar_register_float_hook;
@@ -97,6 +98,34 @@ namespace dvars
 		{
 			const auto resolved_name = resolve_dvar_engine_name(dvar_name);
 			return dvar_find_malleable_var_hook.invoke<game::dvar_t*>(resolved_name);
+		}
+
+		int dvar_command_stub()
+		{
+			// The engine prints nothing for a bare dvar name; rcon tools read values this way.
+			const command::params params{};
+			if (params.size() == 1)
+			{
+				if (auto* dvar = game::Dvar_FindMalleableVar(params[0]))
+				{
+					const auto to_string = [dvar](game::DvarValue* dvar_value, const bool decode)
+					{
+						const auto* text = game::Dvar_ValueToString(dvar, decode, dvar_value);
+						return std::string{text ? text : ""};
+					};
+
+					const auto value = to_string(&dvar->current, true);
+					// Decoding a protected dvar always reads its current value, so the default is read as stored.
+					const auto reset = to_string(&dvar->reset, false);
+					const auto name = game::lookup::dvars::resolve_display_name(dvar->name);
+
+					console::info("\"%.*s\" is: \"%s^7\" default: \"%s^7\"\n",
+						static_cast<int>(name.size()), name.data(), value.data(), reset.data());
+					return 1;
+				}
+			}
+
+			return dvar_command_hook.invoke<int>();
 		}
 
 		game::dvar_t* dvar_register_string_stub(const char* dvar_name, const char* value, const game::DvarFlags flags)
@@ -151,6 +180,7 @@ namespace dvars
 			{
 				dvar_register_hook.create(game::Dvar_RegisterString, dvar_register_string_stub);
 				dvar_register_float_protected_hook.create(game::Dvar_RegisterFloatProtected, dvar_register_float_protected_stub);
+				dvar_command_hook.create(game::Dvar_Command, dvar_command_stub);
 			}
 
 			command::add("dvarDump", [](const command::params& argument)
