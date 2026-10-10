@@ -251,9 +251,16 @@ namespace network
 
 			if (result == SOCKET_ERROR)
 			{
+				const auto error = WSAGetLastError();
+				if (error == WSAEWOULDBLOCK)
+				{
+					// Let the netchannel recover this dropped UDP packet instead of disconnecting.
+					return 0;
+				}
+
 				console::warn(
 					"[network] sendto failed: %s\n",
-					std::system_category().message(WSAGetLastError()).data()
+					std::system_category().message(error).data()
 				);
 
 				return SOCKET_ERROR;
