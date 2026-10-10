@@ -102,6 +102,7 @@ namespace order_progress
 			std::int32_t status;
 			std::byte reserved3[4];
 		};
+
 		static_assert(sizeof(native_achievement) == 0x40);
 		static_assert(offsetof(native_achievement, kind) == 0x8);
 		static_assert(offsetof(native_achievement, id) == 0xC);
@@ -123,8 +124,10 @@ namespace order_progress
 		std::deque<std::pair<native_entry*, pending_occurrence>> pending;
 		std::deque<remote_occurrence> remote_pending;
 		std::unordered_map<native_entry*, relayed_occurrence> relayed;
+
 		// Coalesce successive increments until the native achievement fetch reaches their page.
 		std::unordered_map<std::string, progress_notification> notifications;
+
 		std::uint64_t remote_stream{};
 		std::uint64_t remote_sequence{};
 		match_timer timer;
@@ -373,6 +376,7 @@ namespace order_progress
 					{
 						notifications.insert_or_assign(record.name, progress_notification{record});
 					}
+
 					achievement_sync::request_refresh();
 				}
 			}
@@ -854,24 +858,28 @@ namespace order_progress
 		{
 			std::vector<native_achievement> updates;
 			std::uint64_t stream{};
+
 			{
 				std::lock_guard lock{pending_mutex};
 				if (!accepting || !remote_stream || notifications.empty())
 				{
 					return;
 				}
+
 				stream = remote_stream;
 				const auto controller = game::CL_ControllerIndexFromClientNum(0);
 				if (controller < 0 || controller >= native_controller_count)
 				{
 					return;
 				}
+
 				const auto* table = game::DB_FindXAssetHeader(game::ASSET_TYPE_STRINGTABLE,
 					"dw/dwGameChallenges.csv", false).stringTable;
 				if (!is_valid_challenge_table(table))
 				{
 					return;
 				}
+
 				const auto current = demonware::achievement_store::get_all();
 				for (auto it = notifications.begin(); it != notifications.end();)
 				{
@@ -880,6 +888,7 @@ namespace order_progress
 						++it;
 						continue;
 					}
+
 					const auto& expected = it->second.record;
 					const auto saved = std::ranges::find(current, expected.name, &demonware::achievement_record::name);
 					if (saved == current.end() || !progress::eligible(*saved) || saved->kind != expected.kind ||
@@ -889,21 +898,25 @@ namespace order_progress
 						it = notifications.erase(it);
 						continue;
 					}
+
 					const auto row = find_challenge_row(table, expected.name);
 					const auto id = row ? cell(table, *row, 0) : std::nullopt;
 					int challenge{};
 					if (id && parse_native_id(*id, challenge))
 					{
 						// 0x13A230 finds the controller's native cached achievement by ID.
-						const auto* cached = utils::hook::invoke<const native_achievement*>(0x13A230_g, controller, challenge);
+						const auto* cached = utils::hook::invoke<const native_achievement*>(
+							0x13A230_g, controller, challenge);
 						if (cached && cached->kind == expected.kind && cached->status == 2 &&
-							cached->target > 0 && static_cast<std::uint32_t>(cached->target) == expected.progress_target && cached->progress == expected.progress)
+							cached->target > 0 && static_cast<std::uint32_t>(cached->target) == expected.progress_target &&
+							cached->progress == expected.progress)
 						{
 							updates.push_back(*cached);
 							it = notifications.erase(it);
 							continue;
 						}
 					}
+
 					++it;
 				}
 			}
@@ -917,6 +930,7 @@ namespace order_progress
 						return;
 					}
 				}
+
 				// Native ProgressionUpdate emitter, also used by the stock y command.
 				// Run on the main thread, after the native cache catches up. The push
 				// handler suppresses equal counters; a full fetch can reach it first.
@@ -1052,6 +1066,7 @@ namespace order_progress
 			{
 				continue;
 			}
+
 			const auto found = notifications.find(record["name"].GetString());
 			if (found == notifications.end())
 			{
@@ -1075,6 +1090,7 @@ namespace order_progress
 				notifications.erase(found);
 				continue;
 			}
+
 			if (!record.HasMember("progress") || !record["progress"].IsUint() ||
 				record["progress"].GetUint() < expected.progress)
 			{

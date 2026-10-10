@@ -206,6 +206,7 @@ namespace demonware::order_progress
 		{
 			progressed->clear();
 		}
+
 		if (targets.empty() && elapsed.empty())
 		{
 			return achievement_store::mutation_result::unchanged;
@@ -281,6 +282,7 @@ namespace demonware::order_progress
 		{
 			*progressed = std::move(staged);
 		}
+
 		return result;
 	}
 }
