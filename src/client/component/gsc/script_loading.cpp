@@ -14,6 +14,7 @@
 
 #include "script_extension.hpp"
 #include "script_loading.hpp"
+#include "script_memory.hpp"
 
 namespace gsc
 {
@@ -29,7 +30,11 @@ namespace gsc
 		std::unordered_map<std::string, game::ScriptFile*> loaded_scripts;
 		utils::memory::allocator script_allocator;
 
-		std::uintptr_t custom_script_code_cursor = 0;
+		// Keep the stock DB pool at 4 MiB; reserve a separate tail for custom scripts.
+		constexpr std::size_t stock_script_memory_size = 0x400000;
+		constexpr std::size_t custom_script_memory_size = 0x400000;
+		script_memory custom_script_memory;
+		utils::hook::detour pmem_get_script_memory_hook;
 
 		void clear()
 		{
@@ -38,8 +43,12 @@ namespace gsc
 			loaded_scripts.clear();
 			script_allocator.clear();
 			clear_devmap();
+			gsc_ctx->cleanup();
 
-			custom_script_code_cursor = 0;
+			if (!custom_script_memory.clear())
+			{
+				console::error("Could not decommit custom script memory (Windows error %lu)\n", GetLastError());
+			}
 		}
 
 		bool read_raw_script_file(const std::string& name, std::string* data)
@@ -77,38 +86,26 @@ namespace gsc
 			return false;
 		}
 
-		std::uint8_t* allocate_custom_script_code(std::size_t size, std::size_t alignment)
+		void* db_alloc_memory_stub(const std::size_t size, const std::size_t alignment, const int source)
 		{
-			std::uint32_t script_memory_size = 0;
-			auto* base = reinterpret_cast<std::uint8_t*>(game::PMem_GetScriptMemory(&script_memory_size));
+			const auto script_pool = size == stock_script_memory_size;
+			auto* base = static_cast<std::uint8_t*>(game::PMem_AllocFromSource_NoDebug(
+				size + (script_pool ? custom_script_memory_size : 0), alignment, source));
 
-			const auto base_addr = reinterpret_cast<std::uintptr_t>(base);
-			const auto end_addr = base_addr + script_memory_size;
-
-			if (!custom_script_code_cursor)
+			if (script_pool && base)
 			{
-				custom_script_code_cursor = end_addr;
+				custom_script_memory.initialize(base + size, custom_script_memory_size);
 			}
 
-			custom_script_code_cursor -= size;
-			custom_script_code_cursor &= ~(alignment - 1);
+			return base;
+		}
 
-			if (custom_script_code_cursor < base_addr)
-			{
-				throw std::runtime_error(std::format("Out of custom script memory while allocating {} bytes", size));
-			}
-
-			const auto page_start = custom_script_code_cursor & ~std::uintptr_t(0xFFF);
-			const auto page_end = (custom_script_code_cursor + size + 0xFFF) & ~std::uintptr_t(0xFFF);
-
-			VirtualAlloc(
-				reinterpret_cast<void*>(page_start),
-				page_end - page_start,
-				MEM_COMMIT,
-				PAGE_READWRITE
-			);
-
-			return reinterpret_cast<std::uint8_t*>(custom_script_code_cursor);
+		std::uint8_t* pmem_get_script_memory_stub(std::uint32_t* size)
+		{
+			auto* base = pmem_get_script_memory_hook.invoke<std::uint8_t*>(size);
+			// Let VM handles address both pools without expanding the DB free list.
+			*size += static_cast<std::uint32_t>(custom_script_memory_size);
+			return base;
 		}
 
 		game::ScriptFile* load_custom_script(const char* file_name, const std::string& real_name)
@@ -137,8 +134,12 @@ namespace gsc
 				const auto output_script = assembler.assemble(*assembly_ptr);
 
 				const auto script_file_ptr = static_cast<game::ScriptFile*>(script_allocator.allocate(sizeof(game::ScriptFile)));
-				script_file_ptr->name = file_name;
+				if (!script_file_ptr)
+				{
+					throw std::bad_alloc();
+				}
 
+				script_file_ptr->name = file_name;
 				script_file_ptr->bytecodeLen = static_cast<int>(std::get<0>(output_script).size);
 				script_file_ptr->len = static_cast<int>(std::get<1>(output_script).size);
 
@@ -146,10 +147,15 @@ namespace gsc
 				const auto stack_size = static_cast<std::uint32_t>(std::get<1>(output_script).size + 1);
 
 				script_file_ptr->buffer = static_cast<char*>(script_allocator.allocate(stack_size));
+				if (!script_file_ptr->buffer)
+				{
+					throw std::bad_alloc();
+				}
+
 				std::memcpy(const_cast<char*>(script_file_ptr->buffer), std::get<1>(output_script).data, std::get<1>(output_script).size);
 
 				const auto& bytecode = std::get<0>(output_script);
-				script_file_ptr->bytecode = allocate_custom_script_code(bytecode.size + 1, 4);
+				script_file_ptr->bytecode = custom_script_memory.allocate(bytecode.size + 1, 4);
 
 				std::memcpy(script_file_ptr->bytecode, bytecode.data, bytecode.size);
 				script_file_ptr->bytecode[bytecode.size] = 0;
@@ -373,7 +379,7 @@ namespace gsc
 
 			utils::hook::invoke<void>(0x3B2250_g);
 
-			if (in_virtual_lobby)
+			if (!in_virtual_lobby)
 			{
 				for (auto& function_handle : init_handles)
 				{
@@ -485,9 +491,8 @@ namespace gsc
 
 		void post_unpack() override
 		{
-			// Increase script mem size 
-			// Probably not needed but leaving it here in case we need it (address is for MP).
-			// utils::hook::set<std::uint64_t>(0xB76660_g, 0x800000ull);
+			utils::hook::call(game::select(0x4D67C4, 0x2A8774), db_alloc_memory_stub);
+			pmem_get_script_memory_hook.create(game::PMem_GetScriptMemory, pmem_get_script_memory_stub);
 
 			// Load our scripts with an uncompressed stack
 			utils::hook::call(game::select(0x68F22C, 0x49594C), db_get_raw_buffer_stub);
@@ -519,13 +524,7 @@ namespace gsc
 				utils::hook::call(0x560861_g, scr_load_level_multiplayer_stub);
 			}
 
-			scripting::on_shutdown([](const int clear_scripts) -> void
-			{
-				if (clear_scripts)
-				{
-					clear();
-				}
-			});
+			scripting::on_scripts_free(clear);
 		}
 	};
 }

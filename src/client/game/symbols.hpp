@@ -278,7 +278,7 @@ namespace game
 
 	WEAK symbol<void(errorParm_t code, const char* message, ...)> Com_Error{ 0x90750, 0x46F7C0 };
 
-	WEAK symbol<void*(unsigned int size, unsigned int alignment, int selector)> PMem_AllocFromSource_NoDebug{ 0x769910, 0x4D38D0 };
+	WEAK symbol<void*(std::size_t size, std::size_t alignment, int selector)> PMem_AllocFromSource_NoDebug{ 0x769910, 0x4D38D0 };
 	WEAK symbol<uint8_t*(uint32_t*)> PMem_GetScriptMemory{ 0x4D6740, 0x2A86F0 };
 
 	WEAK symbol<void(int clearScripts)> G_ShutdownGame{ 0x562920, 0x3768C0 };

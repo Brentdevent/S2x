@@ -9,6 +9,8 @@ namespace scripting
 	extern std::string current_file;
 
 	void on_shutdown(const std::function<void(int)>& callback);
+	// Runs after script teardown, excluding fast restarts.
+	void on_scripts_free(const std::function<void()>& callback);
 	void on_init(const std::function<void()>& callback);
 
 	std::optional<std::string> get_canonical_string(unsigned int id);
