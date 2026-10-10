@@ -37,6 +37,11 @@ namespace party
 		utils::hook::detour disconnect_command_hook;
 		const game::dvar_t* change_team_enabled{};
 
+		bool party_join_is_blocked_by_zombies_wave_stub(const void*, const int)
+		{
+			return false;
+		}
+
 		bool can_change_assigned_team()
 		{
 			return game::environment::is_dedicated()
@@ -1405,6 +1410,16 @@ namespace party
 					utils::hook::call(0x546128_g, has_assigned_team_stub);
 					utils::hook::call(0x546194_g, update_session_team_stub);
 				}
+			}
+
+			if (game::environment::is_zombies())
+			{
+				// Restriction index 3 is the Zombies-wave limit. Bypass its two
+				// readers for both listen and dedicated hosts: PartyHost admission
+				// emits pa_joinfailed 49 (XBOXLIVE_CANTJOINSESSION_ZOMBIES_WAVE),
+				// while the session update also marks the lobby unjoinable.
+				utils::hook::call(0x486AD6_g, party_join_is_blocked_by_zombies_wave_stub);
+				utils::hook::call(0x29BAC6_g, party_join_is_blocked_by_zombies_wave_stub);
 			}
 
 			cl_connect_hook.create(game::CL_Connect, cl_connect_stub);

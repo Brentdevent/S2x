@@ -1476,7 +1476,8 @@ namespace dedicated_party
 
 			// Only relax the score/time-limit checks for our persistent hosted lobby.
 			// Stock emits pa_joinfailed 46/47 here (XBOXLIVE_CANTJOINSESSION_GAMELIMIT).
-			// Capacity, migration, paused-game and Zombies-wave checks remain native.
+			// Capacity, migration and paused-game checks remain native; party.cpp
+			// separately bypasses the Zombies-wave restriction for all hosts.
 			utils::hook::call(0x486A7F_g, party_join_is_blocked_by_match_limit_stub);
 			utils::hook::call(0x486A9C_g, party_join_is_blocked_by_match_limit_stub);
 
