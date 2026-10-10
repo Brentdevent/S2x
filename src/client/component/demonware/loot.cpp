@@ -29,10 +29,11 @@ namespace demonware_loot
 				return false;
 			}
 
-			const auto stack_top = state->m_apistack.top;
+			// Lua calls can relocate the API stack, so retain an offset into its current buffer.
+			const auto stack_top = state->m_apistack.top - state->m_apistack.bottom;
 			const auto restore_stack = utils::finally([state, stack_top]
 			{
-				state->m_apistack.top = stack_top;
+				state->m_apistack.top = state->m_apistack.bottom + stack_top;
 			});
 
 			try
