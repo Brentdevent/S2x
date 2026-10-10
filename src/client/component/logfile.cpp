@@ -96,7 +96,7 @@ namespace logfile
 
 			const auto& client = clients[client_num];
 			g_log_printf("%s;%s;%i;%s;%s\n",
-				cmd.data(),
+				cmd == "say_team" ? "sayteam" : "say",
 				client.guid,
 				client_num,
 				client.name,

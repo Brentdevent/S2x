@@ -106,6 +106,7 @@ namespace ui_scripting
         {
             this->ptr = ui_scripting::convert_function(f);
             this->type = game::hks::TCFUNCTION;
+            this->add();
         }
 
         function(const function& other);

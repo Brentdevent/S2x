@@ -178,6 +178,8 @@ namespace game
 	WEAK symbol<int(const netadr_s* a, const netadr_s* b)> NET_CompareBaseAdr{ 0x66DB50 };
 	WEAK symbol<int(const char* address, netadr_s* out)> NET_StringToAdr{ 0x66E3E0 };
 	WEAK symbol<void(const netadr_s* address, sockaddr* s)> NetadrToSockadr{ 0x75F9E0 };
+	WEAK symbol<void(const netadr_s* from, msg_t* msg)> SV_ConnectionlessPacket{ 0x6DEE70 };
+	WEAK symbol<void(const netadr_s* from, const msg_t* msg)> NET_QueueClientPacket{ 0x66DC40 };
 
 	WEAK symbol<PartyData*(int unk)> Lobby_GetPartyData{ 0x47D050 };
 	WEAK symbol<void*(int localClientNum)> Lobby_GetLocalClientData{ 0x470D30 };
@@ -205,6 +207,7 @@ namespace game
 	WEAK symbol<void(PartyData* partyData, unsigned int localControllerIndex)> PartyHost_PreMatch{ 0x48D8C0 };
 	WEAK symbol<void(PartyData* partyData, void* activeClient)> PartyHost_StartMatch{ 0x4917B0 };
 	WEAK symbol<std::int64_t(PartyData* partyData, void* activeClient)> PartyHost_AutoStart{ 0x491A80 };
+	WEAK symbol<void(PartyData* partyData, std::uint8_t memberIndex, unsigned int notify, const char* reason)> PartyHost_KickMember{ 0x48CE90 };
 	WEAK symbol<std::int64_t(PartyData* partyData, void* commandData, netadr_s* from, msg_t* msg)> PartyClient_HandleGo{ 0x4728F0 };
 	WEAK symbol<void(PartyData* partyData, std::uint32_t* activeClient, netadr_s* from)> PartyClient_ProcessPartyState{ 0x4777E0 };
 	WEAK symbol<std::int64_t(int controllerIndex)> PartyClient_SetLocalReadyUpFlag{ 0x483CE0 };
@@ -275,7 +278,7 @@ namespace game
 
 	WEAK symbol<void(errorParm_t code, const char* message, ...)> Com_Error{ 0x90750, 0x46F7C0 };
 
-	WEAK symbol<void*(unsigned int size, unsigned int alignment, int selector)> PMem_AllocFromSource_NoDebug{ 0x769910, 0x4D38D0 };
+	WEAK symbol<void*(std::size_t size, std::size_t alignment, int selector)> PMem_AllocFromSource_NoDebug{ 0x769910, 0x4D38D0 };
 	WEAK symbol<uint8_t*(uint32_t*)> PMem_GetScriptMemory{ 0x4D6740, 0x2A86F0 };
 
 	WEAK symbol<void(int clearScripts)> G_ShutdownGame{ 0x562920, 0x3768C0 };
@@ -389,6 +392,9 @@ namespace game
 		WEAK symbol<void(lua_State* s, const HksObject* tbl, const HksObject* key, const HksObject* val)> hks_obj_settable{ 0x2D96B0, 0x14DA70 };
 		WEAK symbol<HksObject*(HksObject* result, lua_State* s, const HksObject* table, const HksObject* key)> hks_obj_gettable{ 0x2D8AA0, 0x14CE60 };
 		WEAK symbol<void(lua_State* s, int nargs, int nresults, const unsigned int* pc)> vm_call_internal{ 0x308800, 0x17CDF0 };
+		WEAK symbol<int(lua_State* s, int nargs, int nresults, int errfunc)> hksi_lua_pcall{ 0x2DD2E0, 0x1517D0 };
+		WEAK symbol<void(lua_State* s)> hksi_lua_error{ 0x2DBFF0, 0x1504E0 };
+		WEAK symbol<void(CallStack* stack, lua_State* s, int size, bool exact)> grow_api_stack{ 0x2D6CD0, 0x14B090 };
 		WEAK symbol<HashTable*(lua_State* s, unsigned int arraySize, unsigned int hashSize)> Hashtable_Create{ 0x2C8490, 0x13C850 };
 		WEAK symbol<int(lua_State* s, int t)> hksi_luaL_ref{ 0x2DB960, 0x14FE50 };
 		WEAK symbol<void(lua_State* s, int t, int ref)> hksi_luaL_unref{ 0x2DBC10, 0x150100 };

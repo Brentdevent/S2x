@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -40,8 +41,29 @@ namespace dedicated_party
 		bool match_running{};
 	};
 
+	struct lobby_member
+	{
+		int index{};
+		// Session member index, which the game also uses as the gameplay client slot.
+		int slot{};
+		std::uint64_t xuid{};
+		std::string name{};
+		std::string address{};
+		bool joining{};
+	};
+
+	struct lobby_status
+	{
+		std::string map_name{};
+		std::string gametype{};
+		std::vector<lobby_member> members{};
+	};
+
 	void start();
 	bool is_active();
+	// Set only while the dedicated lobby waits between matches.
+	std::optional<lobby_status> get_lobby_status();
+	bool kick_lobby_member(int index, const std::string& reason);
 	std::string get_current_gametype();
 	bool set_rotation(std::vector<dedicated_match_t> rotation);
 	bool rotate();

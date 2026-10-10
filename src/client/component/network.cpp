@@ -137,7 +137,7 @@ namespace network
 
 		bool handle_command(game::netadr_s* address, const char* command, game::msg_t* message)
 		{
-			if (!address || !command || !message || !message->data)
+			if (!address || !command || !message || !message->data || game::is_local_play())
 			{
 				return false;
 			}
@@ -251,9 +251,16 @@ namespace network
 
 			if (result == SOCKET_ERROR)
 			{
+				const auto error = WSAGetLastError();
+				if (error == WSAEWOULDBLOCK)
+				{
+					// Let the netchannel recover this dropped UDP packet instead of disconnecting.
+					return 0;
+				}
+
 				console::warn(
 					"[network] sendto failed: %s\n",
-					std::system_category().message(WSAGetLastError()).data()
+					std::system_category().message(error).data()
 				);
 
 				return SOCKET_ERROR;

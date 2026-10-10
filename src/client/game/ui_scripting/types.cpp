@@ -74,12 +74,10 @@ namespace ui_scripting
         value.t = game::hks::TUSERDATA;
 
         const auto state = *game::hks::lui_lua_state;
-        const auto top = state->m_apistack.top;
 
         push_value(value);
 
-        this->ref = game::hks::hksi_luaL_ref(*game::hks::lui_lua_state, -10000);
-        state->m_apistack.top = top;
+        this->ref = game::hks::hksi_luaL_ref(state, -10000);
     }
 
     void userdata::release()
@@ -130,6 +128,8 @@ namespace ui_scripting
     table::table()
     {
         const auto state = *game::hks::lui_lua_state;
+
+        reserve_stack(state, 1);
         this->ptr = game::hks::Hashtable_Create(state, 0, 0);
         this->add();
     }
@@ -190,12 +190,10 @@ namespace ui_scripting
         value.t = game::hks::TTABLE;
 
         const auto state = *game::hks::lui_lua_state;
-        const auto top = state->m_apistack.top;
 
         push_value(value);
 
-        this->ref = game::hks::hksi_luaL_ref(*game::hks::lui_lua_state, -10000);
-        state->m_apistack.top = top;
+        this->ref = game::hks::hksi_luaL_ref(state, -10000);
     }
 
     void table::release()
@@ -256,6 +254,7 @@ namespace ui_scripting
 
     function::function(game::hks::lua_function func)
     {
+        reserve_stack(*game::hks::lui_lua_state, 1);
         this->ptr = game::hks::cclosure_Create(func);
         this->type = game::hks::HksObjectType::TCFUNCTION;
         this->add();
@@ -321,12 +320,10 @@ namespace ui_scripting
         value.t = this->type;
 
         const auto state = *game::hks::lui_lua_state;
-        const auto top = state->m_apistack.top;
 
         push_value(value);
 
-        this->ref = game::hks::hksi_luaL_ref(*game::hks::lui_lua_state, static_cast<int64_t>(-10000));
-        state->m_apistack.top = top;
+        this->ref = game::hks::hksi_luaL_ref(state, static_cast<int64_t>(-10000));
     }
 
     void function::release()

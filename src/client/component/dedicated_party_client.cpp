@@ -3,6 +3,7 @@
 
 #include "dedicated_party_client.hpp"
 #include "dedicated_party.hpp"
+#include "command.hpp"
 #include "party.hpp"
 #include "network.hpp"
 #include "scheduler.hpp"
@@ -108,6 +109,38 @@ namespace dedicated_party_client
 			}
 
 			utils::hook::invoke<void>(0x47A720_g, party_data, controller_index, joining);
+		}
+
+		utils::hook::detour party_client_kicked_from_lobby_hook;
+		std::string lobby_kick_reason{};
+
+		void party_client_kicked_from_lobby_stub(game::PartyData* party_data, void* command_data,
+			game::netadr_s* from, game::msg_t* message)
+		{
+			// S2x hosts send the kick reason as a quoted token after kickedFromLobby.
+			const command::params params{};
+			lobby_kick_reason = params.size() > 1 ? params[1] : "";
+			std::erase_if(lobby_kick_reason, [](const unsigned char c) { return c < ' ' || c == 0x7F; });
+			if (lobby_kick_reason.size() > 128)
+			{
+				lobby_kick_reason.resize(128);
+			}
+
+			party_client_kicked_from_lobby_hook.invoke<void>(party_data, command_data, from, message);
+			lobby_kick_reason.clear();
+		}
+
+		void show_lobby_kick_message_stub(const char* message)
+		{
+			if (lobby_kick_reason.empty())
+			{
+				utils::hook::invoke<void>(0x49F120_g, message);
+				return;
+			}
+
+			// Same text as an in-game kick; 0x1F makes the localizer keep the reason literal.
+			const auto text = "EXE_PLAYERKICKED\x1F - " + lobby_kick_reason;
+			utils::hook::invoke<void>(0x49F120_g, text.data());
 		}
 
 		bool is_hosted_dedicated_game_lobby(game::PartyData* party_data)
@@ -893,6 +926,12 @@ namespace dedicated_party_client
 				0x497EF0_g, party_atomic_setup_potential_host_stub);
 
 			utils::hook::call(0x497767_g, party_atomic_activate_lobby_stub);
+
+			// The kickedFromLobby handler hardcodes the VAC-ban text; show the stock party-kick text instead.
+			utils::hook::inject(0x47223E_g + 3, 0xB72C68_g);
+			utils::hook::inject(0x472287_g + 3, 0xB72C68_g);
+			party_client_kicked_from_lobby_hook.create(0x4721C0_g, party_client_kicked_from_lobby_stub);
+			utils::hook::call(0x47228E_g, show_lobby_kick_message_stub);
 
 			party_client_handle_go_hook.create(
 				game::PartyClient_HandleGo, party_client_handle_go_stub);

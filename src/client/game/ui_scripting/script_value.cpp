@@ -38,6 +38,7 @@ namespace ui_scripting
 		{
 			this->release();
 			this->value_ = other.value_;
+			this->ref_ = std::exchange(other.ref_, 0);
 			other.value_.t = game::hks::TNONE;
 		}
 
@@ -59,18 +60,16 @@ namespace ui_scripting
 		this->value_ = value;
 
 		const auto state = *game::hks::lui_lua_state;
-		const auto top = state->m_apistack.top;
 
 		push_value(this->value_);
-		this->ref_ = game::hks::hksi_luaL_ref(*game::hks::lui_lua_state, -10000);
-		state->m_apistack.top = top;
+		this->ref_ = game::hks::hksi_luaL_ref(state, -10000);
 	}
 
 	void hks_object::release()
 	{
 		if (this->ref_)
 		{
-			game::hks::hksi_luaL_unref(*game::hks::lui_lua_state, -10000, this->ref_);
+			game::hks::hksi_luaL_unref(*game::hks::lui_lua_state, -10000, std::exchange(this->ref_, 0));
 			this->value_.t = game::hks::TNONE;
 		}
 	}
@@ -153,10 +152,11 @@ namespace ui_scripting
 			return;
 		}
 
-		const auto top = state->m_apistack.top;
+		const auto top = state->m_apistack.top - state->m_apistack.bottom;
+		reserve_stack(state, 1);
 		game::hks::hksi_lua_pushlstring(state, value, static_cast<unsigned int>(len));
 		obj = state->m_apistack.top[-1];
-		state->m_apistack.top = top;
+		state->m_apistack.top = state->m_apistack.bottom + top;
 
 		this->value_ = obj;
 	}

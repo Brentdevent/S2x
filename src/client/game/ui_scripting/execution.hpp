@@ -5,12 +5,16 @@
 
 namespace ui_scripting
 {
+	void reserve_stack(game::hks::lua_State* state, int count);
+
+	void push_value(game::hks::lua_State* state, game::hks::HksObject value);
 	void push_value(const script_value& value);
 	void push_value(const game::hks::HksObject& value);
 
 	script_value get_return_value(int offset);
 	arguments get_return_values();
-	arguments get_return_values(game::hks::HksObject* base);
+	arguments get_return_values(game::hks::lua_State* state);
+	arguments get_return_values(game::hks::lua_State* state, std::ptrdiff_t base);
 
 	bool notify(const std::string& name, const event_arguments& arguments);
 

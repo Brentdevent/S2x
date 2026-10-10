@@ -13,7 +13,13 @@ namespace ui_scripting
 		script_value get_field(void* ptr, game::hks::HksObjectType type, const script_value& key)
 		{
 			const auto state = *game::hks::lui_lua_state;
-			const auto top = state->m_apistack.top;
+			const auto top = state->m_apistack.top - state->m_apistack.bottom;
+			const auto restore_stack = utils::finally([=]()
+			{
+				state->m_apistack.top = state->m_apistack.bottom + top;
+			});
+
+			reserve_stack(state, 2);
 
 			push_value(key);
 
@@ -23,7 +29,6 @@ namespace ui_scripting
 			obj.v.ptr = ptr;
 
 			game::hks::hks_obj_gettable(&value, state, &obj, &state->m_apistack.top[-1]);
-			state->m_apistack.top = top;
 			return value;
 		}
 
@@ -39,18 +44,28 @@ namespace ui_scripting
 		}
 	}
 
+	void reserve_stack(game::hks::lua_State* state, const int count)
+	{
+		if (state->m_apistack.alloc_top - state->m_apistack.top < count)
+		{
+			game::hks::grow_api_stack(&state->m_callStack, state, count, false);
+		}
+	}
+
+	void push_value(game::hks::lua_State* state, const game::hks::HksObject value)
+	{
+		reserve_stack(state, 1);
+		*state->m_apistack.top++ = value;
+	}
+
 	void push_value(const script_value& value)
 	{
-		const auto state = *game::hks::lui_lua_state;
-		*state->m_apistack.top = value.get_raw();
-		state->m_apistack.top++;
+		push_value(*game::hks::lui_lua_state, value.get_raw());
 	}
 
 	void push_value(const game::hks::HksObject& value)
 	{
-		const auto state = *game::hks::lui_lua_state;
-		*state->m_apistack.top = value;
-		state->m_apistack.top++;
+		push_value(*game::hks::lui_lua_state, value);
 	}
 
 	script_value get_return_value(int offset)
@@ -59,16 +74,14 @@ namespace ui_scripting
 		return state->m_apistack.top[-1 - offset];
 	}
 
-	arguments get_return_values()
+	arguments get_return_values(game::hks::lua_State* state, const std::ptrdiff_t base)
 	{
-		const auto state = *game::hks::lui_lua_state;
-		const auto count = static_cast<int>(state->m_apistack.top - state->m_apistack.base);
+		const auto count = state->m_apistack.top - state->m_apistack.bottom - base;
 		arguments values;
 
-		for (auto i = count - 1; i >= 0; i--)
+		for (std::ptrdiff_t i = 0; i < count; ++i)
 		{
-			const auto v = get_return_value(i);
-			values.push_back(v);
+			values.emplace_back(state->m_apistack.bottom[base + i]);
 		}
 
 		if (values.empty())
@@ -79,24 +92,14 @@ namespace ui_scripting
 		return values;
 	}
 
-	arguments get_return_values(game::hks::HksObject* base)
+	arguments get_return_values(game::hks::lua_State* state)
 	{
-		const auto state = *game::hks::lui_lua_state;
-		const auto count = static_cast<int>(state->m_apistack.top - base);
-		arguments values;
+		return get_return_values(state, state->m_apistack.base - state->m_apistack.bottom);
+	}
 
-		for (auto i = count - 1; i >= 0; i--)
-		{
-			const auto v = get_return_value(i);
-			values.push_back(v);
-		}
-
-		if (values.empty())
-		{
-			values.push_back({});
-		}
-
-		return values;
+	arguments get_return_values()
+	{
+		return get_return_values(*game::hks::lui_lua_state);
 	}
 
 	bool notify(const std::string& name, const event_arguments& arguments)
@@ -139,18 +142,27 @@ namespace ui_scripting
 	arguments call_script_function(const function& function, const arguments& arguments)
 	{
 		const auto state = *game::hks::lui_lua_state;
-		const auto top = state->m_apistack.top;
+		const auto top = state->m_apistack.top - state->m_apistack.bottom;
+		const auto restore_stack = utils::finally([=]()
+		{
+			state->m_apistack.top = state->m_apistack.bottom + top;
+		});
 
 		push_value(function);
-		for (auto i = arguments.begin(); i != arguments.end(); ++i)
+
+		for (const auto& argument : arguments)
 		{
-			push_value(*i);
+			push_value(argument);
 		}
 
-		game::hks::vm_call_internal(state, static_cast<int>(arguments.size()), -1, 0);
-		const auto args = get_return_values(top);
-		state->m_apistack.top = top;
-		return args;
+		if (game::hks::hksi_lua_pcall(state, static_cast<int>(arguments.size()), -1, 0) != 0)
+		{
+			const auto& error = state->m_apistack.top[-1];
+			throw std::runtime_error(error.t == game::hks::TSTRING
+				? error.v.str->m_data : "LUI function failed with a non-string error");
+		}
+
+		return get_return_values(state, top);
 	}
 
 	script_value get_field(const userdata& self, const script_value& key)
