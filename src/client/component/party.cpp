@@ -1049,26 +1049,39 @@ namespace party
 			start_online_private_map(map_name, gametype, map_index, set_gametype);
 		}
 
-		int get_bot_count()
+		struct client_counts
 		{
-			int count = 0;
-			auto* clients = *game::mp::svs_clients;
+			int clients = 0;
+			int bots = 0;
+		};
 
+		client_counts get_match_client_counts(const int max_clients)
+		{
+			client_counts counts{};
+			const auto* clients = *game::mp::svs_clients;
 			if (!clients)
 			{
-				return 0;
+				return counts;
 			}
 
-			for (int i = 0; i < *game::sv_maxclients; ++i)
+			const auto limit = std::clamp(*game::sv_maxclients, 0, max_clients);
+			for (int i = 0; i < limit; ++i)
 			{
 				const auto& client = clients[i];
-				if (client.state != 0 && (client.remoteAddress.type == game::NA_BOT || client.testClient != 0))
+				// Match the native SV_ConnectionlessPacket getinfo count (0x6DEFCD).
+				if (client.state < 3)
 				{
-					++count;
+					continue;
+				}
+
+				++counts.clients;
+				if (client.testClient != 0)
+				{
+					++counts.bots;
 				}
 			}
 
-			return count;
+			return counts;
 		}
 
 		bool get_custom_lobby_connect_info(dedicated_party::connect_info& info)
@@ -1137,13 +1150,12 @@ namespace party
 			auto mapname = get_current_mapname();
 			auto gametype = get_current_gametype();
 			const auto hostname = get_current_hostname();
-			auto clients = get_connected_client_count();
-			auto bots = get_bot_count();
 			const auto& mode = game::environment::get_online_mode_info();
 			auto max_clients = *game::sv_maxclients > 0
 				? std::min(*game::sv_maxclients, mode.max_players)
 				: mode.max_players;
-			auto match_running = game::is_server_running();
+			const auto gameplay_running = game::is_server_running();
+			auto match_running = gameplay_running;
 
 			dedicated_party::connect_info party_connect_info{};
 			const auto has_dedicated_session = dedicated_party::get_connect_info(party_connect_info);
@@ -1155,13 +1167,19 @@ namespace party
 				mapname = party_connect_info.map_name;
 				gametype = party_connect_info.gametype;
 				max_clients = party_connect_info.max_members;
-				clients = std::clamp(party_connect_info.member_count, 0, max_clients);
-				bots = std::clamp(bots, 0, clients);
 				match_running = party_connect_info.match_running;
-				if (has_custom_session && !match_running)
-				{
-					bots = 0; // Frontend actors are not match bots/party members.
-				}
+			}
+
+			client_counts counts{};
+			if (gameplay_running)
+			{
+				// Party membership omits match bots. Count both from the gameplay slots.
+				counts = get_match_client_counts(max_clients);
+			}
+			else if (has_party_session)
+			{
+				// Frontend actors and old map slots are not current match players.
+				counts.clients = std::clamp(party_connect_info.member_count, 0, max_clients);
 			}
 
 			if (!data.empty())
@@ -1174,8 +1192,8 @@ namespace party
 			info.set("sv_hostname", hostname);
 			info.set("mapname", mapname);
 			info.set("gametype", gametype);
-			info.set("clients", std::to_string(clients));
-			info.set("bots", std::to_string(bots));
+			info.set("clients", std::to_string(counts.clients));
+			info.set("bots", std::to_string(counts.bots));
 			info.set("sv_maxclients", std::to_string(max_clients));
 			info.set("sv_running", match_running ? "1" : "0");
 			info.set("protocol", std::to_string(PROTOCOL));

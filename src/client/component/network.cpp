@@ -137,7 +137,7 @@ namespace network
 
 		bool handle_command(game::netadr_s* address, const char* command, game::msg_t* message)
 		{
-			if (!address || !command || !message || !message->data)
+			if (!address || !command || !message || !message->data || game::is_local_play())
 			{
 				return false;
 			}
