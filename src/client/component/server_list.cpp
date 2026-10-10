@@ -16,6 +16,7 @@
 
 #include <utils/cryptography.hpp>
 #include <utils/info_string.hpp>
+#include <utils/io.hpp>
 #include <utils/string.hpp>
 
 #include <algorithm>
@@ -40,8 +41,10 @@ namespace server_list
 
 			std::string hostname{};
 			std::string mapname{};
+			std::string map_reference{};
 			std::string gametype{};
 			int clients{};
+			int bots{};
 			int max_clients{};
 			int ping{};
 			std::string status{};
@@ -67,6 +70,8 @@ namespace server_list
 		std::mutex mutex;
 		std::vector<server_info> servers;
 		master_state_t master_state;
+		std::vector<std::string> favorites;
+		std::string favorites_mode;
 
 		bool parse_info_int(const std::string& value, const int minimum,
 			const int maximum, int& result)
@@ -98,6 +103,95 @@ namespace server_list
 			}
 
 			return value;
+		}
+
+		bool parse_favorite_address(const std::string& value, game::netadr_s& address)
+		{
+			const auto separator = value.find(':');
+			if (separator == std::string::npos || separator > 15)
+			{
+				return false;
+			}
+
+			int port{};
+			address = {};
+			if (!parse_info_int(value.substr(separator + 1), 1, 65535, port)
+				|| InetPtonA(AF_INET, value.substr(0, separator).data(), address.ip) != 1)
+			{
+				return false;
+			}
+
+			address.type = game::NA_IP;
+			address.localNetID = game::NS_SERVER;
+			address.port = htons(static_cast<unsigned short>(port));
+
+			return true;
+		}
+
+		std::filesystem::path favorites_path()
+		{
+			return game::get_appdata_path() / ("server_favorites_" + favorites_mode + ".txt");
+		}
+
+		void load_favorites_locked()
+		{
+			const std::string mode{game::environment::get_online_mode_info().token};
+			if (favorites_mode == mode)
+			{
+				return;
+			}
+
+			favorites_mode = mode;
+			favorites.clear();
+
+			if (utils::io::file_size(favorites_path().wstring()) > 8192)
+			{
+				return;
+			}
+
+			std::ifstream stream(favorites_path());
+			std::string line;
+
+			// Bound the file as well as the number of saved endpoints.
+			for (size_t bytes = 0; bytes < 8192 && favorites.size() < server_limit && std::getline(stream, line);)
+			{
+				bytes += line.size() + 1;
+				game::netadr_s address{};
+				if (line.size() > 21 || !parse_favorite_address(line, address))
+				{
+					continue;
+				}
+
+				const std::string canonical = network::net_adr_to_string(address);
+				if (std::ranges::find(favorites, canonical) == favorites.end())
+				{
+					favorites.emplace_back(canonical);
+				}
+			}
+		}
+
+		bool save_favorites_locked(const std::vector<std::string>& updated)
+		{
+			const auto path = favorites_path();
+			std::error_code error;
+			std::filesystem::create_directories(path.parent_path(), error);
+			if (error)
+			{
+				return false;
+			}
+
+			const auto temporary = path.wstring() + L".tmp";
+			std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
+
+			for (const auto& address : updated)
+			{
+				stream << address << "\r\n";
+			}
+
+			stream.close();
+
+			return !stream.fail() && MoveFileExW(temporary.data(), path.c_str(),
+				MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
 		}
 
 		std::string get_map_display_name(const std::string& mapname)
@@ -362,21 +456,30 @@ namespace server_list
 		void refresh_server_list()
 		{
 			game::netadr_s master{};
-			if (!master_server::get_address(master))
-			{
-				std::lock_guard<std::mutex> _{mutex};
-				servers.clear();
-				master_state = {};
-				return;
-			}
+			const auto has_master = master_server::get_address(master);
 
 			{
 				std::lock_guard<std::mutex> _{mutex};
 				servers.clear();
 				master_state = {};
 				master_state.address = master;
-				master_state.requesting = true;
+				master_state.requesting = has_master;
 				master_state.request_start = std::chrono::steady_clock::now();
+				load_favorites_locked();
+
+				for (const auto& favorite : favorites)
+				{
+					game::netadr_s address{};
+					if (parse_favorite_address(favorite, address))
+					{
+						queue_server_locked(address);
+					}
+				}
+			}
+
+			if (!has_master)
+			{
+				return;
 			}
 
 			console::info("[server_list] requesting S2 servers from %s\n", network::net_adr_to_string(master));
@@ -446,6 +549,116 @@ namespace server_list
 			console::info("[server_list] joining %s\n", address.data());
 
 			party::queue_connect(std::move(address));
+		}
+
+		ui_scripting::table get_server_snapshot()
+		{
+			// One snapshot keeps all row fields and actions tied to the same endpoint
+			// even when new replies reorder the discovery list between UI polls.
+			std::lock_guard<std::mutex> _{mutex};
+
+			ui_scripting::table result{};
+			ui_scripting::table entries{};
+			int index = 1;
+
+			const auto add_entry = [&](const server_info& server, const bool favorite)
+			{
+				ui_scripting::table entry{};
+				entry["address"] = server.address_string;
+				entry["hostname"] = server.hostname;
+				entry["map"] = server.mapname;
+				entry["mapReference"] = server.map_reference;
+				entry["gametype"] = server.gametype;
+				entry["clients"] = server.clients;
+				entry["bots"] = server.bots;
+				entry["maxClients"] = server.max_clients;
+				entry["ping"] = server.ping;
+				entry["status"] = server.status;
+				entry["online"] = server.valid;
+				entry["favorite"] = favorite;
+				entries[index++] = entry;
+			};
+
+			for (const auto& server : servers)
+			{
+				const auto favorite = std::ranges::find(favorites, server.address_string) != favorites.end();
+				if (server.valid || favorite)
+				{
+					add_entry(server, favorite);
+				}
+			}
+
+			for (const auto& favorite : favorites)
+			{
+				if (std::ranges::none_of(servers, [&](const server_info& server)
+				{
+					return server.address_string == favorite;
+				}))
+				{
+					server_info offline{};
+					offline.address_string = favorite;
+					offline.hostname = favorite;
+					offline.status = "Offline";
+					add_entry(offline, true);
+				}
+			}
+
+			result["servers"] = entries;
+			result["refreshing"] = master_state.requesting || !master_state.queued_servers.empty();
+
+			return result;
+		}
+
+		bool toggle_favorite(const std::string& address)
+		{
+			std::lock_guard<std::mutex> _{mutex};
+
+			auto updated = favorites;
+			const auto existing = std::ranges::find(updated, address);
+			if (existing != updated.end())
+			{
+				updated.erase(existing);
+			}
+			else
+			{
+				if (updated.size() >= server_limit || std::ranges::none_of(servers, [&](const server_info& server)
+				{
+					return server.valid && server.address_string == address;
+				}))
+				{
+					return false;
+				}
+
+				updated.emplace_back(address);
+			}
+
+			if (!save_favorites_locked(updated))
+			{
+				console::warn("[server_list] could not save favorites\n");
+				return false;
+			}
+
+			favorites = std::move(updated);
+
+			return true;
+		}
+
+		bool join_server_address(const std::string& address)
+		{
+			{
+				std::lock_guard<std::mutex> _{mutex};
+				if (std::ranges::none_of(servers, [&](const server_info& server)
+				{
+					return server.valid && server.address_string == address;
+				}))
+				{
+					return false;
+				}
+			}
+
+			party::queue_connect(address);
+
+			return true;
 		}
 
 		void handle_info_response(const game::netadr_s& from, const std::string_view& data)
@@ -569,12 +782,15 @@ namespace server_list
 
 				server->hostname = hostname.empty() ? server->address_string : hostname;
 				server->mapname = map_display_name;
+				server->map_reference = mapname;
 				server->gametype = gametype_display_name;
 				server->clients = clients;
+				server->bots = bots;
 				server->max_clients = max_clients;
 				// The least delayed sample reduces frame/processing jitter in the browser estimate.
 				server->ping = server->valid ? std::min(server->ping, ping) : ping;
-				server->status = max_clients > 0 && clients >= max_clients ? "Full" : "Joinable";
+				// Bots yield their slots to joining players.
+				server->status = clients - bots >= max_clients ? "Full" : "Joinable";
 				server->valid = true;
 
 				sort_servers();
@@ -629,6 +845,21 @@ namespace server_list
 			lobby["CancelS2xConnection"] = []
 			{
 				party::cancel_pending_connection();
+			};
+
+			lobby["GetServerSnapshot"] = []
+			{
+				return get_server_snapshot();
+			};
+
+			lobby["ToggleFavorite"] = [](const std::string& address)
+			{
+				return toggle_favorite(address);
+			};
+
+			lobby["JoinServerAddress"] = [](const std::string& address)
+			{
+				return join_server_address(address);
 			};
 
 			console::info("[server_list] installed Lobby server browser functions\n");

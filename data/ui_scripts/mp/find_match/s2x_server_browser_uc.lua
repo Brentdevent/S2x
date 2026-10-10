@@ -1,19 +1,4 @@
-local SERVER_COLUMNS = Engine.IsPC() and {
-	Host = 2,
-	Map = 3,
-	Clients = 4,
-	Game = 5,
-	Ping = 7,
-	Status = 10
-} or {
-	Host = 0,
-	Map = 1,
-	Clients = 2,
-	Game = 3,
-	Ping = 4,
-	Status = 5
-}
-
+local model = require( "s2x_server_browser_model" )
 local REFRESH_COOLDOWN_MS = 2000
 local SERVER_ROW_FOCUS = "serverButton"
 
@@ -23,306 +8,269 @@ local S2X_LABELS = {
 	SERVER_BROWSER_DESCRIPTION = "Browse dedicated S2x servers.",
 	SERVER_BROWSER_FIND_MATCH_DESCRIPTION = "Browse available S2x servers.",
 	FIND_MATCH_TITLE = "MODE SELECT",
-	FIND_MATCH_DESCRIPTION = "Choose how you want to play.",
-	REFRESH = "REFRESH",
-	REFRESH_DESCRIPTION = "Refresh the server list.",
-	NO_SERVERS_FOUND = "No servers found"
+	FIND_MATCH_DESCRIPTION = "Choose how you want to play."
 }
 
 local function get_browser_state( element )
-	if not element then
-		return nil
-	end
+	local scoped = element and LUI.FlowManager.GetScopedData( element )
 
-	local scoped_data = LUI.FlowManager.GetScopedData( element )
-	if not scoped_data then
-		return nil
-	end
-
-	return scoped_data.s2xServerBrowser
+	return scoped and scoped.s2xServerBrowser
 end
 
-local function get_controller_index( controller, state )
-	if type( controller ) == "number" then
-		return controller
-	end
-
-	if type( controller ) == "table" and type( controller.controller ) == "number" then
-		return controller.controller
-	end
-
-	return state and state.controllerIndex or nil
-end
-
-local function set_row_text( text_widget, value )
-	if text_widget then
-		text_widget:setText( value or "" )
+local function set_text( widget, text )
+	if widget then
+		widget:setText( text or "", 0 )
 	end
 end
 
-local function set_list_chrome_alpha( menu, server_count )
-	local alpha = server_count > 0 and 1 or 0
-	if menu.ScrollBar then
-		menu.ScrollBar:setAlpha( alpha )
-	end
-	if menu.GridPositionIndicator then
-		menu.GridPositionIndicator:setAlpha( alpha )
-	end
-	if menu.EmptyState then
-		menu.EmptyState:setAlpha( server_count > 0 and 0 or 1 )
+local function selected_server( state )
+	for _, server in ipairs( state.servers ) do
+		if server.address == state.selectedAddress then
+			return server
+		end
 	end
 end
 
-local function apply_server_count( menu, state, server_count, force_child_count )
-	local count_changed = state.serverCount ~= server_count
-	state.serverCount = server_count
+local function update_details( menu, state )
+	local server = selected_server( state )
 
-	if menu.AvailableGames then
-		if count_changed or force_child_count then
-			menu.AvailableGames:SetNumChildren( server_count )
-			if menu.ScrollBar and LUI.UIVerticalScrollbar then
-				LUI.UIVerticalScrollbar.linkTo( menu.ScrollBar, menu.AvailableGames )
+	set_text( menu.DetailHost, server and server.hostname or "SELECT A SERVER" )
+	set_text( menu.DetailMap, server and server.map or "" )
+	set_text( menu.DetailMode, server and server.gametype or "" )
+	set_text( menu.DetailAddress, server and server.address or "" )
+	set_text( menu.DetailStatus, server and server.status or "Browse the list to see server details." )
+	set_text( menu.DetailPing, server and server.online and (server.ping .. " ms") or "" )
+	set_text( menu.FavoriteButton and menu.FavoriteButton.Name,
+		server and server.favorite and "REMOVE FAVORITE" or "ADD FAVORITE" )
+
+	local map = server and server.online and server.mapReference or ""
+
+	if state.previewMap ~= map then
+		state.previewMap = map
+		menu.MapPreview:setAlpha( 0, 0 )
+		set_text( menu.PreviewPlaceholder, "MAP PREVIEW UNAVAILABLE" )
+		menu.PreviewPlaceholder:setAlpha( 1, 0 )
+
+		if map ~= "" then
+			-- Same map lookup and material cache used by the dedicated lobby.
+			local image = Lobby.GetMapImage( map )
+
+			if image and image ~= "" then
+				menu.MapPreview:setImage( RegisterMaterial( MODIFIERS.CacheIconMaterial( image ) ), 0 )
+				menu.MapPreview:setAlpha( 1, 0 )
+				menu.PreviewPlaceholder:setAlpha( 0, 0 )
 			end
-		else
-			menu.AvailableGames:RefreshContent()
 		end
 	end
 
-	set_list_chrome_alpha( menu, server_count )
-	return count_changed
+	ACTIONS.RefreshIsButtonDisabled( menu.JoinButton )
+	ACTIONS.RefreshIsButtonDisabled( menu.FavoriteButton )
 end
 
-local function focus_refresh_button( menu )
-	if menu.AvailableGames then
-		menu.AvailableGames:processEvent( {
-			name = "lose_focus"
-		} )
-	end
-	if menu.RefreshListButton then
-		menu.RefreshListButton:processEvent( {
-			name = "gain_focus"
-		} )
-	end
-end
-
-local function focus_server_list( menu )
-	if menu.AvailableGames then
-		menu.AvailableGames:processEvent( {
-			name = "gain_focus"
-		} )
-	end
-	if menu.RefreshListButton then
-		menu.RefreshListButton:processEvent( {
-			name = "lose_focus"
-		} )
-	end
-end
-
-local function join_focused_server( menu, controller )
+local function record_focus( menu, element )
 	local state = get_browser_state( menu )
-	local server_list = menu and menu.AvailableGames or nil
-	if not state or not server_list then
-		return
-	end
 
-	if state.lastFocusedElement ~= server_list and
-		state.lastFocusedElement ~= SERVER_ROW_FOCUS then
-		return
-	end
-	if CONDITIONS.IsE3HostMachine() then
-		return
-	end
-
-	local server_index = server_list:GetFocusPosition( LUI.DIRECTION.vertical )
-	local server_count = state.serverCount or 0
-	if type( server_index ) ~= "number" or server_index < 0 or
-		server_index >= server_count then
-		return
-	end
-
-	if not server_list.GetElementAtPosition then
-		return
-	end
-	local focused_row = server_list:GetElementAtPosition( 0, server_index )
-	if not focused_row or not focused_row.populated then
-		return
-	end
-
-	local controller_index = get_controller_index( controller, state )
-	if type( controller_index ) ~= "number" then
-		return
-	end
-
-	if CONDITIONS.IsE3Build() then
-		Engine.SetDvarBool( "871", true )
-	end
-	CharacterScene.RunCharacterScene( false )
-	state.lastFocusedElement = nil
-	Lobby.S2xJoinServer( controller_index, server_index )
-end
-
-local function record_focus( menu, focused_element )
-	local state = get_browser_state( menu )
-	if state then
-		state.lastFocusedElement = focused_element
+	if state and not state.updating then
+		state.lastFocusedElement = element
 	end
 end
 
-local function update_server_list( menu, controller )
+local function select_row( row )
+	local state = get_browser_state( row )
+
+	if state and row.server and not state.updating then
+		state.selectedAddress = row.server.address
+		state.lastFocusedElement = SERVER_ROW_FOCUS
+		update_details( state.menu, state )
+	end
+end
+
+local function join_selected_server( menu )
 	local state = get_browser_state( menu )
+	local server = state and selected_server( state )
+
+	if not server or not server.online or CONDITIONS.IsE3HostMachine() then
+		return
+	end
+
+	if Lobby.JoinServerAddress( server.address ) then
+		if CONDITIONS.IsE3Build() then
+			Engine.SetDvarBool( "871", true )
+		end
+
+		CharacterScene.RunCharacterScene( false )
+	end
+end
+
+local function join_focused_server( menu )
+	local state = get_browser_state( menu )
+
+	if state and (state.lastFocusedElement == SERVER_ROW_FOCUS or
+		state.lastFocusedElement == menu.AvailableGames) then
+		join_selected_server( menu )
+	end
+end
+
+local function update_server_list( menu )
+	local state = get_browser_state( menu )
+
 	if not state then
 		return
 	end
 
-	local controller_index = get_controller_index( controller, state )
-	if type( controller_index ) ~= "number" then
-		return
+	local snapshot = Lobby.GetServerSnapshot()
+	local servers = model.visibleServers( snapshot.servers, state.favoritesOnly, state.filter, state.sort )
+	local index = model.selectionIndex( servers, state.selectedAddress )
+	local was_list_focused = state.lastFocusedElement == SERVER_ROW_FOCUS or
+		state.lastFocusedElement == menu.AvailableGames
+	local old_count = #state.servers
+	local old_index = model.selectionIndex( state.servers, state.selectedAddress )
+	local rows_changed = not model.sameServers( state.servers, servers )
+
+	state.updating = true
+	state.servers = servers
+	state.selectedAddress = index and servers[index].address or nil
+
+	if old_count ~= #servers then
+		menu.AvailableGames:SetNumChildren( #servers )
 	end
 
-	local previous_count = state.serverCount or 0
-	Lobby.S2xUpdateServerDisplayList( controller_index )
-	local server_count = Lobby.S2xGetServerCount( controller_index ) or 0
-	local count_changed = apply_server_count( menu, state, server_count, false )
-
-	if count_changed and previous_count > 0 and server_count == 0 then
-		focus_refresh_button( menu )
-	end
-end
-
-local function decrement_refresh_button_cooldown( menu )
-	local state = get_browser_state( menu )
-	if not state or not state.refreshCooldownMs or state.refreshCooldownMs <= 0 then
-		return
+	if rows_changed then
+		-- SetNumChildren can keep existing cell content. Rebind changed rows before
+		-- restoring selection, but leave the native hover/focus state alone on idle ticks.
+		menu.AvailableGames:RefreshContent()
 	end
 
-	local polling_interval = menu.PollingTimer and menu.PollingTimer.interval or nil
-	if type( polling_interval ) ~= "number" or polling_interval <= 0 then
-		return
-	end
+	-- Reapplying focus to the same row retriggers its hover sound in the native grid.
+	if index and (old_count ~= #servers or old_index ~= index) then
+		local position = { x = 0, y = index - 1 }
 
-	state.refreshCooldownMs = state.refreshCooldownMs - polling_interval
-	if state.refreshCooldownMs <= 0 then
-		state.refreshCooldownMs = 0
-		if menu.RefreshListButton then
-			ACTIONS.RefreshIsButtonDisabled( menu.RefreshListButton )
-		end
-	end
-end
-
-local function is_refresh_disabled( menu )
-	local state = get_browser_state( menu )
-	return state ~= nil and (state.refreshCooldownMs or 0) > 0
-end
-
-local function refresh_server_list( menu, controller, focus_after_refresh )
-	local state = get_browser_state( menu )
-	if not state or is_refresh_disabled( menu ) then
-		return
-	end
-
-	local controller_index = get_controller_index( controller, state )
-	if type( controller_index ) ~= "number" then
-		return
-	end
-
-	Lobby.S2xRefreshServerList( controller_index, REFRESH_COOLDOWN_MS )
-	local server_count = Lobby.S2xGetServerCount( controller_index ) or 0
-	apply_server_count( menu, state, server_count, true )
-	state.refreshCooldownMs = REFRESH_COOLDOWN_MS
-
-	if menu.AvailableGames then
-		menu.AvailableGames:processEvent( {
-			name = "lose_focus"
-		} )
-	end
-	if menu.RefreshListButton then
-		ACTIONS.RefreshIsButtonDisabled( menu.RefreshListButton )
-	end
-
-	if focus_after_refresh then
-		if server_count > 0 then
-			focus_server_list( menu )
+		if was_list_focused then
+			menu.AvailableGames:SetFocusedPosition( position, true, true )
 		else
-			focus_refresh_button( menu )
+			menu.AvailableGames:SetPosition( position, true )
 		end
+	end
+
+	state.updating = false
+
+	if old_count > 0 and #servers == 0 and was_list_focused then
+		menu.AvailableGames:processEvent( { name = "lose_focus" } )
+		menu.RefreshListButton:processEvent( { name = "gain_focus" } )
+	end
+
+	menu.GridPositionIndicator:setAlpha( #servers > 0 and 1 or 0, 0 )
+	menu.EmptyState:setAlpha( #servers == 0 and 1 or 0, 0 )
+	set_text( menu.EmptyState, snapshot.refreshing and "Searching for servers..." or
+		(state.favoritesOnly and "No favorites match this filter.\nAdd a server from the Internet list." or
+		"No servers match this filter.\nTry another filter or refresh the list.") )
+	set_text( menu.SourceButton.Name, state.favoritesOnly and "SOURCE: FAVORITES" or "SOURCE: INTERNET" )
+	set_text( menu.SortButton.Name, "SORT: " .. model.sortLabels[state.sort] )
+	set_text( menu.FilterButton.Name, "SHOW: " .. model.filterLabels[state.filter] )
+
+	update_details( menu, state )
+end
+
+local function refresh_server_list( menu )
+	local state = get_browser_state( menu )
+
+	if not state or state.refreshCooldownMs > 0 then
+		return
+	end
+
+	Lobby.S2xRefreshServerList( state.controllerIndex, REFRESH_COOLDOWN_MS )
+	state.refreshCooldownMs = REFRESH_COOLDOWN_MS
+	set_text( menu.ActionMessage, "" )
+	ACTIONS.RefreshIsButtonDisabled( menu.RefreshListButton )
+	update_server_list( menu )
+end
+
+local function tick( menu )
+	local state = get_browser_state( menu )
+
+	if not state then
+		return
+	end
+
+	state.refreshCooldownMs = math.max( 0, state.refreshCooldownMs - 250 )
+	ACTIONS.RefreshIsButtonDisabled( menu.RefreshListButton )
+	update_server_list( menu )
+end
+
+local function change_option( menu, option )
+	local state = get_browser_state( menu )
+
+	if option == "source" then
+		state.favoritesOnly = not state.favoritesOnly
+	elseif option == "sort" then
+		state.sort = state.sort % #model.sortLabels + 1
+	elseif option == "filter" then
+		state.filter = state.filter % #model.filterLabels + 1
+	end
+
+	set_text( menu.ActionMessage, "" )
+	update_server_list( menu )
+end
+
+local function toggle_favorite( menu )
+	local state = get_browser_state( menu )
+	local server = state and selected_server( state )
+
+	if not server then
+		return
+	end
+
+	local was_favorite = server.favorite
+
+	if Lobby.ToggleFavorite( server.address ) then
+		set_text( menu.ActionMessage, was_favorite and "Favorite removed." or "Server saved to favorites." )
+		update_server_list( menu )
+	else
+		set_text( menu.ActionMessage, "Could not save favorites. Check disk access or the 128-server limit." )
 	end
 end
 
 local function populate_server_row( row, _, server_index )
 	local state = get_browser_state( row )
-	local server_count = state and state.serverCount or 0
-	local controller_index = state and state.controllerIndex or nil
-	local valid_index = type( server_index ) == "number" and server_index >= 0 and
-		server_index < server_count
+	local server = state and state.servers[server_index + 1]
 
-	-- Preserve the existing row styling: every populated numeric row used the
-	-- alternate sequence because Lua treats both modulo results as truthy.
-	local layout_sequence = type( server_index ) == "number" and
-		"AlternateLayout" or "RegularLayout"
-	ACTIONS.AnimateSequence( row, layout_sequence )
+	row.server = server
+	row.populated = server ~= nil
+	row.m_inputDisabled = not row.populated
 
-	row.populated = false
-	row.m_inputDisabled = true
-	row:hide()
-
-	local host_name, status, map_name, clients, game_mode, ping = nil
-	if valid_index and type( controller_index ) == "number" then
-		host_name = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Host )
-		status = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Status )
-		map_name = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Map )
-		clients = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Clients )
-		game_mode = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Game )
-		ping = Lobby.S2xGetServerData( controller_index, server_index, SERVER_COLUMNS.Ping )
-
-		row.populated = true
-		row.m_inputDisabled = false
-		row:show()
+	if not server then
+		row:hide()
+		return
 	end
 
-	set_row_text( row.HostName, host_name )
-	set_row_text( row.Status, status )
-	set_row_text( row.MapName, map_name )
-	set_row_text( row.Players, clients )
-	set_row_text( row.Mode, game_mode )
-	set_row_text( row.Ping, ping )
+	row:show()
+	row.Background:setAlpha( server_index % 2 == 0 and 0.65 or 0.4, 0 )
+	set_text( row.Favorite, server.favorite and "+" or "" )
+	set_text( row.HostName, server.hostname )
+	set_text( row.MapName, server.online and server.map or server.status )
+	set_text( row.Mode, server.gametype )
+	set_text( row.Players, server.online and string.format( "%d/%d", server.clients - server.bots, server.maxClients ) or "--" )
+	set_text( row.Bots, server.online and tostring( server.bots ) or "--" )
+	set_text( row.Ping, server.online and tostring( server.ping ) or "--" )
 
-	if type( controller_index ) == "number" then
-		ACTIONS.BindSelfToButtonHelperBar( row, controller_index, LuaButton.primary )
-	end
+	ACTIONS.BindSelfToButtonHelperBar( row, state.controllerIndex, LuaButton.primary )
 end
 
-local function can_focus_list_item( element, _, server_index )
+local function can_focus_list_item( element, _, index )
 	local state = get_browser_state( element )
-	return state ~= nil and type( server_index ) == "number" and
-		server_index >= 0 and server_index < (state.serverCount or 0)
-end
 
-local function can_focus_server_list( element, focus_type )
-	if focus_type == FocusType.Gamepad then
-		local state = get_browser_state( element )
-		if not state or (state.serverCount or 0) <= 0 then
-			Engine.PlaySound( CoD.SFX.Error )
-			return false
-		end
-	end
-
-	return LUI.UIElement.canFocus( element, focus_type )
+	return state ~= nil and type( index ) == "number" and index >= 0 and index < #state.servers
 end
 
 local function preload_server_browser( menu, controller )
 	PersistentBackground.Set( PersistentBackground.Variants.HubDefault )
 
-	local scoped_data = LUI.FlowManager.GetScopedData( menu )
-	if scoped_data then
-		scoped_data.s2xServerBrowser = {
-			controllerIndex = controller,
-			serverCount = 0,
-			lastFocusedElement = nil,
-			refreshCooldownMs = 0
-		}
-	end
+	local scoped = LUI.FlowManager.GetScopedData( menu )
+	scoped.s2xServerBrowser = {
+		menu = menu, controllerIndex = controller, servers = {},
+		favoritesOnly = false, filter = 1, sort = 1, refreshCooldownMs = 0
+	}
 
-	Lobby.S2xBuildServerList( controller )
 	menu.isSignInMenu = true
 end
 
@@ -335,6 +283,7 @@ local function setup_for_e3( controller )
 	if Engine.UsingStreamingInstall() then
 		Engine.ForceUpdateArenas()
 	end
+
 	Engine.SetSystemLink( true )
 	Engine.SetOnlineGame( false )
 	AAR.ClearAAR()
@@ -352,57 +301,70 @@ local function setup_for_e3( controller )
 end
 
 local function postload_server_browser( menu, controller )
-	local function cancel_connection_and_leave()
+	local state = get_browser_state( menu )
+
+	local function leave()
 		Lobby.CancelS2xConnection()
 		LUI.FlowManager.RequestLeaveMenu( menu )
 	end
 
-	if menu.AvailableGames then
-		menu.AvailableGames.canFocus = can_focus_server_list
-	end
-
-	if menu.ButtonHelperBar then
-		local helper_buttons = menu.ButtonHelperBar:BeginSet()
-		helper_buttons:AddLeft( LuaButton.primary, "LUA_MENU_SELECT", join_focused_server )
-		if not CONDITIONS.IsE3Build() then
-			helper_buttons:AddRight( LuaButton.secondary, "LUA_MENU_BACK", cancel_connection_and_leave )
+	menu.AvailableGames.canFocus = function ( element, focus_type )
+		if #state.servers == 0 then
+			return false
 		end
-		helper_buttons:Finish()
-		menu.ButtonHelperBar.dontCloseMenusOnStartPress = true
+
+		return LUI.UIElement.canFocus( element, focus_type )
 	end
 
-	menu:registerEventHandler( "button_secondary", cancel_connection_and_leave )
-
-	if menu.RefreshListButton then
-		menu.RefreshListButton.disabledFunc = function ()
-			return is_refresh_disabled( menu )
-		end
+	menu.RefreshListButton.disabledFunc = function ()
+		return state.refreshCooldownMs > 0
 	end
 
-	refresh_server_list( menu, controller, false )
+	menu.JoinButton.disabledFunc = function ()
+		local server = selected_server( state )
+
+		return not server or not server.online
+	end
+
+	menu.FavoriteButton.disabledFunc = function ()
+		return selected_server( state ) == nil
+	end
+
+	local helper = menu.ButtonHelperBar:BeginSet()
+	helper:AddLeft( LuaButton.primary, "LUA_MENU_SELECT", join_focused_server )
+
+	if not CONDITIONS.IsE3Build() then
+		helper:AddRight( LuaButton.secondary, "LUA_MENU_BACK", leave )
+	end
+
+	helper:Finish()
+	menu.ButtonHelperBar.dontCloseMenusOnStartPress = true
+	menu:registerEventHandler( "button_secondary", leave )
+
 	menu:registerEventHandler( "gain_focus", function ()
-		local state = get_browser_state( menu )
-		if state and (state.serverCount or 0) > 0 and menu.AvailableGames then
-			menu.AvailableGames:processEvent( {
-				name = "gain_focus"
-			} )
-		elseif menu.RefreshListButton then
-			menu.RefreshListButton:processEvent( {
-				name = "gain_focus"
-			} )
+		if #state.servers > 0 then
+			menu.AvailableGames:processEvent( { name = "gain_focus" } )
+		else
+			menu.SourceButton:processEvent( { name = "gain_focus" } )
 		end
 	end )
+
+	refresh_server_list( menu )
 end
 
 return {
 	S2X_LABELS = S2X_LABELS,
 	PreLoadFunc = preload_server_browser,
 	PostLoadFunc = postload_server_browser,
-	decrement_refresh_button_cooldown = decrement_refresh_button_cooldown,
+	setup_for_e3 = setup_for_e3,
 	record_focus = record_focus,
+	select_row = select_row,
+	join_selected_server = join_selected_server,
 	refresh_server_list = refresh_server_list,
 	update_server_list = update_server_list,
-	can_focus_list_item = can_focus_list_item,
+	change_option = change_option,
+	toggle_favorite = toggle_favorite,
+	tick = tick,
 	populate_server_row = populate_server_row,
-	setup_for_e3 = setup_for_e3
+	can_focus_list_item = can_focus_list_item
 }
