@@ -4,6 +4,7 @@ end
 
 local MODULES_TO_RELOAD = {
 	"s2x_findgame_menu",
+	"s2x_server_browser_model",
 	"s2x_server_browser_row_uc",
 	"s2x_server_browser_row",
 	"s2x_server_browser_uc",
