@@ -8,6 +8,7 @@
 #include "game/game.hpp"
 #include "game/dvars.hpp"
 #include "game/ui_scripting/execution.hpp"
+#include "game/ui_scripting/debug.hpp"
 
 #include "filesystem.hpp"
 #include "ui_scripting.hpp"
@@ -198,7 +199,7 @@ namespace ui_scripting
 			});
 
 			game::hks::HksCompilerSettings compiler_settings{};
-			return game::hks::hksi_hksL_loadbuffer(state, &compiler_settings, data.data(), static_cast<unsigned int>(data.size()), name.data());
+			return debug::load_buffer(state, &compiler_settings, name, data);
 		}
 
 		std::string get_load_error(game::hks::lua_State* state, const std::ptrdiff_t top, const int result)
@@ -387,6 +388,7 @@ namespace ui_scripting
 			active_lua_state = nullptr;
 			converted_functions.clear();
 			state_globals.clear();
+			debug::clear();
 
 			return hks_shutdown_hook.invoke<void>();
 		}
@@ -516,30 +518,29 @@ namespace ui_scripting
 
 					const auto script_name = std::exchange(globals.raw_script_name, {});
 					const auto require_root = globals.in_require_script;
-					const auto top = state->m_apistack.top - state->m_apistack.bottom;
 					const auto result = load_buffer(state, script_name, utils::io::read_file(script_name));
 
-					if (result != 0)
+					if (result == 0)
 					{
-						print_error(utils::string::va("Failed to load custom Lua script '%s': %s",
-							script_name.data(), get_load_error(state, top, result).data()));
+						globals.loaded_scripts.push_back({ script_name, require_root });
 
 						return result;
 					}
-
-					globals.loaded_scripts.push_back({ script_name, require_root });
-
-					return result;
 				}
-
-				return game::hks::load(state, compiler_options, reader, reader_data, chunk_name);
+				else
+				{
+					return game::hks::load(state, compiler_options, reader, reader_data, chunk_name);
+				}
 			}
 			catch (const std::exception& e)
 			{
 				reserve_stack(state, 1);
 				game::hks::hksi_lua_pushlstring(state, e.what(), static_cast<int>(std::strlen(e.what())));
-				return game::hks::HKS_ERRFILE;
 			}
+
+			// Preserve the compiler error instead of the loader's generic "unable to load module".
+			game::hks::hksi_lua_error(state);
+			return game::hks::HKS_ERRFILE;
 		}
 
 		int main_handler(game::hks::lua_State* state)
@@ -629,6 +630,8 @@ namespace ui_scripting
 				return;
 			}
 			
+			debug::initialize();
+
 			utils::hook::call(game::select(0x309B7B, 0x17E16B), db_find_x_asset_header_stub);
 			utils::hook::call(game::select(0x309CBC, 0x17E2AC), db_find_x_asset_header_stub);
 			utils::hook::call(game::select(0x309CFF, 0x17E2EF), hks_load_stub);
