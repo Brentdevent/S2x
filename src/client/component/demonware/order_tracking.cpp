@@ -7,7 +7,10 @@
 #include "component/console/console.hpp"
 #include "component/scheduler.hpp"
 #include "game/game.hpp"
+#include "game/types/demonware.hpp"
 #include "game/demonware/achievement/order_progress.hpp"
+#include "game/demonware/reward/json.hpp"
+#include "game/demonware/reward/push.hpp"
 #include "steam/steam.hpp"
 
 #include <utils/hook.hpp>
@@ -60,6 +63,7 @@ namespace order_progress
 			std::vector<progress::target> targets;
 			std::vector<progress::usage> usage;
 			bool remote{};
+			std::uint64_t stream{};
 		};
 
 		struct remote_occurrence
@@ -85,6 +89,32 @@ namespace order_progress
 			std::uint32_t checkpoint_seconds{};
 		};
 
+		// AE_ParseAchievementRecord (0x13A570) and the 0x40-byte native cache stride.
+		struct alignas(8) native_achievement
+		{
+			std::byte reserved0[8];
+			std::int32_t kind;
+			std::int32_t id;
+			std::int32_t target;
+			std::byte reserved1[20];
+			std::uint16_t progress;
+			std::byte reserved2[14];
+			std::int32_t status;
+			std::byte reserved3[4];
+		};
+		static_assert(sizeof(native_achievement) == 0x40);
+		static_assert(offsetof(native_achievement, kind) == 0x8);
+		static_assert(offsetof(native_achievement, id) == 0xC);
+		static_assert(offsetof(native_achievement, target) == 0x10);
+		static_assert(offsetof(native_achievement, progress) == 0x28);
+		static_assert(offsetof(native_achievement, status) == 0x38);
+
+		struct progress_notification
+		{
+			demonware::achievement_record record;
+			bool ready{};
+		};
+
 		std::atomic_uint64_t local_user{};
 		std::atomic_bool accepting{};
 		std::mutex pending_mutex;
@@ -93,6 +123,8 @@ namespace order_progress
 		std::deque<std::pair<native_entry*, pending_occurrence>> pending;
 		std::deque<remote_occurrence> remote_pending;
 		std::unordered_map<native_entry*, relayed_occurrence> relayed;
+		// Coalesce successive increments until the native achievement fetch reaches their page.
+		std::unordered_map<std::string, progress_notification> notifications;
 		std::uint64_t remote_stream{};
 		std::uint64_t remote_sequence{};
 		match_timer timer;
@@ -323,7 +355,10 @@ namespace order_progress
 					continue;
 				}
 
-				const auto saved = progress::settle(occurrence.targets, occurrence.time, occurrence.usage);
+				const auto notify = occurrence.remote && remote_stream && occurrence.stream == remote_stream;
+				std::vector<demonware::achievement_record> progressed;
+				const auto saved = progress::settle(occurrence.targets, occurrence.time, occurrence.usage,
+					notify ? &progressed : nullptr);
 				if (saved == mutation_result::save_failed)
 				{
 					return false;
@@ -334,6 +369,10 @@ namespace order_progress
 
 				if (saved == mutation_result::updated && accepting)
 				{
+					for (auto& record : progressed)
+					{
+						notifications.insert_or_assign(record.name, progress_notification{record});
+					}
 					achievement_sync::request_refresh();
 				}
 			}
@@ -748,6 +787,7 @@ namespace order_progress
 				}
 
 				remote_pending.clear();
+				notifications.clear();
 				relayed.clear();
 				timer.running = false;
 				flush();
@@ -810,6 +850,81 @@ namespace order_progress
 			original = hook.get_original();
 		}
 
+		void display_notifications()
+		{
+			std::vector<native_achievement> updates;
+			std::uint64_t stream{};
+			{
+				std::lock_guard lock{pending_mutex};
+				if (!accepting || !remote_stream || notifications.empty())
+				{
+					return;
+				}
+				stream = remote_stream;
+				const auto controller = game::CL_ControllerIndexFromClientNum(0);
+				if (controller < 0 || controller >= native_controller_count)
+				{
+					return;
+				}
+				const auto* table = game::DB_FindXAssetHeader(game::ASSET_TYPE_STRINGTABLE,
+					"dw/dwGameChallenges.csv", false).stringTable;
+				if (!is_valid_challenge_table(table))
+				{
+					return;
+				}
+				const auto current = demonware::achievement_store::get_all();
+				for (auto it = notifications.begin(); it != notifications.end();)
+				{
+					if (!it->second.ready)
+					{
+						++it;
+						continue;
+					}
+					const auto& expected = it->second.record;
+					const auto saved = std::ranges::find(current, expected.name, &demonware::achievement_record::name);
+					if (saved == current.end() || !progress::eligible(*saved) || saved->kind != expected.kind ||
+						saved->activation_timestamp != expected.activation_timestamp)
+					{
+						// A claim, cancellation or expiry can race the completed fetch.
+						it = notifications.erase(it);
+						continue;
+					}
+					const auto row = find_challenge_row(table, expected.name);
+					const auto id = row ? cell(table, *row, 0) : std::nullopt;
+					int challenge{};
+					if (id && parse_native_id(*id, challenge))
+					{
+						// 0x13A230 finds the controller's native cached achievement by ID.
+						const auto* cached = utils::hook::invoke<const native_achievement*>(0x13A230_g, controller, challenge);
+						if (cached && cached->kind == expected.kind && cached->status == 2 &&
+							cached->target > 0 && static_cast<std::uint32_t>(cached->target) == expected.progress_target && cached->progress == expected.progress)
+						{
+							updates.push_back(*cached);
+							it = notifications.erase(it);
+							continue;
+						}
+					}
+					++it;
+				}
+			}
+
+			for (const auto& update : updates)
+			{
+				{
+					std::lock_guard lock{pending_mutex};
+					if (!accepting || remote_stream != stream)
+					{
+						return;
+					}
+				}
+				// Native ProgressionUpdate emitter, also used by the stock y command.
+				// Run on the main thread, after the native cache catches up. The push
+				// handler suppresses equal counters; a full fetch can reach it first.
+				// Do not hold our lock across LUI callbacks (which may disconnect).
+				utils::hook::invoke<void>(0x13DAE0_g, 0u, &update);
+			}
+		}
+
 		bool begin_remote_stream(const wire::batch& batch)
 		{
 			if (batch.stream == remote_stream)
@@ -823,6 +938,7 @@ namespace order_progress
 				return false;
 			}
 
+			notifications.clear();
 			remote_stream = batch.stream;
 			remote_sequence = 0;
 			timer.running = false;
@@ -838,7 +954,7 @@ namespace order_progress
 			}
 
 			pending_occurrence occurrence{nullptr, batch.user, static_cast<std::uint64_t>(time(nullptr)),
-				matching_orders(value.event, value.event_class), current_usage(), true};
+				matching_orders(value.event, value.event_class), current_usage(), true, batch.stream};
 			remote_pending.push_back({value.event, std::move(occurrence)});
 		}
 
@@ -913,6 +1029,80 @@ namespace order_progress
 		return remote_sequence;
 	}
 
+	void send_notifications(demonware::service_server* server, const std::uint64_t user,
+		const std::string& response)
+	{
+		std::lock_guard lock{pending_mutex};
+		if (!accepting || !remote_stream || !user || user != local_user || notifications.empty())
+		{
+			return;
+		}
+
+		rapidjson::Document page;
+		page.Parse(response.data(), response.size());
+		if (page.HasParseError() || !page.IsObject() || !page.HasMember("Achievements") ||
+			!page["Achievements"].IsArray())
+		{
+			return;
+		}
+
+		for (const auto& record : page["Achievements"].GetArray())
+		{
+			if (!record.IsObject() || !record.HasMember("name") || !record["name"].IsString())
+			{
+				continue;
+			}
+			const auto found = notifications.find(record["name"].GetString());
+			if (found == notifications.end())
+			{
+				continue;
+			}
+
+			const auto& expected = found->second.record;
+			if (!record.HasMember("activationTimestamp") || !record["activationTimestamp"].IsUint64() ||
+				record["activationTimestamp"].GetUint64() != expected.activation_timestamp ||
+				!record.HasMember("kind") || !record["kind"].IsInt() || record["kind"].GetInt() != expected.kind ||
+				!record.HasMember("status") || !record["status"].IsString())
+			{
+				// An older page can belong to a previous activation; wait for the new one.
+				continue;
+			}
+
+			const auto status = demonware::parse_achievement_status(record["status"].GetString());
+			if (status != demonware::achievement_status::in_progress &&
+				status != demonware::achievement_status::claimable)
+			{
+				notifications.erase(found);
+				continue;
+			}
+			if (!record.HasMember("progress") || !record["progress"].IsUint() ||
+				record["progress"].GetUint() < expected.progress)
+			{
+				// A save raced this page's snapshot. Its already-requested next fetch will deliver it.
+				continue;
+			}
+
+			if (status == demonware::achievement_status::in_progress)
+			{
+				found->second.ready = true;
+				continue;
+			}
+
+			// AE_HandleAchievementPush (0x13C480) updates the native record and emits
+			// achievementEngine AchievementClaimable (6).
+			// Use this exact page's state so its subsequent fetch response cannot roll it back.
+			rapidjson::Document push;
+			auto& allocator = push.GetAllocator();
+			push.CopyFrom(record, allocator);
+			push.AddMember("reason", "claimable", allocator);
+			push.AddMember("type", "CHALLENGE", allocator);
+			push.AddMember("triggers", rapidjson::Value{rapidjson::kArrayType}, allocator);
+			demonware::send_reward_push(server, game::demonware::BD_REWARD_ACHIEVEMENT_MESSAGE,
+				user, demonware::reward_json::encode(push));
+			notifications.erase(found);
+		}
+	}
+
 	void disconnect()
 	{
 		std::lock_guard lock{pending_mutex};
@@ -951,6 +1141,7 @@ namespace order_progress
 				static_cast<std::uint64_t>(time(nullptr)), {}, timer.pending, true});
 		}
 
+		notifications.clear();
 		remote_stream = 0;
 		remote_sequence = 0;
 		timer.running = false;
@@ -1009,7 +1200,11 @@ namespace order_progress
 
 			if (!game::environment::is_dedicated())
 			{
-				scheduler::loop(recover, scheduler::pipeline::main, 1s);
+				scheduler::loop([]
+				{
+					recover();
+					display_notifications();
+				}, scheduler::pipeline::main, 1s);
 			}
 		}
 

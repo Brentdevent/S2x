@@ -1,5 +1,6 @@
 #include <std_include.hpp>
 #include "game/demonware/dw_include.hpp"
+#include "component/demonware/order_tracking.hpp"
 #include "task4.hpp"
 #include "game/demonware/achievement/orders.hpp"
 #include "game/demonware/achievement/queries.hpp"
@@ -125,6 +126,13 @@ namespace demonware::reward_task4
 		if (result.error)
 		{
 			return reply_error(result.error);
+		}
+
+		if (request->action == achievement_response::get_user_achievements_action)
+		{
+			// Associate committed notifications with this page before the native cache
+			// consumes it. Progress is displayed on the main thread once that cache is ready.
+			::order_progress::send_notifications(server, context.user_id, result.response_json);
 		}
 
 		server->create_reply(4).send();

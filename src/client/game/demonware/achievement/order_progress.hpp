@@ -64,5 +64,6 @@ namespace demonware::order_progress
 	bool matches(const predicate& rule, const event& occurrence);
 	bool matches(const server_predicate& rule, const event& occurrence);
 	achievement_store::mutation_result settle(const std::vector<target>& targets,
-		std::uint64_t completion_time, const std::vector<usage>& usage = {});
+		std::uint64_t completion_time, const std::vector<usage>& usage = {},
+		std::vector<achievement_record>* progressed = nullptr);
 }

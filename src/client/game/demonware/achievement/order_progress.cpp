@@ -199,14 +199,20 @@ namespace demonware::order_progress
 	}
 
 	achievement_store::mutation_result settle(const std::vector<target>& targets,
-		const std::uint64_t completion_time, const std::vector<usage>& elapsed)
+		const std::uint64_t completion_time, const std::vector<usage>& elapsed,
+		std::vector<achievement_record>* progressed)
 	{
+		if (progressed)
+		{
+			progressed->clear();
+		}
 		if (targets.empty() && elapsed.empty())
 		{
 			return achievement_store::mutation_result::unchanged;
 		}
 
-		return achievement_store::mutate_all([&](achievement_record& record)
+		std::vector<achievement_record> staged;
+		const auto result = achievement_store::mutate_all([&](achievement_record& record)
 		{
 			if (!eligible(record))
 			{
@@ -262,7 +268,19 @@ namespace demonware::order_progress
 				record.fulfilled_times = 1;
 			}
 
+			if (progressed)
+			{
+				staged.push_back(record);
+			}
+
 			return true;
 		});
+
+		// A failed atomic save must never produce a progress or completion notification.
+		if (progressed && result == achievement_store::mutation_result::updated)
+		{
+			*progressed = std::move(staged);
+		}
+		return result;
 	}
 }
