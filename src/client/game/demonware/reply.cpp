@@ -20,6 +20,13 @@ namespace demonware
 		return result.get_buffer();
 	}
 
+	uint32_t encrypted_reply::message_count_ = 0;
+
+	void encrypted_reply::reset_sequence()
+	{
+		message_count_ = 0;
+	}
+
 	std::string encrypted_reply::data()
 	{
 		byte_buffer result;
@@ -44,8 +51,7 @@ namespace demonware
 		const auto enc_data = utils::cryptography::aes::encrypt(aligned_data, seed, demonware::get_encrypt_key());
 
 		// header : encrypted service data : hash
-		static auto msg_count = 0;
-		msg_count++;
+		++message_count_;
 
 		byte_buffer response;
 		response.set_use_data_types(false);
@@ -53,7 +59,7 @@ namespace demonware
 		response.write_int32(30 + static_cast<int>(enc_data.size()));
 		response.write_ubyte(static_cast<unsigned char>(0xAB));
 		response.write_ubyte(static_cast<unsigned char>(0x85));
-		response.write_int32(msg_count);
+		response.write_uint32(message_count_);
 		response.write(16, seed.data());
 		response.write(enc_data);
 

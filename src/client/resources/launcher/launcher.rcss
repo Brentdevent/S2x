@@ -196,7 +196,7 @@ button:focus-visible
     bottom: 0;
 }
 
-#menu-options
+#menu-options, #menu-profiles
 {
     overflow: visible;
 }
@@ -332,6 +332,86 @@ button.option-row:hover, button.option-row:focus-visible
 .dropdown-item.selected
 {
     color: #e0b458;
+}
+
+#profile-label, #profile-list .dropdown-item
+{
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#profile-list
+{
+    max-height: 160dp;
+    overflow-y: auto;
+}
+
+.profile-create
+{
+    width: 290dp;
+    flex-shrink: 0;
+    font-family: launcher-body;
+    font-size: 1.4vw;
+}
+
+.profile-input-row
+{
+    display: flex;
+    align-items: center;
+}
+
+#profile-name, #create-profile
+{
+    padding: 7dp 10dp;
+    border: 1dp #ffffff38;
+    border-radius: 6dp;
+    background-color: #ffffff12;
+}
+
+#profile-name
+{
+    flex: 1;
+    min-width: 0;
+    tab-index: auto;
+    cursor: text;
+}
+
+#create-profile
+{
+    margin-left: 8dp;
+    flex-shrink: 0;
+}
+
+#profile-name:focus, #create-profile:focus-visible, #create-profile:hover
+{
+    border-color: #e0b458;
+}
+
+.profile-error
+{
+    display: none;
+    margin-top: 8dp;
+    color: #e8a68d;
+    font-family: launcher-body;
+    font-size: 1.35vw;
+}
+
+.profile-error.visible
+{
+    display: block;
+}
+
+.disabled, .disabled *, #profile-name:disabled
+{
+    cursor: arrow;
+}
+
+.disabled, #profile-name:disabled
+{
+    opacity: 0.5;
+    tab-index: none;
 }
 
 .switch

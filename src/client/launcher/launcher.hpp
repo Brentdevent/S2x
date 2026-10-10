@@ -37,6 +37,10 @@ private:
 	void process_event(Rml::Event& event);
 	void show_menu(const std::string& name);
 	void update_options();
+	void update_profiles();
+	void change_profile(const std::string& name, bool create);
+	void show_profile_error(const char* id, const std::string& message);
+	void close_dropdowns();
 	void save_launch_options() const;
 
 	static launch_options load_launch_options();

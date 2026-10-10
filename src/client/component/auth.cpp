@@ -2,8 +2,10 @@
 #include "loader/component_loader.hpp"
 
 #include "auth.hpp"
+#include "console/console.hpp"
 
 #include <game/game.hpp>
+#include <game/player_profile.hpp>
 
 #include <utils/nt.hpp>
 #include <utils/hook.hpp>
@@ -80,19 +82,18 @@ namespace auth
 
 		utils::cryptography::ecc::key& get_key()
 		{
-			static auto key = utils::cryptography::ecc::generate_key(512, get_key_entropy());
-			return key;
-		}
-
-		bool is_second_instance()
-		{
-			static const auto is_first = []
+			static auto key = []
 			{
-				static utils::nt::handle<> mutex = CreateMutexA(nullptr, FALSE, "s2x_mutex");
-				return mutex && GetLastError() != ERROR_ALREADY_EXISTS;
-			}();
+				auto entropy = get_key_entropy();
+				const auto& profile = player_profile::name();
+				if (profile != "default")
+				{
+					entropy += "s2x-profile-" + profile;
+				}
 
-			return !is_first;
+				return utils::cryptography::ecc::generate_key(512, entropy);
+			}();
+			return key;
 		}
 
 		std::string serialize_connect_data(const std::vector<char>& data)
@@ -108,7 +109,7 @@ namespace auth
 	{
 		static const auto guid = []() -> uint64_t
 		{
-			if (game::environment::is_dedicated() || is_second_instance())
+			if (game::environment::is_dedicated())
 			{
 				return 0x110000100000000 | (::utils::cryptography::random::get_integer() & ~0x80000000);
 			}
@@ -123,6 +124,16 @@ namespace auth
 
 	struct component final : generic_component
 	{
+		void post_load() override
+		{
+			if (!game::environment::is_dedicated())
+			{
+				player_profile::reserve();
+				console::info("[Profile] %s uses %s\n", player_profile::name().c_str(),
+					player_profile::user_directory().generic_string().c_str());
+			}
+		}
+
 		void post_unpack() override
 		{
 			// Patch steam id bit check

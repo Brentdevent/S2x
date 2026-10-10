@@ -2,7 +2,9 @@
 #include "launcher.hpp"
 
 #include "resources.hpp"
+#include "game/player_profile.hpp"
 #include <RmlUi/Core.h>
+#include <RmlUi/Core/Elements/ElementFormControlInput.h>
 
 #include <utils/flags.hpp>
 #include <utils/io.hpp>
@@ -18,8 +20,9 @@ namespace
 
 launcher::launcher() :
 	launch_options_(load_launch_options()),
-	main_window_("S2x", 880, 420)
+	main_window_("S2x Launcher", 880, 420)
 {
+	player_profile::name();
 	this->create_main_menu();
 }
 
@@ -34,11 +37,12 @@ void launcher::create_main_menu()
 	this->document_->GetElementById("licenses-text")
 		->SetInnerRML(Rml::StringUtilities::EncodeRml(std::string(launcher_resources::load("licenses.txt"))));
 	this->update_options();
+	this->update_profiles();
 }
 
 void launcher::show_menu(const std::string& name)
 {
-	for (const auto* menu : {"play", "options", "about", "licenses"})
+	for (const auto* menu : {"play", "profiles", "options", "about", "licenses"})
 	{
 		this->document_->GetElementById("menu-"s + menu)->SetClass("active", name == menu);
 
@@ -75,14 +79,110 @@ void launcher::update_options()
 	this->document_->GetElementById("no-update")->SetClass("checked", this->launch_options_.no_update);
 }
 
+void launcher::show_profile_error(const char* id, const std::string& message)
+{
+	auto* error = this->document_->GetElementById(id);
+	error->SetInnerRML(Rml::StringUtilities::EncodeRml(message));
+	error->SetClass("visible", !message.empty());
+}
+
+void launcher::update_profiles()
+{
+	const auto locked = utils::flags::has_flag("-profile");
+	this->document_->GetElementById("profile-button")->SetClass("disabled", locked);
+	this->document_->GetElementById("create-profile")->SetClass("disabled", locked);
+	static_cast<Rml::ElementFormControlInput*>(this->document_->GetElementById("profile-name"))->SetDisabled(locked);
+	this->document_->GetElementById("profile-description")->SetInnerRML(locked
+		? "To switch here, remove -profile from your launch options." : "Choose who's playing.");
+
+	const auto& selected = player_profile::name();
+	this->document_->GetElementById("profile-label")
+		->SetInnerRML(Rml::StringUtilities::EncodeRml(selected == "default" ? "Default" : selected));
+
+	try
+	{
+		std::string options;
+		for (const auto& name : player_profile::list())
+		{
+			options += "<button class=\"dropdown-item"s + (name == selected ? " selected" : "")
+				+ "\" action=\"profile:" + Rml::StringUtilities::EncodeRml(name) + "\">"
+				+ Rml::StringUtilities::EncodeRml(name == "default" ? "Default" : name) + "</button>";
+		}
+
+		this->document_->GetElementById("profile-list")->SetInnerRML(options);
+		this->show_profile_error("profile-error", "");
+	}
+	catch (const std::exception&)
+	{
+		this->show_profile_error("profile-error", "Couldn't load your profiles. Please restart S2x and try again.");
+	}
+}
+
+void launcher::change_profile(const std::string& name, const bool create)
+{
+	if (utils::flags::has_flag("-profile"))
+	{
+		return;
+	}
+
+	const auto* error_id = create ? "create-profile-error" : "profile-error";
+	this->show_profile_error(error_id, "");
+
+	try
+	{
+		if (create)
+		{
+			player_profile::create(name);
+			static_cast<Rml::ElementFormControlInput*>(this->document_->GetElementById("profile-name"))->SetValue("");
+		}
+		else
+		{
+			player_profile::select(name);
+		}
+
+		this->document_->GetElementById("profile-button")->Focus();
+		this->update_profiles();
+	}
+	catch (const std::exception& error)
+	{
+		this->show_profile_error(error_id, error.what());
+	}
+}
+
+void launcher::close_dropdowns()
+{
+	for (const auto* id : {"console-mode", "profile-mode"})
+	{
+		this->document_->GetElementById(id)->SetClass("open", false);
+	}
+}
+
 void launcher::process_event(Rml::Event& event)
 {
-	auto* dropdown = this->document_->GetElementById("console-mode");
 	auto* target = event.GetTargetElement();
-
-	if (event == Rml::EventId::Focus && !dropdown->Contains(target))
+	Rml::Element* dropdown = nullptr;
+	for (const auto* id : {"console-mode", "profile-mode"})
 	{
-		dropdown->SetClass("open", false);
+		auto* candidate = this->document_->GetElementById(id);
+		if (candidate->Contains(target))
+		{
+			dropdown = candidate;
+		}
+		else if (event == Rml::EventId::Focus)
+		{
+			candidate->SetClass("open", false);
+		}
+	}
+
+	if (event == Rml::EventId::Change && target->GetId() == "profile-name")
+	{
+		this->show_profile_error("create-profile-error", "");
+		if (event.GetParameter<bool>("linebreak", false))
+		{
+			this->change_profile(static_cast<Rml::ElementFormControlInput*>(target)->GetValue(), true);
+		}
+
+		return;
 	}
 
 	while (target && !target->HasAttribute("action"))
@@ -96,10 +196,10 @@ void launcher::process_event(Rml::Event& event)
 
 		if (key == Rml::Input::KI_ESCAPE)
 		{
-			if (dropdown->IsClassSet("open"))
+			if (dropdown && dropdown->IsClassSet("open"))
 			{
 				dropdown->SetClass("open", false);
-				this->document_->GetElementById("console-button")->Focus();
+				dropdown->QuerySelector(".dropdown-button")->Focus(true);
 			}
 			else
 			{
@@ -108,15 +208,22 @@ void launcher::process_event(Rml::Event& event)
 
 			event.StopPropagation();
 		}
-		else if (target && dropdown->Contains(target) && (key == Rml::Input::KI_UP || key == Rml::Input::KI_DOWN))
+		else if (target && dropdown && !target->IsClassSet("disabled")
+			&& (key == Rml::Input::KI_UP || key == Rml::Input::KI_DOWN))
 		{
-			const char* ids[]{"console-syscon", "console-terminal", "console-disabled"};
-			const auto was_open = dropdown->IsClassSet("open");
-			auto index = static_cast<int>(this->launch_options_.console);
-
-			for (auto i = 0; i < 3; ++i)
+			auto* list = dropdown->QuerySelector(".dropdown-list");
+			const auto count = list->GetNumChildren();
+			if (!count)
 			{
-				if (target->GetId() == ids[i])
+				return;
+			}
+
+			const auto was_open = dropdown->IsClassSet("open");
+			auto index = 0;
+			for (auto i = 0; i < count; ++i)
+			{
+				auto* item = list->GetChild(i);
+				if (item == target || (!list->Contains(target) && item->IsClassSet("selected")))
 				{
 					index = i;
 				}
@@ -124,12 +231,13 @@ void launcher::process_event(Rml::Event& event)
 
 			if (was_open)
 			{
-				index = (index + (key == Rml::Input::KI_DOWN ? 1 : 2)) % 3;
+				index = (index + (key == Rml::Input::KI_DOWN ? 1 : count - 1)) % count;
 			}
 
 			dropdown->SetClass("open", true);
 			this->document_->GetContext()->Update();
-			this->document_->GetElementById(ids[index])->Focus();
+			list->GetChild(index)->Focus(true);
+			list->GetChild(index)->ScrollIntoView(false);
 			event.StopPropagation();
 		}
 		else if (target
@@ -148,10 +256,15 @@ void launcher::process_event(Rml::Event& event)
 	}
 
 	const auto action = target ? target->GetAttribute<Rml::String>("action", "") : "";
-	const auto was_open = dropdown->IsClassSet("open");
-	dropdown->SetClass("open", false);
+	const auto was_open = dropdown && dropdown->IsClassSet("open");
+	this->close_dropdowns();
 
-	if (action == "dropdown")
+	if (target && target->IsClassSet("disabled"))
+	{
+		return;
+	}
+
+	if (action == "dropdown" && dropdown)
 	{
 		dropdown->SetClass("open", !was_open);
 	}
@@ -170,6 +283,15 @@ void launcher::process_event(Rml::Event& event)
 	else if (action == "play:zombies")
 	{
 		this->select_mode(game::environment::mode::zombies);
+	}
+	else if (action.starts_with("profile:"))
+	{
+		this->change_profile(action.substr(8), false);
+	}
+	else if (action == "create-profile")
+	{
+		const auto* input = static_cast<Rml::ElementFormControlInput*>(this->document_->GetElementById("profile-name"));
+		this->change_profile(input->GetValue(), true);
 	}
 	else if (action.starts_with("console:") || action == "toggle-steam" || action == "toggle-update")
 	{

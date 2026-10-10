@@ -267,6 +267,7 @@ public:
 		}
 
 		document->AddEventListener(Rml::EventId::Click, this);
+		document->AddEventListener(Rml::EventId::Change, this);
 		document->AddEventListener(Rml::EventId::Keydown, this);
 		document->AddEventListener(Rml::EventId::Focus, this, true);
 		document->Show();

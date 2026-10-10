@@ -11,6 +11,7 @@
 #include <utils/string.hpp>
 
 #include "game/game.hpp"
+#include "game/player_profile.hpp"
 #include "launcher/launcher.hpp"
 #include "component/console/console.hpp"
 #include "component/updater.hpp"
@@ -273,11 +274,12 @@ int main()
 			}
 
 			launcher::apply_saved_launch_options();
+			player_profile::name();
 			console::init();
 
 			if (game::environment::is_zombies() && !has_zombies_argument())
 			{
-				utils::nt::relaunch_self("+zombiesMode 1");
+				utils::nt::relaunch_self("+zombiesMode 1 " + player_profile::relaunch_arguments());
 				return 0;
 			}
 

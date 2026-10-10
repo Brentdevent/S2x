@@ -26,6 +26,7 @@ namespace demonware
 		this->register_service<bdLeague2>();
 		this->register_service<bdMarketingComms>();
 		this->register_service<bdMarketplace>();
+		this->register_service<bdPlayerVote>();
 		this->register_service<bdMatchMaking>();
 		this->register_service<bdPresence>();
 		this->register_service<bdProfiles>();
@@ -74,6 +75,9 @@ namespace demonware
 					int c8;
 					buffer.read_int32(&c8);
 					std::string packet_1 = buffer.get_remaining();
+					// A reconnect (including an abandoned handshake) starts a new transcript.
+					demonware::reset_key_derivation();
+					encrypted_reply::reset_sequence();
 					demonware::queue_packet_to_hash(packet_1);
 
 					const std::string packet_2(

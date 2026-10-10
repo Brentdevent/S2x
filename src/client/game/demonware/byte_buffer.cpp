@@ -65,79 +65,123 @@ namespace demonware
 
 	bool byte_buffer::read_string(std::string* output)
 	{
-		char* out_data;
-		if (this->read_string(&out_data))
-		{
-			output->clear();
-			output->append(out_data);
-			return true;
-		}
-
-		return false;
+		return this->read_string(output, this->remaining_size());
 	}
 
 	bool byte_buffer::read_string(std::string* output, const size_t maximum_size)
 	{
 		if (!output || !this->read_data_type(BD_BB_SIGNED_CHAR8_STRING_TYPE) ||
-			this->current_byte_ >= this->buffer_.size())
+			this->current_byte_ > this->buffer_.size())
 		{
 			return false;
 		}
 
-		const auto end = this->buffer_.find('\0', this->current_byte_);
-		if (end == std::string::npos || end - this->current_byte_ > maximum_size)
+		const auto remaining = this->buffer_.size() - this->current_byte_;
+		const auto* start = this->buffer_.data() + this->current_byte_;
+		const auto* terminator = static_cast<const char*>(std::memchr(start, '\0', remaining));
+		if (!terminator)
 		{
 			return false;
 		}
 
-		output->assign(this->buffer_, this->current_byte_, end - this->current_byte_);
-		this->current_byte_ = end + 1;
+		const auto length = static_cast<size_t>(terminator - start);
+		if (length > maximum_size)
+		{
+			return false;
+		}
+
+		output->assign(start, length);
+		this->current_byte_ += length + 1;
 		return true;
 	}
 
 	bool byte_buffer::read_string(char** output)
 	{
-		if (!this->read_data_type(BD_BB_SIGNED_CHAR8_STRING_TYPE)) return false;
+		if (!output || !this->read_data_type(BD_BB_SIGNED_CHAR8_STRING_TYPE) ||
+			this->current_byte_ > this->buffer_.size())
+		{
+			return false;
+		}
 
-		*output = const_cast<char*>(this->buffer_.data()) + this->current_byte_;
-		this->current_byte_ += strlen(*output) + 1;
+		const auto remaining = this->buffer_.size() - this->current_byte_;
+		auto* start = const_cast<char*>(this->buffer_.data()) + this->current_byte_;
+		const auto* terminator = static_cast<const char*>(std::memchr(start, '\0', remaining));
+		if (!terminator)
+		{
+			return false;
+		}
 
+		*output = start;
+		this->current_byte_ += static_cast<size_t>(terminator - start) + 1;
 		return true;
 	}
 
 	bool byte_buffer::read_string(char* output, const int length)
 	{
-		if (!this->read_data_type(BD_BB_SIGNED_CHAR8_STRING_TYPE)) return false;
+		if (!output || length <= 0 || !this->read_data_type(BD_BB_SIGNED_CHAR8_STRING_TYPE) ||
+			this->current_byte_ > this->buffer_.size())
+		{
+			return false;
+		}
 
-		strcpy_s(output, length, const_cast<char*>(this->buffer_.data()) + this->current_byte_);
-		this->current_byte_ += strlen(output) + 1;
+		const auto remaining = this->buffer_.size() - this->current_byte_;
+		const auto* start = this->buffer_.data() + this->current_byte_;
+		const auto* terminator = static_cast<const char*>(std::memchr(start, '\0', remaining));
+		if (!terminator)
+		{
+			return false;
+		}
 
+		const auto string_size = static_cast<size_t>(terminator - start);
+		if (string_size >= static_cast<size_t>(length))
+		{
+			return false;
+		}
+
+		std::memcpy(output, start, string_size + 1);
+		this->current_byte_ += string_size + 1;
 		return true;
 	}
 
 	bool byte_buffer::read_blob(std::string* output)
 	{
-		char* out_data;
-		int length;
-		if (this->read_blob(&out_data, &length))
-		{
-			output->clear();
-			output->append(out_data, length);
-			return true;
-		}
-
-		return false;
+		return this->read_blob(output, this->remaining_size());
 	}
 
-	bool byte_buffer::read_blob(char** output, int* length)
+	bool byte_buffer::read_blob(std::string* output, const size_t maximum_size)
 	{
-		if (!this->read_data_type(BD_BB_BLOB_TYPE))
+		if (!output || !this->read_data_type(BD_BB_BLOB_TYPE))
 		{
 			return false;
 		}
 
-		unsigned int size;
-		this->read_uint32(&size);
+		unsigned int size{};
+		if (!this->read_uint32(&size) || size > maximum_size ||
+			this->current_byte_ > this->buffer_.size() ||
+			size > this->buffer_.size() - this->current_byte_)
+		{
+			return false;
+		}
+
+		output->assign(this->buffer_.data() + this->current_byte_, size);
+		this->current_byte_ += size;
+		return true;
+	}
+
+	bool byte_buffer::read_blob(char** output, int* length)
+	{
+		if (!output || !length || !this->read_data_type(BD_BB_BLOB_TYPE))
+		{
+			return false;
+		}
+
+		unsigned int size{};
+		if (!this->read_uint32(&size) || size > static_cast<unsigned int>(INT_MAX) ||
+			this->current_byte_ > this->buffer_.size() ||
+			size > this->buffer_.size() - this->current_byte_)
+		{
+			return false;
+		}
 
 		*output = const_cast<char*>(this->buffer_.data()) + this->current_byte_;
 		*length = static_cast<int>(size);
@@ -149,13 +193,17 @@ namespace demonware
 
 	bool byte_buffer::read_struct(void* output)
 	{
-		if (!this->read_data_type(BD_BB_STRUCTURED_DATA_TYPE))
+		if (!output || !this->read_data_type(BD_BB_STRUCTURED_DATA_TYPE))
 		{
 			return false;
 		}
 
-		unsigned int size;
-		this->read_uint32(&size);
+		unsigned int size{};
+		if (!this->read_uint32(&size) || this->current_byte_ > this->buffer_.size() ||
+			size > this->buffer_.size() - this->current_byte_)
+		{
+			return false;
+		}
 
 		auto data = const_cast<char*>(this->buffer_.data()) + this->current_byte_;
 		memcpy(output, data, size);
@@ -196,20 +244,44 @@ namespace demonware
 	bool byte_buffer::read_array_header(const unsigned char expected, unsigned int* element_count,
 	                                    unsigned int* element_size)
 	{
-		if (element_count) *element_count = 0;
-		if (element_size) *element_size = 0;
+		if (element_count)
+		{
+			*element_count = 0;
+		}
+		if (element_size)
+		{
+			*element_size = 0;
+		}
 
-		if (!this->read_data_type(expected + 100)) return false;
+		if (!this->read_data_type(expected + 100))
+		{
+			return false;
+		}
 
-		uint32_t array_size, el_count;
-		if (!this->read_uint32(&array_size)) return false;
+		uint32_t array_size{}, el_count{};
+		if (!this->read_uint32(&array_size))
+		{
+			return false;
+		}
 
+		const auto using_types = this->is_using_data_types();
 		this->set_use_data_types(false);
-		this->read_uint32(&el_count);
-		this->set_use_data_types(true);
+		const auto read_count = this->read_uint32(&el_count);
+		this->set_use_data_types(using_types);
+		if (!read_count || (el_count == 0 && array_size != 0) ||
+			(el_count != 0 && array_size % el_count != 0) || array_size > this->remaining_size())
+		{
+			return false;
+		}
 
-		if (element_count) *element_count = el_count;
-		if (element_size) *element_size = array_size / el_count;
+		if (element_count)
+		{
+			*element_count = el_count;
+		}
+		if (element_size)
+		{
+			*element_size = el_count ? array_size / el_count : 0;
+		}
 
 		return true;
 	}
@@ -332,7 +404,11 @@ namespace demonware
 
 	bool byte_buffer::read(const int bytes, void* output)
 	{
-		if (bytes + this->current_byte_ > this->buffer_.size()) return false;
+		if (bytes < 0 || !output || this->current_byte_ > this->buffer_.size() ||
+			static_cast<size_t>(bytes) > this->buffer_.size() - this->current_byte_)
+		{
+			return false;
+		}
 
 		std::memmove(output, this->buffer_.data() + this->current_byte_, bytes);
 		this->current_byte_ += bytes;
@@ -342,6 +418,11 @@ namespace demonware
 
 	bool byte_buffer::write(const int bytes, const void* data)
 	{
+		if (bytes < 0 || (!data && bytes != 0))
+		{
+			return false;
+		}
+
 		this->buffer_.append(static_cast<const char*>(data), bytes);
 		this->current_byte_ += bytes;
 		return true;
@@ -374,7 +455,39 @@ namespace demonware
 
 	std::string byte_buffer::get_remaining()
 	{
+		if (this->current_byte_ > this->buffer_.size())
+		{
+			return {};
+		}
+
 		return std::string(this->buffer_.begin() + this->current_byte_, this->buffer_.end());
+	}
+
+	size_t byte_buffer::remaining_size() const
+	{
+		return this->current_byte_ <= this->buffer_.size()
+			? this->buffer_.size() - this->current_byte_
+			: 0;
+	}
+
+	bool byte_buffer::has_only_zero_padding(const size_t maximum_size) const
+	{
+		if (this->current_byte_ > this->buffer_.size())
+		{
+			return false;
+		}
+
+		const auto remaining = this->remaining_size();
+		if (remaining > maximum_size)
+		{
+			return false;
+		}
+
+		return std::all_of(this->buffer_.begin() + this->current_byte_, this->buffer_.end(),
+			[](const char value)
+			{
+				return value == 0;
+			});
 	}
 
 	bool byte_buffer::has_more_data() const

@@ -106,6 +106,12 @@ DW_PUBLISHER_VARIABLES_MM_HUB   RCDATA "resources/dw/publisher_variables/mm_hub_
 DW_PUBLISHER_VARIABLES_MM_PARTY RCDATA "resources/dw/publisher_variables/mm_party_tu26_1_11.json"
 DW_PUBLISHER_VARIABLES_QOS      RCDATA "resources/dw/publisher_variables/qos_tu26_1_14.json"
 
+DW_MARKETPLACE_SKUS             RCDATA "resources/dw/marketplace_skus.bin"
+DW_MARKETPLACE_PRODUCTS         RCDATA "resources/dw/marketplace_products.bin"
+DW_MARKETPLACE_CATALOG_MANIFEST RCDATA "resources/dw/marketplace_catalog_manifest.json"
+DW_ACHIEVEMENT_OFFERS           RCDATA "resources/dw/achievement_offers.json"
+DW_ZOMBIE_CONSUMABLE_REFERENCES RCDATA "resources/dw/zombie_consumable_references.txt"
+
 LAUNCHER_DOCUMENT     RCDATA "resources/launcher/launcher.rml"
 LAUNCHER_STYLES       RCDATA "resources/launcher/launcher.rcss"
 LAUNCHER_TITLE_FONT   RCDATA "resources/launcher/title.woff"

@@ -1,12 +1,13 @@
 <rml>
 <head>
-    <title>S2x</title>
+    <title>S2x Launcher</title>
     <link type="text/rcss" href="launcher.rcss" />
 </head>
 <body>
     <div class="main-container">
         <div class="nav">
             <button id="nav-play" class="nav-link active" action="menu:play">Play</button>
+            <button id="nav-profiles" class="nav-link" action="menu:profiles">Profiles</button>
             <button id="nav-options" class="nav-link" action="menu:options">Options</button>
             <button id="nav-about" class="nav-link" action="menu:about">About</button>
         </div>
@@ -26,6 +27,35 @@
                         <img src="zombies.png" />
                         <div class="card-content"><span>Zombies</span><div class="card-action">Play</div></div>
                     </button>
+                </div>
+            </div>
+
+            <div id="menu-profiles" class="panel">
+                <div class="option-row">
+                    <div class="option-text">
+                        <div class="option-title">Player profile</div>
+                        <div id="profile-description" class="option-desc">Choose who's playing.</div>
+                        <div id="profile-error" class="profile-error"></div>
+                    </div>
+                    <div id="profile-mode" class="dropdown">
+                        <button id="profile-button" class="dropdown-button" action="dropdown">
+                            <span id="profile-label">Default</span><span class="arrow"></span>
+                        </button>
+                        <div id="profile-list" class="dropdown-list"></div>
+                    </div>
+                </div>
+                <div class="option-row">
+                    <div class="option-text">
+                        <div class="option-title">Create profile</div>
+                        <div class="option-desc">Start with your own Multiplayer and Zombies progress.</div>
+                    </div>
+                    <div class="profile-create">
+                        <div class="profile-input-row">
+                            <input id="profile-name" type="text" placeholder="Profile name" maxlength="32" />
+                            <button id="create-profile" action="create-profile">Create</button>
+                        </div>
+                        <div id="create-profile-error" class="profile-error"></div>
+                    </div>
                 </div>
             </div>
 

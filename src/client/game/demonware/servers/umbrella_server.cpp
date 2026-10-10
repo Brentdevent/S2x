@@ -50,6 +50,10 @@ namespace demonware
 		}
 
 		const auto response = identity_response::make_umbrella_lsg_token();
+		if (response.IsNull())
+		{
+			return; // Identity not yet published; never issue a zero-ID token.
+		}
 		send_json(response);
 	}
 }
