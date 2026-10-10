@@ -124,6 +124,9 @@ namespace game
 	WEAK symbol<bool()> SV_Loaded{ 0x6DB810, 0x58A2C0 };
 	WEAK symbol<void(mp::client_t* client, svscmd_type type, const char* format, ...)> SV_SendServerCommand{ 0x6E0BA0 };
 	WEAK symbol<void(int localClientNum, const char* text)> CL_ForwardCommandToServer{ 0x75060 };
+
+	WEAK symbol<const char*(int keynum, int translate, int unk)> Key_KeynumToString{ 0x45F950 };
+
 	WEAK symbol<void(unsigned int localClientNum)> CG_DeployServerCommandString{ 0x431EB0 };
 
 	WEAK symbol<void(XAssetType type, void(*callback)(XAssetHeader, void*), void* data,
