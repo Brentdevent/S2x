@@ -95,6 +95,19 @@ namespace updater
 				(normalized == name && normalized.starts_with("data/") && normalized.size() > 5);
 		}
 
+		const file_info* find_host_file_info(const std::vector<file_info>& outdated_files)
+		{
+			for (const auto& file : outdated_files)
+			{
+				if (file.name == UPDATE_HOST_BINARY)
+				{
+					return &file;
+				}
+			}
+
+			return nullptr;
+		}
+
 		std::vector<file_info> parse_file_infos(const std::string& json)
 		{
 			rapidjson::Document document{};
@@ -145,31 +158,31 @@ namespace updater
 				files.emplace_back(std::move(info));
 			}
 
+			if (!find_host_file_info(files) || std::ranges::none_of(files, [](const file_info& file)
+			{
+				return file.name.starts_with("data/");
+			}))
+			{
+				throw std::runtime_error("The update manifest is incomplete.");
+			}
+
 			return files;
 		}
 
 		std::vector<file_info> get_file_infos()
 		{
-			const auto json = utils::http::get_data(std::string{update_source::manifest} + get_cache_buster());
+			std::vector<file_info> files{};
+			const auto json = utils::http::get_data(std::string{update_source::manifest} + get_cache_buster(),
+				{}, {}, 2, update_source::fallback_connect_to, [&files](const std::string& body)
+				{
+					files = parse_file_infos(body);
+				});
 			if (!json)
 			{
 				throw std::runtime_error("Unable to download the update manifest.");
 			}
 
-			return parse_file_infos(*json);
-		}
-
-		const file_info* find_host_file_info(const std::vector<file_info>& outdated_files)
-		{
-			for (const auto& file : outdated_files)
-			{
-				if (file.name == UPDATE_HOST_BINARY)
-				{
-					return &file;
-				}
-			}
-
-			return nullptr;
+			return files;
 		}
 
 		std::size_t get_optimal_concurrent_download_count(const std::size_t file_count)
@@ -246,14 +259,6 @@ namespace updater
 	void file_updater::run() const
 	{
 		const auto files = get_file_infos();
-		if (!find_host_file_info(files) || std::ranges::none_of(files, [](const file_info& file)
-		{
-			return file.name.starts_with("data/");
-		}))
-		{
-			throw std::runtime_error("The update manifest is incomplete.");
-		}
-
 		this->run(files);
 		// AppData/data is updater-owned. Only the complete client manifest may
 		// prune it, after every download succeeds (including no-download runs).
@@ -289,9 +294,15 @@ namespace updater
 		const auto data = utils::http::get_data(url, {}, [this, &file](const std::size_t progress)
 		{
 			this->listener_.file_progress(file, progress);
+		}, 2, update_source::fallback_connect_to, [this, &file](const std::string& body)
+		{
+			if (body.size() != file.size || this->get_hash(body) != file.hash)
+			{
+				throw std::runtime_error("Failed to download or verify: " + file.name);
+			}
 		});
 
-		if (!data || data->size() != file.size || this->get_hash(*data) != file.hash)
+		if (!data)
 		{
 			throw std::runtime_error("Failed to download or verify: " + file.name);
 		}

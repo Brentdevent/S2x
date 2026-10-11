@@ -11,6 +11,30 @@ namespace utils::http
 {
 	namespace
 	{
+		bool can_try_fallback(const CURLcode result)
+		{
+			switch (result)
+			{
+			case CURLE_COULDNT_RESOLVE_HOST:
+			case CURLE_COULDNT_CONNECT:
+			case CURLE_PROXY:
+			case CURLE_OPERATION_TIMEDOUT:
+			case CURLE_SSL_CONNECT_ERROR:
+			case CURLE_PEER_FAILED_VERIFICATION:
+			case CURLE_SSL_ISSUER_ERROR:
+			case CURLE_SSL_INVALIDCERTSTATUS:
+			case CURLE_HTTP_RETURNED_ERROR:
+			case CURLE_TOO_MANY_REDIRECTS:
+			case CURLE_GOT_NOTHING:
+			case CURLE_SEND_ERROR:
+			case CURLE_RECV_ERROR:
+			case CURLE_PARTIAL_FILE:
+				return true;
+			default:
+				return false;
+			}
+		}
+
 		struct progress_helper
 		{
 			const std::function<void(size_t)>* callback{};
@@ -49,9 +73,12 @@ namespace utils::http
 	}
 
 	std::optional<std::string> get_data(const std::string& url, const headers& headers,
-	                                    const std::function<void(size_t)>& callback, const uint32_t retries)
+	                                    const std::function<void(size_t)>& callback, const uint32_t retries,
+	                                    const std::string& fallback_connect_to,
+	                                    const std::function<void(const std::string&)>& validate)
 	{
 		curl_slist* header_list = nullptr;
+		curl_slist* connect_list = nullptr;
 		auto* curl = curl_easy_init();
 		if (!curl)
 		{
@@ -60,8 +87,9 @@ namespace utils::http
 
 		auto _ = utils::finally([&]()
 		{
-			curl_slist_free_all(header_list);
 			curl_easy_cleanup(curl);
+			curl_slist_free_all(header_list);
+			curl_slist_free_all(connect_list);
 		});
 
 		for (const auto& header : headers)
@@ -82,6 +110,7 @@ namespace utils::http
 		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &helper);
 		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+		curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
 		curl_easy_setopt(curl, CURLOPT_USERAGENT, "s2x-updater/1.0");
 		curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
 		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
@@ -90,25 +119,11 @@ namespace utils::http
 		curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
 		curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
 
-		for (auto i = 0u; i < retries + 1; ++i)
+		for (auto retry_count = 0u;;)
 		{
 			buffer.clear();
 
-			// Due to CURLOPT_FAILONERROR, CURLE_OK will not be met when the server returns 400 or 500
-			if (curl_easy_perform(curl) == CURLE_OK)
-			{
-				long http_code = 0;
-				curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-
-				if (http_code >= 200 && http_code < 300)
-				{
-					return {std::move(buffer)};
-				}
-
-				throw std::runtime_error(
-					"Bad status code " + std::to_string(http_code) + " met while trying to download file " + url);
-			}
-
+			const auto result = curl_easy_perform(curl);
 			if (helper.exception)
 			{
 				std::rethrow_exception(helper.exception);
@@ -116,6 +131,47 @@ namespace utils::http
 
 			long http_code = 0;
 			curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+			std::exception_ptr validation_error{};
+			if (result == CURLE_OK && http_code >= 200 && http_code < 300)
+			{
+				try
+				{
+					if (validate)
+					{
+						validate(buffer);
+					}
+					return {std::move(buffer)};
+				}
+				catch (const std::runtime_error&)
+				{
+					validation_error = std::current_exception();
+				}
+			}
+
+			if (!fallback_connect_to.empty() && !connect_list && (result == CURLE_OK || can_try_fallback(result)))
+			{
+				connect_list = curl_slist_append(nullptr, fallback_connect_to.data());
+				if (!connect_list || curl_easy_setopt(curl, CURLOPT_CONNECT_TO, connect_list) != CURLE_OK
+					|| curl_easy_setopt(curl, CURLOPT_FRESH_CONNECT, 1L) != CURLE_OK)
+				{
+					return {};
+				}
+
+				// Route direct and proxied connections to the fallback, retaining Host and TLS checks.
+				// Never reuse a block-page connection.
+				// The fallback gets one immediate attempt even with ordinary retries disabled.
+				continue;
+			}
+
+			if (validation_error)
+			{
+				std::rethrow_exception(validation_error);
+			}
+			if (result == CURLE_OK)
+			{
+				throw std::runtime_error(
+					"Bad status code " + std::to_string(http_code) + " met while trying to download file " + url);
+			}
 
 			// Retry interrupted transfers and temporary server errors, including after headers arrived.
 			if (http_code >= 400 && http_code < 500 && http_code != 408 && http_code != 429)
@@ -123,10 +179,12 @@ namespace utils::http
 				break;
 			}
 
-			if (i < retries)
+			if (retry_count == retries)
 			{
-				std::this_thread::sleep_for(std::chrono::milliseconds(500));
+				break;
 			}
+			++retry_count;
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		}
 
 		return {};

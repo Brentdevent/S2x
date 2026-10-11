@@ -152,13 +152,17 @@ namespace updater
 		const auto cache_buster = "?" + std::to_string(
 			std::chrono::duration_cast<std::chrono::nanoseconds>(
 				std::chrono::system_clock::now().time_since_epoch()).count());
-		const auto json = utils::http::get_data(std::string{update_source::store_runtime_manifest} + cache_buster);
+		file_info info{};
+		const auto json = utils::http::get_data(std::string{update_source::store_runtime_manifest} + cache_buster,
+			{}, {}, 2, update_source::fallback_connect_to, [&info, &required_file](const std::string& body)
+			{
+				info = parse_store_runtime_manifest(body, required_file);
+			});
 		if (!json)
 		{
 			throw std::runtime_error("Unable to download the Store runtime manifest.");
 		}
 
-		const auto info = parse_store_runtime_manifest(*json, required_file);
 		const auto self = utils::nt::library::get_by_address(run_store_runtime_update);
 		updater_ui updater_ui{game::environment::is_dedicated()};
 		const file_updater file_updater{
