@@ -15,6 +15,8 @@ namespace demonware::loot_policy
 	namespace
 	{
 		constexpr std::size_t rarity_count = 5;
+		constexpr std::array weapon_groups{"weapon_assault", "weapon_smg", "weapon_heavy", "weapon_sniper",
+			"weapon_shotgun", "weapon_pistol", "weapon_projectile"};
 
 		constexpr std::array<std::string_view, 18> collectible_groups
 		{
@@ -63,9 +65,14 @@ namespace demonware::loot_policy
 		bool is_loot_row(const item_definition& row)
 		{
 			const auto& item = row.item;
+			// Weapons, calling cards and uniforms without an operation can drop from unrestricted slots.
+			// Operation-specific slots still require a matching operation in matches_slot.
+			const auto weapon = item.group == "weapon_other" ||
+				std::ranges::find(weapon_groups, item.group) != weapon_groups.end();
 			return std::ranges::find(collectible_groups, item.group) != collectible_groups.end() &&
-				item.operation && row.operation_valid && row.loot_flag && row.rarity_eligible &&
-				!row.challenge && !row.entitlement && !row.collection_reward;
+				(item.operation || weapon || item.group == "playercard_title" || item.group == "uniforms") &&
+				row.operation_valid && row.loot_flag && row.rarity_eligible &&
+				!row.challenge && !row.entitlement && !row.collection_reward && !row.stock_unlock_restricted;
 		}
 
 		bool is_presentable(const item_definition& row)
@@ -88,8 +95,6 @@ namespace demonware::loot_policy
 		{
 			// SupplyDropLootItemTypes / QuarterMasterUtils.LootTypeIcons. These
 			// bindings filter the existing local collectible pool, not all inventory.
-			constexpr std::array weapon_groups{"weapon_assault", "weapon_smg", "weapon_heavy", "weapon_sniper",
-				"weapon_shotgun", "weapon_pistol", "weapon_projectile"};
 			constexpr std::array division_types{1, 3, 4, 2, 5, 6};
 			if (type >= 10 && type <= 16)
 			{

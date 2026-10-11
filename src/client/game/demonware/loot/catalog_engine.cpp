@@ -10,6 +10,7 @@
 
 #include <charconv>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace demonware::loot_catalog_engine
 {
@@ -19,6 +20,9 @@ namespace demonware::loot_catalog_engine
 	{
 		constexpr auto supply_drop_table_name = "mp/supplyDropTypes.csv";
 		constexpr auto stats_table_name = "mp/statstable.csv";
+		constexpr auto premade_emblems_table_name = "mp/emblemspremade.csv";
+		constexpr auto unlock_table_name = "mp/unlocktable.csv";
+		constexpr auto calling_cards_table_name = "mp/callingcards.csv";
 		constexpr auto social_score_table_name = "mp/socialscoretable.csv";
 		constexpr auto zombie_table_name = "mp/zombieConsumablesTable.csv";
 		constexpr auto store_table_name = "mp/ingamestore/winStoreConfig.csv";
@@ -199,6 +203,90 @@ namespace demonware::loot_catalog_engine
 			}
 
 			return item_guid;
+		}
+
+		std::unordered_set<std::uint32_t> read_premade_emblems()
+		{
+			std::unordered_set<std::uint32_t> emblems{};
+			const auto* table = find_ready_table(premade_emblems_table_name);
+			if (!table)
+			{
+				return emblems;
+			}
+
+			// PlayerCardUtils.GetEmblemTypeAndIndexFromGUID uses column 6;
+			// these emblems render from the file in column 3, not a StatsTable image.
+			for (auto row = 0; row < table->rowCount; ++row)
+			{
+				const auto guid = get_cell(table, row, 6);
+				const auto file = get_cell(table, row, 3);
+				if (guid && file && !file->empty())
+				{
+					if (const auto item_id = parse_stock_item_guid_key(*guid))
+					{
+						emblems.insert(*item_id);
+					}
+				}
+			}
+
+			return emblems;
+		}
+
+		std::unordered_set<std::string> read_calling_cards()
+		{
+			std::unordered_set<std::string> cards{};
+			const auto* table = find_ready_table(calling_cards_table_name);
+			if (!table)
+			{
+				return cards;
+			}
+
+			// PlayerCardUtils uses the reference in column 3 and visibility rule in column 4.
+			for (auto row = 0; row < table->rowCount; ++row)
+			{
+				const auto image = get_cell(table, row, 1);
+				const auto reference = get_cell(table, row, 3);
+				const auto visibility = get_cell(table, row, 4);
+				if (image && !image->empty() && reference && !reference->empty() &&
+					visibility && !visibility->empty() && *visibility != "never")
+				{
+					cards.emplace(*reference);
+				}
+			}
+
+			return cards;
+		}
+
+		std::optional<std::unordered_set<std::string>> read_restricted_unlocks()
+		{
+			const auto* table = find_ready_table(unlock_table_name);
+			if (!table || table->columnCount <= 9)
+			{
+				return std::nullopt;
+			}
+
+			std::unordered_set<std::string> restricted{};
+			// UnlockTable: item reference, challenge, DLC level and required items.
+			for (auto row = 0; row < table->rowCount; ++row)
+			{
+				const auto reference = get_cell(table, row, 0);
+				if (!reference || reference->empty())
+				{
+					continue;
+				}
+
+				for (const auto column : {3, 7, 9})
+				{
+					const auto requirement = get_cell(table, row, column);
+					if (!requirement || (!requirement->empty() && *requirement != "0"))
+					{
+						restricted.emplace(*reference);
+						break;
+					}
+				}
+			}
+
+			return restricted;
 		}
 
 		template <int Column>
@@ -428,7 +516,9 @@ namespace demonware::loot_catalog_engine
 		}
 
 		item_definition make_definition(const stats_cells& cells, const std::unordered_map<std::uint32_t, bool>& hidden_items,
-			const std::unordered_map<std::string, std::uint32_t>& zombie_stock)
+			const std::unordered_map<std::string, std::uint32_t>& zombie_stock,
+			const std::unordered_set<std::uint32_t>& premade_emblems, const std::unordered_set<std::string>& calling_cards,
+			const std::optional<std::unordered_set<std::string>>& restricted_unlocks)
 		{
 			item_definition definition{};
 			definition.loot_flag = cell<stats_loot_item_column>(cells) == "1";
@@ -449,8 +539,11 @@ namespace demonware::loot_catalog_engine
 			item.reference = cell<stats_reference_column>(cells);
 			item.group = cell<stats_group_column>(cells);
 
+			// Some uniforms omit StatsTable reward flags but still require a pack or prestige challenge.
+			definition.stock_unlock_restricted = item.group == "uniforms" &&
+				(!restricted_unlocks || restricted_unlocks->contains(item.reference));
+
 			definition.reference_valid = !item.reference.empty();
-			definition.presentation_available = !name.empty() && !cell<stats_image_column>(cells).empty();
 			definition.rarity_valid = parse_integer(cell<stats_rarity_column>(cells), item.rarity);
 
 			if (const auto operation = cell<stats_operation_column>(cells); !operation.empty())
@@ -472,6 +565,9 @@ namespace demonware::loot_catalog_engine
 
 			// Weapon grades share a reference, so each row keeps its own GUID instead of BG_GetItemGUIDFromReference
 			item.item_id = parse_stock_item_guid_key(cell<stats_guid_column>(cells)).value_or(0);
+			definition.presentation_available = !name.empty() && (!cell<stats_image_column>(cells).empty() ||
+				(item.group == "playercard_icon" && premade_emblems.contains(item.item_id))) &&
+				(item.group != "playercard_title" || calling_cards.contains(item.reference));
 
 			if (const auto hidden = hidden_items.find(item.item_id); hidden != hidden_items.end())
 			{
@@ -608,6 +704,9 @@ namespace demonware::loot_catalog_engine
 		observed.table_column_count = table->columnCount;
 
 		const auto zombie_stock = read_zombie_stock();
+		const auto premade_emblems = read_premade_emblems();
+		const auto calling_cards = read_calling_cards();
+		const auto restricted_unlocks = read_restricted_unlocks();
 
 		const auto hidden_items = read_hidden_items(table);
 		if (!hidden_items)
@@ -626,7 +725,7 @@ namespace demonware::loot_catalog_engine
 				return std::nullopt;
 			}
 
-			result.items.push_back(make_definition(*cells, *hidden_items, zombie_stock));
+			result.items.push_back(make_definition(*cells, *hidden_items, zombie_stock, premade_emblems, calling_cards, restricted_unlocks));
 		}
 
 		result.permanent_customization = read_permanent_customization(result.items);

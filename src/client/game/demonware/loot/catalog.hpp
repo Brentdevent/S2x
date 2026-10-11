@@ -59,6 +59,7 @@ namespace demonware::loot_catalog
 		bool challenge{};
 		bool entitlement{};
 		bool collection_reward{};
+		bool stock_unlock_restricted{};
 		bool localized_name{};
 		bool reference_valid{};
 		bool presentation_available{};
