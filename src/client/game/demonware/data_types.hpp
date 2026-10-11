@@ -364,14 +364,14 @@ namespace demonware
 	class bdRewardEvent final : public bdTaskResult
 	{
 	public:
-		uint32_t push_type;
-		unsigned char r2;
-		uint64_t user_id;
+		uint32_t push_type{};
+		unsigned char r2{};
+		uint64_t user_id{};
 		std::string platform1;
 		std::string platform2;
-		int32_t rewardEventType;
-		uint32_t r7;
-		int32_t r8;
+		int32_t rewardEventType{};
+		uint32_t r7{};
+		int32_t r8{};
 		std::string json_buffer;
 
 		void serialize(byte_buffer* data) override
@@ -391,16 +391,16 @@ namespace demonware
 	class bdMarketplaceInventory final : public bdTaskResult
 	{
 	public:
-		uint64_t m_playerId;
+		uint64_t m_playerId{};
 		std::string unk;
-		uint32_t m_itemId;
-		uint32_t m_itemQuantity;
-		uint32_t m_itemXp;
+		uint32_t m_itemId{};
+		uint32_t m_itemQuantity{};
+		uint32_t m_itemXp{};
 		std::string m_itemData;
-		uint32_t m_expireDateTime;
-		int64_t m_expiryDuration;
-		uint16_t m_collisionField;
-		uint32_t m_modDateTime;
+		uint32_t m_expireDateTime{};
+		int64_t m_expiryDuration{};
+		uint16_t m_collisionField{};
+		uint32_t m_modDateTime{};
 
 		void serialize(byte_buffer* data) override
 		{
@@ -420,8 +420,8 @@ namespace demonware
 	class bdMarketplaceCurrency final : public bdTaskResult
 	{
 	public:
-		std::uint8_t m_currencyId;
-		std::uint32_t m_value;
+		std::uint8_t m_currencyId{};
+		std::uint32_t m_value{};
 
 		void serialize(byte_buffer* data) override
 		{

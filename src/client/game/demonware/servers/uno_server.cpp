@@ -27,6 +27,10 @@ namespace demonware
 
 		console::demonware("[DW]: [uno]: issued an identity token.\n");
 		const auto response = identity_response::make_uno_identity_token();
+		if (response.IsNull())
+		{
+			return; // Identity not yet published; never issue a zero-ID token.
+		}
 		send_json(response);
 	}
 }

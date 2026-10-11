@@ -33,3 +33,4 @@
 #include "services/bdMatchMaking.hpp"       // 138
 #include "services/bdReward.hpp"            // 139
 #include "services/bdAsyncMatchMaking.hpp"  // 145
+#include "services/bdPlayerVote.hpp"        // 243

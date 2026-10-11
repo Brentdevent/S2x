@@ -3,6 +3,7 @@
 #include "file_updater.hpp"
 #include "updater.hpp"
 #include "update_source.hpp"
+#include "game/player_profile.hpp"
 
 #include <utils/concurrency.hpp>
 #include <utils/cryptography.hpp>
@@ -365,7 +366,7 @@ namespace updater
 			std::rethrow_exception(update_error);
 		}
 
-		if (!utils::flags::has_flag("-norelaunch") && !utils::nt::relaunch_self())
+		if (!utils::flags::has_flag("-norelaunch") && !utils::nt::relaunch_self(player_profile::relaunch_arguments()))
 		{
 			throw std::runtime_error("The update was installed, but S2x could not be relaunched.");
 		}

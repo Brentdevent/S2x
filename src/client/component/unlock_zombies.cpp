@@ -1,11 +1,11 @@
 #include <std_include.hpp>
 #include "unlock_zombies.hpp"
 
-#include "component/achievement_sync.hpp"
+#include "demonware/zombies_progression.hpp"
 
 #include "game/game.hpp"
 #include "game/string_table.hpp"
-#include "game/demonware/achievement_store.hpp"
+#include "game/demonware/achievement/store.hpp"
 
 #include <unordered_set>
 #include <vector>
@@ -21,8 +21,6 @@ namespace unlock_zombies
 
 		constexpr std::array supplemental_zombie_achievements
 		{
-			std::pair{1112, std::uint16_t{1}}, // Tortured Path maps completed.
-			std::pair{1114, std::uint16_t{1}}, // DLC3 survival maps unlocked.
 			std::pair{1142, std::uint16_t{1}}, // Zombies master-prestige reward.
 			std::pair{1143, std::uint16_t{1}}, // All Zombies challenge sets completed.
 			std::pair{1144, std::uint16_t{1}}, // Zombies master-prestige reward 2.
@@ -168,11 +166,10 @@ namespace unlock_zombies
 		const auto achievements = get_zombie_challenge_achievements();
 		result.total = achievements.total;
 		if (!achievements.records.empty() &&
-			demonware::achievement_store::merge(achievements.records))
+			zombies_progression::unlock_challenges(achievements.records))
 		{
 			result.persisted = true;
 			result.completed = static_cast<int>(achievements.records.size());
-			achievement_sync::request_refresh();
 		}
 
 		return result;

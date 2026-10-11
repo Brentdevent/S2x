@@ -4,6 +4,8 @@
 #include "command.hpp"
 #include "console/console.hpp"
 #include "unlock_zombies.hpp"
+#include "demonware/zombies_progression.hpp"
+#include "scheduler.hpp"
 
 #include "game/game.hpp"
 
@@ -631,6 +633,54 @@ namespace stats
 			}
 		}
 
+		void unlock_zombie_quests(const command::params& params)
+		{
+			if (params.size() != 2 || std::string_view{params[1]} != "confirm")
+			{
+				console::warn("unlockzmeastereggs: permanently unlocks supported Zombies maps and quest records. "
+					"Run \"unlockzmeastereggs confirm\" to continue.\n");
+				return;
+			}
+			if (!game::environment::is_zombies())
+			{
+				return;
+			}
+			scheduler::once([]
+			{
+				// The stock Sword of Barbarossa pickup reads Coop DDL, not AE1114.
+				// Easy survival unlocks also emit event 42 without completing the EE
+				// sequence, so normal events must never synthesize this stat from 1114.
+				unsigned int group{};
+				for (; group < stats_group_count; ++group)
+				{
+					if (is_stat_path_valid({"zmShatteredRecord", "hasCompletedEESequence"}, group) &&
+						is_stat_path_valid({"zmShatteredRecord", "mapCompleted"}, group))
+					{
+						break;
+					}
+				}
+				if (!has_stats() || group == stats_group_count || !zombies_progression::unlock_quests())
+				{
+					console::error("unlockzmeastereggs: stats/catalog unavailable or economy save failed; retry when ready.\n");
+					return;
+				}
+				// Economy completion and Groesten Haus ownership commit together first.
+				// Native stats retain their normal save path; re-running is idempotent
+				// if shutdown interrupts that separate native profile write.
+				const auto maps = set_stat({"zmShatteredRecord", "mapCompleted"}, 7, group);
+				const auto sequence = set_stat({"zmShatteredRecord", "hasCompletedEESequence"}, 1, group);
+				if (!maps || !sequence)
+				{
+					console::error("unlockzmeastereggs: quest records saved; native sequence stat write failed. Retry the command.\n");
+				}
+				else
+				{
+					console::info("unlockzmeastereggs: maps and supported quests unlocked, including Sword of Barbarossa access. "
+						"Red Talon still uses its per-match puzzle.\n");
+				}
+			}, scheduler::pipeline::main);
+		}
+
 		void unlock_zombie_stats(const command::params& params)
 		{
 			if (params.size() != 2 || std::string_view{params[1]} != "confirm")
@@ -678,7 +728,7 @@ namespace stats
 
 			if (!challenges.persisted)
 			{
-				console::warn("unlockstatszm: failed to persist Zombies Hidden Challenge progression.\n");
+				console::warn("unlockstatszm: challenge/reward data unavailable or save failed; retry when ready.\n");
 			}
 			else if (!challenges_unlocked)
 			{
@@ -687,7 +737,7 @@ namespace stats
 
 			if (rank_unlocked && challenges_unlocked)
 			{
-				console::info("unlockstatszm: Zombies progression and Hidden Challenges unlocked.\n");
+				console::info("unlockstatszm: Zombies progression, Hidden Challenges and their rewards unlocked.\n");
 			}
 		}
 	}
@@ -705,6 +755,7 @@ namespace stats
 			command::add("setPlayerDataInt", set_player_data_int);
 			command::add("unlockstatsmp", unlock_multiplayer_stats);
 			command::add("unlockstatszm", unlock_zombie_stats);
+			command::add("unlockzmeastereggs", unlock_zombie_quests);
 		}
 	};
 }

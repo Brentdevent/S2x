@@ -27,6 +27,7 @@ namespace demonware
 		bool read_string(std::string* output, size_t maximum_size);
 		bool read_blob(char** output, int* length);
 		bool read_blob(std::string* output);
+		bool read_blob(std::string* output, size_t maximum_size);
 		bool read_struct(void* output);
 		bool read_struct(std::string* output, size_t maximum_size);
 		bool read_data_type(unsigned char expected);
@@ -64,6 +65,8 @@ namespace demonware
 
 		std::string& get_buffer();
 		std::string get_remaining();
+		size_t remaining_size() const;
+		bool has_only_zero_padding(size_t maximum_size = 15) const;
 
 		bool has_more_data() const;
 

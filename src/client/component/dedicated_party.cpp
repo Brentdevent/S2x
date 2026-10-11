@@ -156,6 +156,7 @@ namespace dedicated_party
 		void sv_register_max_clients_stub(const int minimum)
 		{
 			utils::hook::invoke<void>(0x6DA7A0_g, minimum);
+
 			if (is_active())
 			{
 				// SV_Startup will allocate using this player limit. Clear the modified flag

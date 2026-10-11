@@ -75,11 +75,17 @@ namespace demonware
 		}
 	}
 
+	void reset_key_derivation()
+	{
+		packet_buffer.clear();
+	}
+
 	void derive_keys_s1()
 	{
 		const auto out_1 = utils::cryptography::sha1::compute(packet_buffer); // out_1 size 20
 
-		auto data_3 = utils::cryptography::hmac_sha1::compute(data.m_session_key, out_1);
+		auto data_3 = utils::cryptography::hmac_sha1::compute(
+			std::string(data.m_session_key, sizeof(data.m_session_key)), out_1);
 
 		char out_2[16];
 		calculate_hmacs_s1(data_3.data(), 20, "CLIENTCHAL", 10, out_2, 16);

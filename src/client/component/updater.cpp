@@ -6,6 +6,7 @@
 
 #include "component/console/console.hpp"
 #include "game/game.hpp"
+#include "game/player_profile.hpp"
 #include "loader/component_loader.hpp"
 
 #include <updater/updater.hpp>
@@ -70,7 +71,7 @@ namespace updater
 
 		[[noreturn]] void relaunch_installed_binary()
 		{
-			if (!utils::nt::relaunch_self())
+			if (!utils::nt::relaunch_self(player_profile::relaunch_arguments()))
 			{
 				report_error("The installed executable changed, but S2x could not be relaunched.");
 				utils::nt::terminate(1);

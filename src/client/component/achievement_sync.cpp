@@ -4,12 +4,14 @@
 #include "achievement_sync.hpp"
 #include "component/scheduler.hpp"
 #include "game/game.hpp"
+#include "steam/steam.hpp"
 
 namespace achievement_sync
 {
 	namespace
 	{
 		std::atomic_bool accepting_refresh_requests{};
+		std::atomic_uint64_t local_user{};
 		unsigned int refresh_attempts_remaining{};
 
 		bool refresh_user_achievements()
@@ -30,6 +32,11 @@ namespace achievement_sync
 
 			return --refresh_attempts_remaining == 0;
 		}
+	}
+
+	std::uint64_t local_user_id()
+	{
+		return local_user.load();
 	}
 
 	void request_refresh()
@@ -63,13 +70,17 @@ namespace achievement_sync
 	public:
 		void post_unpack() override
 		{
-			accepting_refresh_requests = !game::environment::is_dedicated() &&
-				game::environment::is_zombies();
+			accepting_refresh_requests = !game::environment::is_dedicated();
+			if (accepting_refresh_requests)
+			{
+				scheduler::once([] { local_user = steam::SteamUser()->GetSteamID().bits; }, scheduler::pipeline::main);
+			}
 		}
 
 		void pre_destroy() override
 		{
 			accepting_refresh_requests = false;
+			local_user = 0;
 		}
 	};
 }

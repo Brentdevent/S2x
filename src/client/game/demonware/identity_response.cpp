@@ -2,30 +2,13 @@
 
 #include "identity_response.hpp"
 
-#include "steam/steam.hpp"
+#include "runtime_context.hpp"
 
 namespace demonware::identity_response
 {
 	namespace
 	{
-		struct identity_details
-		{
-			std::uint64_t user_id{};
-			const char* persona_name{};
-		};
-
-		identity_details get_identity_details()
-		{
-			identity_details details{};
-			details.user_id = steam::SteamUser()->GetSteamID().bits;
-			details.persona_name = steam::SteamFriends()->GetPersonaName();
-			if (!details.persona_name || !*details.persona_name)
-			{
-				details.persona_name = "S2x";
-			}
-
-			return details;
-		}
+		using identity_details = runtime_context::identity;
 
 		rapidjson::Document make_common_token_response(const identity_details& details)
 		{
@@ -50,8 +33,8 @@ namespace demonware::identity_response
 			uno_account.AddMember("accountID", details.user_id, allocator);
 			uno_account.AddMember("secondaryAccountID", details.user_id, allocator);
 			uno_account.AddMember("authorized", true, allocator);
-			uno_account.AddMember("username", rapidjson::Value{details.persona_name,
-				static_cast<rapidjson::SizeType>(std::strlen(details.persona_name)), allocator}, allocator);
+			uno_account.AddMember("username", rapidjson::Value{details.persona_name.data(),
+				static_cast<rapidjson::SizeType>(details.persona_name.size()), allocator}, allocator);
 			accounts.PushBack(uno_account, allocator);
 
 			rapidjson::Value steam_account{rapidjson::kObjectType};
@@ -59,8 +42,8 @@ namespace demonware::identity_response
 			steam_account.AddMember("accountID", details.user_id, allocator);
 			steam_account.AddMember("secondaryAccountID", details.user_id, allocator);
 			steam_account.AddMember("authorized", true, allocator);
-			steam_account.AddMember("username", rapidjson::Value{details.persona_name,
-				static_cast<rapidjson::SizeType>(std::strlen(details.persona_name)), allocator}, allocator);
+			steam_account.AddMember("username", rapidjson::Value{details.persona_name.data(),
+				static_cast<rapidjson::SizeType>(details.persona_name.size()), allocator}, allocator);
 			accounts.PushBack(steam_account, allocator);
 			response.AddMember("accounts", accounts, allocator);
 		}
@@ -68,22 +51,30 @@ namespace demonware::identity_response
 
 	rapidjson::Document make_umbrella_lsg_token()
 	{
-		const auto details = get_identity_details();
-		auto response = make_common_token_response(details);
-		add_accounts(response, details);
+		const auto details = runtime_context::get_snapshot();
+		if (!details)
+		{
+			return {};
+		}
+		auto response = make_common_token_response(*details);
+		add_accounts(response, *details);
 		return response;
 	}
 
 	rapidjson::Document make_uno_identity_token()
 	{
-		const auto details = get_identity_details();
-		auto response = make_common_token_response(details);
+		const auto details = runtime_context::get_snapshot();
+		if (!details)
+		{
+			return {};
+		}
+		auto response = make_common_token_response(*details);
 		auto& allocator = response.GetAllocator();
-		response.AddMember("unoID", details.user_id, allocator);
+		response.AddMember("unoID", details->user_id, allocator);
 		rapidjson::Value subscriptions{rapidjson::kObjectType};
 		subscriptions.AddMember("call_of_duty_news", rapidjson::Value{rapidjson::kObjectType}, allocator);
 		response.AddMember("subscriptions", subscriptions, allocator);
-		add_accounts(response, details);
+		add_accounts(response, *details);
 		return response;
 	}
 }

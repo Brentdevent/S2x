@@ -60,6 +60,10 @@ namespace demonware
 		}
 
 		std::string data() override;
+		static void reset_sequence();
+
+	private:
+		static uint32_t message_count_;
 	};
 
 	class unencrypted_reply final : public typed_reply
