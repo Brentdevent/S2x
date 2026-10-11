@@ -103,9 +103,8 @@ local function get_effective_xp( mode, controller )
 	return tonumber( Engine.GetPlayerDataMPXP( controller, mode.stats_group ) ) or 0
 end
 
-local function get_rank( mode, controller )
-	local prestige = get_prestige( mode, controller )
-	local rank = tonumber( Lobby.GetRankForXP( get_effective_xp( mode, controller ), prestige, mode.rank_file ) ) or 0
+local function get_rank( mode, prestige, xp )
+	local rank = tonumber( Lobby.GetRankForXP( xp, prestige, mode.rank_file ) ) or 0
 	return math.max( 0, math.min( rank, get_max_rank( mode, prestige ) ) )
 end
 
@@ -125,7 +124,6 @@ local function write_rank_stat( mode, controller, key, value )
 	else
 		Engine.SetPlayerData( controller, mode.stats_group, key, value )
 	end
-	Engine.ExecNow( "uploadStats", controller )
 end
 
 local function set_rank( mode, controller, rank )
@@ -134,13 +132,6 @@ local function set_rank( mode, controller, rank )
 	local redeemed_xp = get_effective_xp( mode, controller ) - raw_xp
 	local min_xp = tonumber( Rank.GetRankMinXP( rank, mode.play_mode ) ) or 0
 	write_rank_stat( mode, controller, mode.xp_key, math.max( 0, min_xp - redeemed_xp ) )
-end
-
-local function set_prestige( mode, controller, prestige )
-	local rank = get_rank( mode, controller )
-	prestige = math.max( 0, math.min( prestige, get_max_prestige( mode ) ) )
-	write_rank_stat( mode, controller, mode.prestige_key, prestige )
-	set_rank( mode, controller, rank )
 end
 
 local function find_rank_for_display( mode, prestige, text )
@@ -197,20 +188,73 @@ local function keyboard_handlers( on_text )
 	}
 end
 
-local function rank_options( controller, is_zombies )
+local function rank_options( controller, is_zombies, menu )
 	local mode = get_rank_mode( is_zombies )
+	local saved_prestige, saved_rank, saved_xp, saved_raw_xp
+	local prestige, rank
+	local closed = false
+
+	local function sync_stats()
+		local current_prestige = get_prestige( mode, controller )
+		local xp = get_effective_xp( mode, controller )
+		local raw_xp = tonumber( Engine.GetPlayerData( controller, mode.stats_group, mode.xp_key ) ) or 0
+		if current_prestige ~= saved_prestige or xp ~= saved_xp or raw_xp ~= saved_raw_xp then
+			-- A progression unlock or another stat change supersedes this menu's edits.
+			saved_prestige, saved_xp, saved_raw_xp = current_prestige, xp, raw_xp
+			saved_rank = get_rank( mode, current_prestige, xp )
+			prestige, rank = saved_prestige, saved_rank
+		end
+	end
+
+	local function refresh_options()
+		menu:dispatchEventToChildren( { name = "content_refresh" } )
+	end
+
+	local function select_prestige( value )
+		prestige = math.max( 0, math.min( math.floor( value ), get_max_prestige( mode ) ) )
+		rank = math.min( rank, get_max_rank( mode, prestige ) )
+		refresh_options()
+	end
+
+	local function select_rank( value )
+		rank = math.max( 0, math.min( math.floor( value ), get_max_rank( mode, prestige ) ) )
+		refresh_options()
+	end
+
+	sync_stats()
+	-- Also receive menu_close when the flow manager clears the whole stack.
+	menu.alwaysSendMenuClose = true
+	menu:addEventHandler( "menu_close", function ()
+		if closed then
+			return
+		end
+		closed = true
+		sync_stats()
+		if prestige == saved_prestige and rank == saved_rank then
+			return
+		end
+
+		if prestige ~= saved_prestige then
+			write_rank_stat( mode, controller, mode.prestige_key, prestige )
+		end
+		set_rank( mode, controller, rank )
+		Engine.ExecNow( "uploadStats", controller )
+	end )
+	menu:addEventHandler( "popup_inactive", refresh_options )
 
 	local function step_prestige( delta )
 		return function ()
+			sync_stats()
 			local count = get_max_prestige( mode ) + 1
-			set_prestige( mode, controller, ( get_prestige( mode, controller ) + delta ) % count )
+			select_prestige( ( prestige + delta ) % count )
 		end
 	end
 
 	local function step_rank( delta )
 		return function ()
-			local count = get_max_rank( mode, get_prestige( mode, controller ) ) + 1
-			set_rank( mode, controller, ( get_rank( mode, controller ) + delta ) % count )
+			sync_stats()
+			local count = get_max_rank( mode, prestige ) + 1
+			select_rank( ( rank + delta ) % count )
 		end
 	end
 
@@ -220,7 +264,8 @@ local function rank_options( controller, is_zombies )
 			buttonText = Engine.Localize( "Prestige" ),
 			buttonDesc = Engine.Localize( "Edit prestige. Press select to enter a value." ),
 			buttonDisplayFunc = function ()
-				return tostring( get_prestige( mode, controller ) )
+				sync_stats()
+				return tostring( prestige )
 			end,
 			buttonLeftFunc = step_prestige( -1 ),
 			buttonRightFunc = step_prestige( 1 ),
@@ -228,9 +273,10 @@ local function rank_options( controller, is_zombies )
 				return open_number_keyboard( element, event, controller, Engine.Localize( "Prestige" ) )
 			end,
 			handlers = keyboard_handlers( function ( text )
-				local prestige = tonumber( text )
-				if prestige then
-					set_prestige( mode, controller, prestige )
+				sync_stats()
+				local value = tonumber( text )
+				if value then
+					select_prestige( value )
 				end
 			end )
 		},
@@ -239,7 +285,8 @@ local function rank_options( controller, is_zombies )
 			buttonText = Engine.Localize( "Rank" ),
 			buttonDesc = Engine.Localize( "Edit rank. Press select to enter a value." ),
 			buttonDisplayFunc = function ()
-				return get_rank_display( mode, get_rank( mode, controller ) )
+				sync_stats()
+				return get_rank_display( mode, rank )
 			end,
 			buttonLeftFunc = step_rank( -1 ),
 			buttonRightFunc = step_rank( 1 ),
@@ -247,9 +294,10 @@ local function rank_options( controller, is_zombies )
 				return open_number_keyboard( element, event, controller, Engine.Localize( "Rank" ) )
 			end,
 			handlers = keyboard_handlers( function ( text )
-				local rank = find_rank_for_display( mode, get_prestige( mode, controller ), text )
-				if rank then
-					set_rank( mode, controller, rank )
+				sync_stats()
+				local value = find_rank_for_display( mode, prestige, text )
+				if value then
+					select_rank( value )
 				end
 			end )
 		}
@@ -264,7 +312,7 @@ local function append_options( options, extra )
 	return options
 end
 
-local function multiplayer_options( controller )
+local function multiplayer_options( controller, menu )
 	local items_toggle = toggle_dvar( "cg_unlockall_items" )
 	local loot_toggle = toggle_dvar( "cg_unlockall_loot" )
 
@@ -296,10 +344,10 @@ local function multiplayer_options( controller )
 			buttonLeftFunc = loot_toggle,
 			buttonRightFunc = loot_toggle
 		}
-	}, rank_options( controller, false ) )
+	}, rank_options( controller, false, menu ) )
 end
 
-local function zombies_options( controller )
+local function zombies_options( controller, menu )
 	local loot_toggle = toggle_dvar( "cg_unlockall_loot" )
 	local consumables_toggle = toggle_dvar( "cg_unlimited_zm_consumables" )
 
@@ -343,7 +391,7 @@ local function zombies_options( controller )
 			buttonLeftFunc = consumables_toggle,
 			buttonRightFunc = consumables_toggle
 		}
-	}, rank_options( controller, true ) )
+	}, rank_options( controller, true, menu ) )
 end
 
 local function build_unlocks_menu( menu_name, properties, options_factory )
@@ -363,7 +411,7 @@ local function build_unlocks_menu( menu_name, properties, options_factory )
 	properties = properties or {}
 	local controller = get_controller_index( self, properties )
 	local scoped_data = LUI.FlowManager.GetScopedData( self )
-	scoped_data.gridData = options_factory( controller )
+	scoped_data.gridData = options_factory( controller, self )
 	table.insert( scoped_data.gridData, rarity_option() )
 
 	local background = LUI.MenuBuilder.BuildRegisteredType( "GenericMenuBackground", {
