@@ -15,11 +15,11 @@ namespace demonware::order_progress
 
 	bool eligible(const achievement_record& record)
 	{
-		return ((achievement_kind::order(record.kind) &&
+		return (((achievement_kind::order(record.kind) || achievement_kind::moonraven(record.name, record.kind)) &&
 			!record.usage_time_target && !record.usage_time_remaining) || timed(record)) &&
 			record.status == achievement_status::in_progress && record.requires_claim &&
 			record.fulfilled_times == 0 && record.activation_timestamp.value_or(0) &&
-			!record.expiration_timestamp &&
+			(!record.expiration_timestamp || achievement_kind::moonraven(record.name, record.kind)) &&
 			!record.global_counter_id && !record.global_progress_target &&
 			record.progress_target <= std::numeric_limits<std::uint16_t>::max() &&
 			record.progress < record.progress_target;
@@ -98,6 +98,10 @@ namespace demonware::order_progress
 		// Keep the missing conditions as data and use the same predicate evaluator.
 		struct rule { std::string_view name; int kind, event; server_predicate condition; };
 		static constexpr rule rules[] = {
+			{"contract_ch_moon_mountain", 4, 41, {{0, 1, {5}, {8}}}},
+			{"contract_ch_moon_survivor", 4, 36, {{0, 1, {1}, {4}}}},
+			{"contract_ch_moon_slayer", 4, 38, {{1, 2, {1, 1}, {9, 13}}}},
+			{"special_ch_storm_hunter", 10, 38, {{0, 1, {1}, {21}}}},
 			{"daily_ch_karloot2_1", 1, 2, {{0, 2, {1, 2}, {7, 1}}}},
 			{"contract_3_multikills", 4, 2, {{0, 1, {2}, {1}}}},
 			{"contract_ch_dom_caps", 4, 3, {{0, 1, {3}, {1}}}},
@@ -225,6 +229,13 @@ namespace demonware::order_progress
 				return record.name == expected.name && record.kind == expected.kind &&
 					record.activation_timestamp == expected.activation && record.progress_target == expected.progress_target;
 			};
+
+			if (achievement_store::is_expired(record, completion_time))
+			{
+				record.status = achievement_status::inactive;
+				record.usage_time_remaining = 0;
+				return true;
+			}
 
 			bool changed{};
 			if (timed(record))

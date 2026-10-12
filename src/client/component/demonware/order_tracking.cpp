@@ -261,7 +261,7 @@ namespace order_progress
 			for (const auto& record : demonware::achievement_store::get_all())
 			{
 				if (!progress::eligible(record) ||
-					!demonware::achievement_kind::in_mode(record.kind, game::environment::is_zombies()))
+					!demonware::achievement_kind::in_mode(record.kind, game::environment::is_zombies(), record.name))
 				{
 					continue;
 				}
@@ -629,7 +629,7 @@ namespace order_progress
 			for (const auto& record : demonware::achievement_store::get_all())
 			{
 				if (!progress::timed(record) || !progress::eligible(record) ||
-					!demonware::achievement_kind::in_mode(record.kind, game::environment::is_zombies()))
+					!demonware::achievement_kind::in_mode(record.kind, game::environment::is_zombies(), record.name))
 				{
 					continue;
 				}

@@ -3026,6 +3026,199 @@
           "type": "grant_currency"
         }
       ]
+    },
+    "contract_ch_moon_mountain": {
+      "kind": 4,
+      "progressTarget": 1,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 100675627,
+            "items": [
+              {
+                "id": 100675627,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              },
+              {
+                "id": 8389049,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ],
+      "costItemID": 83886235
+    },
+    "contract_ch_moon_hunter": {
+      "kind": 4,
+      "progressTarget": 500,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 100675628,
+            "items": [
+              {
+                "id": 100675628,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              },
+              {
+                "id": 8389050,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ],
+      "costItemID": 83886236,
+      "prerequisiteItemID": 8389049
+    },
+    "contract_ch_moon_survivor": {
+      "kind": 4,
+      "progressTarget": 20,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 100675629,
+            "items": [
+              {
+                "id": 100675629,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              },
+              {
+                "id": 8389051,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ],
+      "costItemID": 83886237,
+      "prerequisiteItemID": 8389050
+    },
+    "contract_ch_moon_slayer": {
+      "kind": 4,
+      "progressTarget": 1,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 100675630,
+            "items": [
+              {
+                "id": 100675630,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ],
+      "costItemID": 83886238,
+      "prerequisiteItemID": 8389051
+    },
+    "special_ch_storm_survivor": {
+      "kind": 10,
+      "progressTarget": 200,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 8389095,
+            "items": [
+              {
+                "id": 8389095,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_storm_hunter": {
+      "kind": 10,
+      "progressTarget": 25,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 8389096,
+            "items": [
+              {
+                "id": 8389096,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_storm_slayer": {
+      "kind": 10,
+      "progressTarget": 3,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 8389097,
+            "items": [
+              {
+                "id": 8389097,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
+    },
+    "special_ch_storm_mountain": {
+      "kind": 10,
+      "progressTarget": 200,
+      "successRewards": [
+        {
+          "type": "grant_product",
+          "product": {
+            "id": 8389098,
+            "items": [
+              {
+                "id": 8389098,
+                "quantity": 1,
+                "usage_duration": null,
+                "override_usage_duration": 0
+              }
+            ],
+            "currencies": []
+          }
+        }
+      ]
     }
   },
   "rotations": [
@@ -3279,6 +3472,12 @@
           "contract_65_kills_hc",
           "contract_55_kills_tdm_dlc2"
         ]
+      ],
+      "alwaysAvailable": [
+        "contract_ch_moon_mountain",
+        "contract_ch_moon_hunter",
+        "contract_ch_moon_survivor",
+        "contract_ch_moon_slayer"
       ]
     },
     {
@@ -3391,6 +3590,24 @@
           "contract_zm_shellshock_1",
           "contract_zm_open_all_doors_1",
           "contract_zm_ch_kills_2"
+        ]
+      ]
+    },
+    {
+      "kind": 10,
+      "activationLimit": 1,
+      "sets": [
+        [
+          "special_ch_storm_survivor"
+        ],
+        [
+          "special_ch_storm_hunter"
+        ],
+        [
+          "special_ch_storm_slayer"
+        ],
+        [
+          "special_ch_storm_mountain"
         ]
       ]
     }

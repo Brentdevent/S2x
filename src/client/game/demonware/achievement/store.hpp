@@ -6,9 +6,21 @@ namespace demonware
 {
 	namespace achievement_kind
 	{
+		constexpr bool moonraven(const std::string_view name, const int kind)
+		{
+			return kind == 4 && (name == "contract_ch_moon_mountain" || name == "contract_ch_moon_hunter" ||
+				name == "contract_ch_moon_survivor" || name == "contract_ch_moon_slayer");
+		}
+
+		constexpr bool stormraven(const std::string_view name, const int kind)
+		{
+			return kind == 10 && (name == "special_ch_storm_survivor" || name == "special_ch_storm_hunter" ||
+				name == "special_ch_storm_slayer" || name == "special_ch_storm_mountain");
+		}
+
 		constexpr bool special(const int kind)
 		{
-			return kind == 3;
+			return kind == 3 || kind == 10;
 		}
 
 		constexpr bool order(const int kind)
@@ -28,12 +40,12 @@ namespace demonware
 
 		constexpr bool zombies(const int kind)
 		{
-			return kind == 8 || kind == 9 || kind == 11;
+			return kind == 8 || kind == 9 || kind == 10 || kind == 11;
 		}
 
-		constexpr bool in_mode(const int kind, const bool zm)
+		constexpr bool in_mode(const int kind, const bool zm, const std::string_view name)
 		{
-			return periodic(kind) && zombies(kind) == zm;
+			return periodic(kind) && (zombies(kind) || moonraven(name, kind)) == zm;
 		}
 	}
 
@@ -84,6 +96,7 @@ namespace demonware
 			std::uint32_t activation_limit{};
 			std::uint64_t next_period_start{};
 			std::uint32_t cost_item_id{};
+			std::uint32_t prerequisite_item_id{};
 			std::uint64_t period_start{};
 			bool repeatable{};
 		};
@@ -118,6 +131,7 @@ namespace demonware
 			std::uint64_t event_timestamp, bool payroll,
 			const std::function<bool(marketplace_store::transaction&, const achievement_record&, bool)>& reward);
 
+		bool is_expired(const achievement_record& record, std::uint64_t timestamp);
 		bool is_available();
 		std::vector<achievement_record> get_all();
 

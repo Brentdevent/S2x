@@ -14,6 +14,7 @@ namespace demonware::achievement_orders
 		std::string json{};
 	};
 
+	std::uint64_t moonraven_expiration(std::uint64_t timestamp);
 	std::optional<achievement_store::order_offer> contract_for_token(std::uint32_t token, std::uint64_t timestamp);
 	std::optional<std::string> scheduled_response(std::string_view transaction, std::uint64_t timestamp);
 	activation_response deactivate(std::string_view json, std::uint64_t user_id);

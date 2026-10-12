@@ -1,6 +1,7 @@
 #include <std_include.hpp>
 
 #include "store.hpp"
+#include "orders.hpp"
 #include "game/demonware/reward/hq_rewards.hpp"
 #include "game/demonware/marketplace/store.hpp"
 #include "game/demonware/reward/json.hpp"
@@ -275,6 +276,12 @@ namespace demonware::achievement_store
 					return false;
 				}
 
+				if (achievement_kind::moonraven(record->name, record->kind) &&
+					record->activation_timestamp && !record->expiration_timestamp)
+				{
+					record->expiration_timestamp = achievement_orders::moonraven_expiration(*record->activation_timestamp);
+				}
+
 				auto name = record->name;
 				if (!achievements.emplace(std::move(name), std::move(*record)).second)
 				{
@@ -467,7 +474,7 @@ namespace demonware::achievement_store
 
 		bool is_supported_claim(const achievement_record& record)
 		{
-			if (achievement_kind::order(record.kind))
+			if (achievement_kind::order(record.kind) || achievement_kind::moonraven(record.name, record.kind))
 			{
 				return !record.usage_time_target && !record.usage_time_remaining;
 			}
@@ -485,7 +492,8 @@ namespace demonware::achievement_store
 		{
 			return is_supported_claim(record) && record.requires_claim &&
 				record.activation_timestamp && record.completion_timestamp &&
-				!record.expiration_timestamp &&
+				(!record.expiration_timestamp || (achievement_kind::moonraven(record.name, record.kind) &&
+					record.completion_timestamp < *record.expiration_timestamp)) &&
 				!record.global_progress_target && !record.global_counter_id &&
 				record.progress_target && record.progress >= record.progress_target &&
 				(record.status == achievement_status::claimable || record.status == achievement_status::finished);
@@ -509,8 +517,9 @@ namespace demonware::achievement_store
 			const std::uint64_t timestamp)
 		{
 			// Weapon unlocks stay one-time; bundled bribe offers can recur in later rotations.
-			return !(achievement_kind::special(record.kind) && record.status == achievement_status::finished &&
-				(!offer || !offer->repeatable)) &&
+			return !(record.status == achievement_status::finished &&
+				((achievement_kind::special(record.kind) && (!offer || !offer->repeatable)) ||
+				achievement_kind::moonraven(record.name, record.kind))) &&
 				offer && offer->period_start &&
 				record.activation_timestamp.value_or(timestamp) < offer->period_start &&
 				(record.status == achievement_status::finished || record.status == achievement_status::inactive);
@@ -525,9 +534,9 @@ namespace demonware::achievement_store
 				return activation_result::not_scheduled;
 			}
 
-			const auto active = std::ranges::count_if(achievements | std::views::values, [kind](const auto& record)
+			const auto active = std::ranges::count_if(achievements | std::views::values, [kind, timestamp](const auto& record)
 			{
-				return record.kind == kind && is_active(record.status);
+				return record.kind == kind && is_active(record.status) && !is_expired(record, timestamp);
 			});
 
 			if (active >= offer->activation_limit)
@@ -578,7 +587,8 @@ namespace demonware::achievement_store
 		}
 
 		activation_result settle_contract(const std::uint64_t user_id, const std::string& transaction,
-			const std::string& name, const std::uint32_t token_id, const bool activating)
+			const std::string& name, const std::uint32_t token_id, const bool activating,
+			const std::uint32_t prerequisite_item_id)
 		{
 			const auto json = serialize_state();
 			auto failure = activation_result::save_failed;
@@ -589,6 +599,13 @@ namespace demonware::achievement_store
 			{
 				if (activating)
 				{
+					const auto prerequisite = economy.get_inventory(prerequisite_item_id);
+					if (prerequisite_item_id && (!prerequisite || !prerequisite->quantity))
+					{
+						failure = activation_result::not_scheduled;
+						return false;
+					}
+
 					const auto token = economy.get_inventory(token_id);
 					if (!token || !is_permanent_token(*token, user_id))
 					{
@@ -713,8 +730,10 @@ namespace demonware::achievement_store
 			return exists ? activation_result::success : activation_result::invalid_state;
 		}
 
-		const auto activating = !exists || is_new_period(existing->second, offer, timestamp) ||
-			(!contract && existing->second.status == achievement_status::inactive);
+		const auto activating = !exists || is_expired(existing->second, timestamp) ||
+			is_new_period(existing->second, offer, timestamp) ||
+			((!contract || achievement_kind::moonraven(name, kind)) &&
+				existing->second.status == achievement_status::inactive);
 		const auto rejection = activating
 			? check_offer(name, kind, offer, timestamp)
 			: check_carry_over(existing->second, kind, previous != nullptr);
@@ -733,7 +752,14 @@ namespace demonware::achievement_store
 
 		if (activating)
 		{
-			achievements.insert_or_assign(name, start_record(offer->achievement, timestamp));
+			auto activation_time = timestamp;
+			if (original && achievement_kind::moonraven(name, kind))
+			{
+				// Pending events must not match a replacement accepted in the same second.
+				activation_time = std::max(timestamp, original->activation_timestamp.value_or(0) + 1);
+			}
+
+			achievements.insert_or_assign(name, start_record(offer->achievement, activation_time));
 		}
 
 		activation_receipts.emplace(key, activation_receipt{name, kind, token_id});
@@ -741,7 +767,8 @@ namespace demonware::achievement_store
 		auto result = activation_result::success;
 		if (contract)
 		{
-			result = settle_contract(user_id, transaction, name, token_id, activating);
+			result = settle_contract(user_id, transaction, name, token_id, activating,
+				offer ? offer->prerequisite_item_id : 0);
 		}
 		else if (!save_achievements())
 		{
@@ -767,7 +794,8 @@ namespace demonware::achievement_store
 
 		const auto found = achievements.find(name);
 		if (!achievements_valid || !user_id || transaction.size() != transaction_length ||
-			found == achievements.end() || !achievement_kind::order(found->second.kind))
+			found == achievements.end() || (!achievement_kind::order(found->second.kind) &&
+				!achievement_kind::moonraven(name, found->second.kind)))
 		{
 			return {transaction_status::rejected};
 		}
@@ -927,6 +955,13 @@ namespace demonware::achievement_store
 		return committed;
 	}
 
+	bool is_expired(const achievement_record& record, const std::uint64_t timestamp)
+	{
+		return achievement_kind::moonraven(record.name, record.kind) &&
+			record.status == achievement_status::in_progress &&
+			record.expiration_timestamp && timestamp >= *record.expiration_timestamp;
+	}
+
 	bool is_available()
 	{
 		std::lock_guard lock{achievement_mutex};
@@ -947,9 +982,16 @@ namespace demonware::achievement_store
 		std::vector<achievement_record> result{};
 		result.reserve(achievements.size());
 
-		for (const auto& record : achievements | std::views::values)
+		const auto timestamp = now();
+		for (auto record : achievements | std::views::values)
 		{
-			result.push_back(record);
+			if (is_expired(record, timestamp))
+			{
+				record.status = achievement_status::inactive;
+				record.usage_time_remaining = 0;
+			}
+
+			result.push_back(std::move(record));
 		}
 
 		append_missing(result, meta_order(1));

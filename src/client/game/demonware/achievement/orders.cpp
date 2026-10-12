@@ -37,6 +37,7 @@ namespace demonware::achievement_orders
 			int kind{};
 			std::uint32_t limit{};
 			std::vector<std::vector<order_offer>> sets{};
+			std::vector<order_offer> always_available{};
 		};
 
 		struct activation_request
@@ -81,13 +82,22 @@ namespace demonware::achievement_orders
 			const auto* cost_item = find_member(value, "costItemID");
 			const auto* usage_time = find_member(value, "usageTimeTarget");
 
-			if (!cost_item || !cost_item->IsUint() || !cost_item->GetUint() ||
-				!usage_time || !usage_time->IsInt() || usage_time->GetInt() <= 0)
+			if (!cost_item || !cost_item->IsUint() || !cost_item->GetUint())
 			{
 				return false;
 			}
 
 			order.cost_item_id = cost_item->GetUint();
+			if (achievement_kind::moonraven(order.achievement.name, order.achievement.kind))
+			{
+				return !usage_time;
+			}
+
+			if (!usage_time || !usage_time->IsInt() || usage_time->GetInt() <= 0)
+			{
+				return false;
+			}
+
 			order.achievement.usage_time_target = usage_time->GetInt();
 			order.achievement.usage_time_remaining = order.achievement.usage_time_target;
 
@@ -127,6 +137,16 @@ namespace demonware::achievement_orders
 			order.achievement.progress_target = progress_target->GetUint();
 			order.achievement.requires_claim = true;
 			order.achievement.success_rewards = encode_ascii(*success_rewards);
+
+			if (const auto* prerequisite = find_member(*value, "prerequisiteItemID"))
+			{
+				if (!achievement_kind::contract(kind) || !prerequisite->IsUint() || !prerequisite->GetUint())
+				{
+					return std::nullopt;
+				}
+
+				order.prerequisite_item_id = prerequisite->GetUint();
+			}
 
 			if (achievement_kind::contract(kind))
 			{
@@ -201,6 +221,30 @@ namespace demonware::achievement_orders
 				}
 			}
 
+			if (const auto* persistent = find_member(group, "alwaysAvailable"))
+			{
+				if (!achievement_kind::contract(rotation.kind) || !persistent->IsArray() || persistent->Size() > 9)
+				{
+					return std::nullopt;
+				}
+
+				for (const auto& name : persistent->GetArray())
+				{
+					if (!reward_json::ascii_string(&name, 128) || !used.emplace(reward_json::view(name)).second)
+					{
+						return std::nullopt;
+					}
+
+					auto order = read_offer(offers, std::string{reward_json::view(name)}, rotation.kind);
+					if (!order)
+					{
+						return std::nullopt;
+					}
+
+					rotation.always_available.push_back(std::move(*order));
+				}
+			}
+
 			return rotation;
 		}
 
@@ -223,7 +267,7 @@ namespace demonware::achievement_orders
 			const auto* rotations = find_member(document, "rotations");
 
 			if (!offers || !reward_json::unique_members(*offers) ||
-				!rotations || !rotations->IsArray() || rotations->Size() != 7)
+				!rotations || !rotations->IsArray() || rotations->Size() != 8)
 			{
 				return std::nullopt;
 			}
@@ -338,6 +382,22 @@ namespace demonware::achievement_orders
 					append(order);
 				}
 
+				for (auto order : group.always_available)
+				{
+					if (achievement_kind::moonraven(order.achievement.name, order.achievement.kind))
+					{
+						const auto expiration = moonraven_expiration(timestamp);
+						if (!expiration)
+						{
+							return result;
+						}
+
+						order.achievement.expiration_timestamp = expiration;
+					}
+
+					append(std::move(order));
+				}
+
 				if (retained_contract.empty() || !achievement_kind::contract(group.kind))
 				{
 					continue;
@@ -376,7 +436,7 @@ namespace demonware::achievement_orders
 			switch (existing->status)
 			{
 			case achievement_status::inactive:
-				if (achievement_kind::order(existing->kind))
+				if (achievement_kind::order(existing->kind) || achievement_kind::moonraven(existing->name, existing->kind))
 				{
 					return "available";
 				}
@@ -386,7 +446,8 @@ namespace demonware::achievement_orders
 			case achievement_status::claimable:
 				return "claimable";
 			case achievement_status::finished:
-				if (achievement_kind::special(existing->kind) && !order.repeatable)
+				if ((achievement_kind::special(existing->kind) && !order.repeatable) ||
+					achievement_kind::moonraven(existing->name, existing->kind))
 				{
 					return "completed";
 				}
@@ -513,6 +574,18 @@ namespace demonware::achievement_orders
 		}
 	}
 
+	std::uint64_t moonraven_expiration(const std::uint64_t timestamp)
+	{
+		constexpr auto period = 30 * day;
+		if (timestamp < reset_offset || timestamp > UINT64_MAX - period)
+		{
+			return 0;
+		}
+
+		// Local event windows share a deadline at 17:00 UTC.
+		return reset_offset + ((timestamp - reset_offset) / period + 1) * period;
+	}
+
 	std::optional<order_offer> contract_for_token(const std::uint32_t token, const std::uint64_t timestamp)
 	{
 		const auto snapshot = make_schedule(timestamp);
@@ -583,6 +656,13 @@ namespace demonware::achievement_orders
 			if (!status)
 			{
 				return std::nullopt;
+			}
+
+			// Claimed character unlocks leave the offers without changing the rotation.
+			if (*status == "completed" && (achievement_kind::moonraven(order.achievement.name, order.achievement.kind) ||
+				achievement_kind::stormraven(order.achievement.name, order.achievement.kind)))
+			{
+				continue;
 			}
 
 			auto value = serialize_achievement(order.achievement, allocator);

@@ -103,6 +103,15 @@ namespace demonware::loot_catalog_engine
 			"weapon_other",
 		};
 
+		// Only whitelist Stormraven tokens; other feature items gate progression.
+		constexpr std::array<std::string_view, 4> stormraven_unlocks
+		{
+			"zm_storm_hunter",
+			"zm_storm_mountain",
+			"zm_storm_survivor",
+			"zm_storm_slayer",
+		};
+
 		struct localize_entry
 		{
 			const char* value;
@@ -593,8 +602,11 @@ namespace demonware::loot_catalog_engine
 			{
 				if (row.item.item_id)
 				{
+					const auto character_unlock = row.item.group == "feature" &&
+						std::ranges::find(stormraven_unlocks, row.item.reference) != stormraven_unlocks.end();
+
 					customization[row.item.item_id] = row.reference_valid &&
-						std::ranges::find(permanent_groups, row.item.group) != permanent_groups.end();
+						(character_unlock || std::ranges::find(permanent_groups, row.item.group) != permanent_groups.end());
 				}
 			}
 

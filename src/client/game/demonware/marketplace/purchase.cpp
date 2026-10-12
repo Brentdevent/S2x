@@ -290,6 +290,13 @@ namespace demonware::marketplace_purchase
 
 				if (contract)
 				{
+					const auto prerequisite = transaction.get_inventory(contract->prerequisite_item_id);
+					if (contract->prerequisite_item_id && (!prerequisite || !prerequisite->quantity))
+					{
+						error = terminal_error;
+						return false;
+					}
+
 					// The restored retail costItemID must be the product's sole unit.
 					// Check active ownership under the economy lock, including races
 					// with activation; an active contract cannot buy another token.
@@ -322,12 +329,20 @@ namespace demonware::marketplace_purchase
 						}
 
 						const std::string_view status = achievement["status"].GetString();
-						if (status == "inProgress" || status == "claimable")
+						const auto moonraven = achievement_kind::moonraven(achievement["name"].GetString(), contract->achievement.kind);
+						const auto expiration = achievement.HasMember("expirationTimestamp") && achievement["expirationTimestamp"].IsUint64()
+							? achievement["expirationTimestamp"].GetUint64()
+							: (moonraven && achievement.HasMember("activationTimestamp") && achievement["activationTimestamp"].IsUint64()
+								? achievement_orders::moonraven_expiration(achievement["activationTimestamp"].GetUint64()) : 0);
+						const auto expired = moonraven && status == "inProgress" && expiration &&
+							expiration <= static_cast<std::uint64_t>(time(nullptr));
+						if ((status == "inProgress" || status == "claimable") && !expired)
 						{
 							++active;
 						}
 
-						const auto repeat = contract->period_start && (status == "finished" || status == "inactive") &&
+						const auto repeat = moonraven ? status == "inactive" || expired :
+							contract->period_start && (status == "finished" || status == "inactive") &&
 							achievement.HasMember("activationTimestamp") && achievement["activationTimestamp"].IsUint64() &&
 							achievement["activationTimestamp"].GetUint64() < contract->period_start;
 						if (achievement["name"].GetString() == contract->achievement.name && !repeat)

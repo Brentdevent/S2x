@@ -56,6 +56,8 @@ builders.daily_orders_descriptions = function ( ... )
 			order_kind = GameChallengeType.GameAchievementKind_Order_Daily_ZM
 		elseif order_type == AEPeriodicType.WeeklyZM then
 			order_kind = GameChallengeType.GameAchievementKind_Order_Weekly_ZM
+		elseif order_type == AEPeriodicType.SpecialZM then
+			order_kind = GameChallengeType.GameAchievementKind_Order_Special_ZM
 		end
 		return update_progress( self, controller, order_type, ... )
 	end
