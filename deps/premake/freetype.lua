@@ -26,7 +26,7 @@ function freetype.project()
 			"base/ftmm", "base/ftotval", "base/ftpatent", "base/ftpfr",
 			"base/ftstroke", "base/ftsynth", "base/ftsystem", "base/fttype1",
 			"base/ftwinfnt", "bdf/bdf", "cache/ftcache", "cff/cff",
-			"cid/type1cid", "gzip/ftgzip", "lzw/ftlzw", "pcf/pcf",
+			"cid/type1cid", "gzip/ftgzip", "hvf/hvf", "lzw/ftlzw", "pcf/pcf",
 			"pfr/pfr", "psaux/psaux", "pshinter/pshinter", "psnames/psmodule",
 			"raster/raster", "sdf/sdf", "sfnt/sfnt", "smooth/smooth",
 			"svg/svg", "truetype/truetype", "type1/type1", "type42/type42",
