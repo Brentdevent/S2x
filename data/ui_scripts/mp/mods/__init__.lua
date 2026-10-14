@@ -3,15 +3,6 @@ if game:issingleplayer() or not Engine.InFrontend() then
 end
 
 local MENU_NAME = "s2x_mods_menu"
-local TAB_ID = "S2xModsTab"
-local CONFIG = {
-    tab_left = 100,
-    multiplayer_tab_right = 440,
-    zombies_tab_right = 600,
-    multiplayer_tab_top = 448,
-    zombies_tab_top = 572,
-    tab_height = 62,
-}
 
 local function has_mod_api()
     return type(mods) == "table" and
@@ -250,135 +241,139 @@ LUI.MenuBuilder.registerType(MENU_NAME, function(_, properties)
     return build_mod_menu(properties)
 end)
 
-local function patch_soldier_menu(soldier_menu, properties, requested_menu_name)
-    if not soldier_menu then
-        return soldier_menu
+local function get_find_match_state(menu)
+    local scoped_data = LUI.FlowManager.GetScopedData(menu)
+    return scoped_data and scoped_data.findGameMenu or nil
+end
+
+local function get_event_controller(event, fallback_controller)
+    if event and type(event.controller) == "number" then
+        return event.controller
     end
 
-    local menu_name = requested_menu_name or soldier_menu.id
-    if menu_name ~= "soldierscreen_menu" and menu_name ~= "zm_soldier_menu" then
-        return soldier_menu
-    end
+    return fallback_controller or Engine.GetFirstActiveController()
+end
 
-    if soldier_menu[TAB_ID] then
-        return soldier_menu
-    end
+local function create_mod_tile(controller)
+    local is_zombies = Engine.IsZombiesMode()
+    local image_name = is_zombies and "menu_playlist_select_zm_shattered" or "menu_playlist_select_hq"
+    local blur_image_name = is_zombies and "menu_playlist_select_zm_shattered_blur" or
+        "menu_playlist_select_hq_blur"
 
-    properties = properties or {}
-    local controller = get_controller_index(soldier_menu, properties)
-    local is_zombies = menu_name == "zm_soldier_menu"
-    local tab_right = is_zombies and CONFIG.zombies_tab_right or CONFIG.multiplayer_tab_right
-    local tab_top = is_zombies and CONFIG.zombies_tab_top or CONFIG.multiplayer_tab_top
-    local tab = LUI.MenuBuilder.BuildRegisteredType("soldierscreen_tab_button", {
-        controllerIndex = controller,
-        fontIconSet = properties.fontIconSet,
-    })
-    tab.id = TAB_ID
-    tab:setAnchors(0, 1, 0, 1, 0)
-    tab:setBottom(_1080p * (tab_top + CONFIG.tab_height), 0)
-    tab:setLeft(_1080p * CONFIG.tab_left, 0)
-    tab:setRight(_1080p * tab_right, 0)
-    tab:setTop(_1080p * tab_top, 0)
-    if tab.Icon then
-        tab.Icon:setImage(RegisterMaterial("menu_soldier_dossier"), 0)
-    end
-    if tab.Name then
-        tab.Name:setText(Engine.Localize("MODS"), 0)
-    end
-    soldier_menu:addElement(tab)
-    soldier_menu[TAB_ID] = tab
-
-    if not is_zombies then
-        local function position_multiplayer_tabs()
-            if soldier_menu.ActiveBoostTab then
-                soldier_menu.ActiveBoostTab:setBottom(_1080p * 572, 0)
-                soldier_menu.ActiveBoostTab:setTop(_1080p * 510, 0)
+    return {
+        image = image_name,
+        blurImage = blur_image_name,
+        text = "MODS",
+        desc = "Load and manage mods for this game mode.",
+        actionFunc = function(_, event)
+            local controller_index = get_event_controller(event, controller)
+            if type(controller_index) ~= "number" then
+                return
             end
-            if soldier_menu.ActiveXPBoosts then
-                soldier_menu.ActiveXPBoosts:setBottom(_1080p * 992.83, 0)
-                soldier_menu.ActiveXPBoosts:setTop(_1080p * 603.92, 0)
-            end
-        end
 
-        position_multiplayer_tabs()
-        soldier_menu:addEventHandler("menu_active", position_multiplayer_tabs)
-    end
+            AAR.ClearAAR()
+            ACTIONS.OpenMenu(MENU_NAME, false, controller_index)
+        end,
+        s2xModsTile = true,
+    }
+end
 
-    local function open_mod_menu(event)
-        ACTIONS.OpenMenu(MENU_NAME, true, event.controller or controller)
-        local scoped_data = LUI.FlowManager.GetScopedData(soldier_menu)
-        if scoped_data then
-            scoped_data.subMenu = true
+local function contains_mod_tile(buttons)
+    for _, button in ipairs(buttons or {}) do
+        if button.s2xModsTile then
+            return true
         end
     end
 
-    tab:addEventHandler("button_action", function(_, event)
-        open_mod_menu(event)
-    end)
-    tab:addEventHandler("gamepad_button", function(element, event)
-        if CONDITIONS.ButtonRight(soldier_menu, event) and
-            CONDITIONS.IsInFocus(element) and CONDITIONS.IsButtonDown(soldier_menu, event) then
-            open_mod_menu(event)
-            ACTIONS.PlaySelectSound()
+    return false
+end
+
+local function patch_find_match_menu(menu, properties)
+    if not menu then
+        return false
+    end
+
+    local state = get_find_match_state(menu)
+    if not state or not state.topButtons or contains_mod_tile(state.topButtons) or
+        contains_mod_tile(state.bottomButtons) then
+        return false
+    end
+
+    local top_buttons = state.topButtons
+    local bottom_buttons = state.bottomButtons or {}
+    if #top_buttons < 3 or not top_buttons[1] or not top_buttons[2] then
+        return false
+    end
+
+    local controller = get_controller_index(menu, properties)
+    local mod_tile = create_mod_tile(controller)
+
+    if Engine.IsZombiesMode() then
+        if not top_buttons[3] then
+            return false
         end
-    end)
 
-    soldier_menu:updateNavigation()
-    return soldier_menu
-end
-
-local function safe_patch(soldier_menu, properties, requested_menu_name)
-    local ok, result = pcall(patch_soldier_menu, soldier_menu, properties, requested_menu_name)
-    if not ok then
-        return soldier_menu
-    end
-    return result
-end
-
-local menu_builders = LUI.MenuBuilder.m_types_build or m_types_build
-if type(menu_builders) == "table" then
-    local function wrap_soldier_builder(menu_name)
-        local stock_builder = menu_builders[menu_name]
-        if type(stock_builder) == "function" then
-            menu_builders[menu_name] = function(menu, properties)
-                return safe_patch(stock_builder(menu, properties), properties, menu_name)
-            end
+        state.topButtons = {
+            top_buttons[1],
+            top_buttons[2],
+            mod_tile,
+            top_buttons[3],
+        }
+    else
+        if not top_buttons[4] then
+            return false
         end
+
+        local new_bottom_buttons = {}
+        for index = 3, #top_buttons do
+            new_bottom_buttons[#new_bottom_buttons + 1] = top_buttons[index]
+        end
+        for _, button in ipairs(bottom_buttons) do
+            new_bottom_buttons[#new_bottom_buttons + 1] = button
+        end
+
+        state.topButtons = { top_buttons[1], top_buttons[2], mod_tile }
+        state.bottomButtons = new_bottom_buttons
     end
-    wrap_soldier_builder("soldierscreen_menu")
-    wrap_soldier_builder("zm_soldier_menu")
+
+    state.numTotalColumns = 4
+    state.numColWindows = 4
+    return true
 end
 
-local stock_build_registered_type = LUI.MenuBuilder.BuildRegisteredType
-LUI.MenuBuilder.BuildRegisteredType = function(menu_name, properties, ...)
-    local built_menu = stock_build_registered_type(menu_name, properties, ...)
-    if menu_name == "soldierscreen_menu" or menu_name == "zm_soldier_menu" then
-        return safe_patch(built_menu, properties, menu_name)
+s2x_install_mods_find_match_hook = function()
+    local menu_builders = LUI.MenuBuilder.m_types_build or m_types_build
+    local stock_controller = package.loaded["s2.findgame_menu_uc"]
+    if type(menu_builders) ~= "table" or type(stock_controller) ~= "table" or
+        type(stock_controller.PreLoadFunc) ~= "function" then
+        error("Could not find the stock Find Match controller")
     end
-    return built_menu
-end
-
-if TabMenuBase and TabMenuBase.ChangePage then
-    local stock_change_page = TabMenuBase.ChangePage
-    TabMenuBase.ChangePage = function(tab_menu, controller, previous_page, previous_index, next_page,
-        next_index, properties_func)
-        stock_change_page(tab_menu, controller, previous_page, previous_index, next_page,
-            next_index, properties_func)
-
-        local requested_menu_name = next_page and next_page.GetMenuName and
-            next_page.GetMenuName(controller) or nil
-        safe_patch(tab_menu.CurrentMenuPage, {
-            controllerIndex = controller,
-        }, requested_menu_name)
+    if stock_controller.s2xModsWrapped then
+        return
     end
-end
 
-pcall(function()
-    local root = Engine.GetLuiRoot()
-    local menu_info = root and root.flowManager and
-        LUI.FlowManager.GetTopMenuInfo(root.flowManager.menuInfoStack) or nil
-    local current_page = menu_info and menu_info.menu and menu_info.menu.CurrentMenuPage or nil
-    safe_patch(current_page, {
-        controllerIndex = Engine.GetFirstActiveController(),
-    })
-end)
+    local stock_preload = stock_controller.PreLoadFunc
+    local stock_builder = menu_builders["findgame_menu"]
+    local stock_module = package.loaded["s2.findgame_menu"]
+    if type(stock_builder) ~= "function" then
+        error("Could not find the stock Find Match menu builder")
+    end
+
+    stock_controller.PreLoadFunc = function(menu, controller, properties)
+        local result = stock_preload(menu, controller, properties)
+        pcall(patch_find_match_menu, menu, { controllerIndex = controller })
+        return result
+    end
+
+    menu_builders["findgame_menu"] = nil
+    package.loaded["s2.findgame_menu"] = nil
+    local loaded, load_error = pcall(require, "s2.findgame_menu")
+    if not loaded or type(menu_builders["findgame_menu"]) ~= "function" then
+        stock_controller.PreLoadFunc = stock_preload
+        menu_builders["findgame_menu"] = stock_builder
+        package.loaded["s2.findgame_menu"] = stock_module
+        error(load_error or "Could not reload the stock Find Match menu builder")
+    end
+
+    stock_controller.s2xModsWrapped = true
+end

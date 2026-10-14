@@ -367,6 +367,10 @@ namespace mods
 			}, scheduler::main);
 		};
 
+		const std::string install_find_match_hook =
+			"if type(s2x_install_mods_find_match_hook) == 'function' then "
+			"s2x_install_mods_find_match_hook() end";
+		(void)lua["loadstring"](install_find_match_hook)[0]();
 	}
 
 	class component final : public generic_component
