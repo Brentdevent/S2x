@@ -1,5 +1,6 @@
 local FIND_MATCH_COLUMN_COUNT = 4
 local FIND_MATCH_LAYOUT_NONE = 0
+local MODS_MENU_NAME = "s2x_mods_menu"
 
 local STOCK_BUTTON_TEXT = {
 	PublicMatch = "LUA_MENU_PUBLIC_MATCH_CAPS",
@@ -73,6 +74,31 @@ local function create_server_browser_button( template, controller, labels )
 	}
 end
 
+local function create_mods_button( controller )
+	local is_zombies = Engine.IsZombiesMode()
+	local image = is_zombies and "menu_playlist_select_zm_shattered" or "menu_playlist_select_hq"
+	local blur_image = is_zombies and "menu_playlist_select_zm_shattered_blur" or "menu_playlist_select_hq_blur"
+	return {
+		image = image,
+		blurImage = blur_image,
+		text = "MODS",
+		desc = "Load and manage mods for this game mode.",
+		disabledFunc = function ()
+			return false
+		end,
+		actionFunc = function ( _, event )
+			local controller_index = get_controller_index( event, controller )
+			if type( controller_index ) ~= "number" then
+				return
+			end
+
+			AAR.ClearAAR()
+			ACTIONS.OpenMenu( MODS_MENU_NAME, false, controller_index )
+		end,
+		s2xModsTile = true,
+	}
+end
+
 local function set_find_match_data_sources( controller )
 	local find_match_data = DataSources and DataSources.inFrontend and
 		DataSources.inFrontend.MP and DataSources.inFrontend.MP.FindMatch or nil
@@ -114,15 +140,18 @@ local function configure_multiplayer_buttons( menu, controller, labels )
 		controller,
 		labels
 	)
+	local mods_button = create_mods_button( controller )
 
 	find_match_state.layoutStyle = FIND_MATCH_LAYOUT_NONE
 	find_match_state.topButtons = {
 		server_browser,
 		custom_match,
+		mods_button
+	}
+	find_match_state.bottomButtons = {
 		campaign,
 		zombies
 	}
-	find_match_state.bottomButtons = {}
 	find_match_state.numTotalColumns = FIND_MATCH_COLUMN_COUNT
 	find_match_state.numColWindows = FIND_MATCH_COLUMN_COUNT
 	find_match_state.controllerIndex = controller
@@ -147,11 +176,13 @@ local function configure_zombies_buttons( menu, controller, labels )
 		not campaign or not multiplayer then
 		return
 	end
+	local mods_button = create_mods_button( controller )
 
 	find_match_state.layoutStyle = FIND_MATCH_LAYOUT_NONE
 	find_match_state.topButtons = {
 		create_server_browser_button( public_match, controller, labels ),
 		custom_match,
+		mods_button,
 		replay_prologue
 	}
 	find_match_state.bottomButtons = {
