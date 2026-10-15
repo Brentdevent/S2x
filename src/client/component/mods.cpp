@@ -193,6 +193,31 @@ namespace mods
 			utils::io::create_directory(get_mods_directory());
 			utils::io::remove_file(get_mods_directory() / ".active_mod");
 		}
+
+		bool directory_has_entries(const std::filesystem::path& path)
+		{
+			std::error_code error;
+			if (!std::filesystem::is_directory(path, error))
+			{
+				if (error && error != std::errc::no_such_file_or_directory)
+				{
+					console::warn("[Mods] Could not inspect '%s': %s\n", path.string().data(), error.message().data());
+				}
+				return false;
+			}
+
+			std::filesystem::directory_iterator it(path, error);
+			if (error)
+			{
+				if (error != std::errc::no_such_file_or_directory)
+				{
+					console::warn("[Mods] Could not inspect '%s': %s\n", path.string().data(), error.message().data());
+				}
+				return false;
+			}
+
+			return it != std::filesystem::directory_iterator{};
+		}
 	}
 
 	std::string get_loaded_mod()
@@ -331,6 +356,15 @@ namespace mods
 		mods_table["getloaded"] = []()
 		{
 			return mods::get_loaded_mod();
+		};
+
+		mods_table["getloosefiles"] = []()
+		{
+			const auto s2x_directory = std::filesystem::path{ utils::nt::library{}.get_folder() } / "s2x";
+			ui_scripting::table loose_files{};
+			loose_files["scripts"] = directory_has_entries(s2x_directory / "scripts");
+			loose_files["ui_scripts"] = directory_has_entries(s2x_directory / "ui_scripts");
+			return loose_files;
 		};
 
 		mods_table["getlist"] = []()
