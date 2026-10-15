@@ -17,17 +17,12 @@
 #include <utils/string.hpp>
 
 #include <algorithm>
-#include <filesystem>
-#include <random>
-#include <string>
-#include <utility>
-#include <vector>
 
 namespace bots
 {
 	namespace
 	{
-		utils::hook::detour add_bot_hook;
+		utils::hook::detour bot_get_random_name_hook;
 		std::vector<std::string> bot_names;
 		std::size_t bot_name_index{};
 		bool bot_names_loaded{};
@@ -71,17 +66,14 @@ namespace bots
 			return bot_names[bot_name_index++].c_str();
 		}
 
-		game::mp::gentity_s* add_bot_stub(const char* name, const int customization_group)
+		const char* get_random_bot_name_stub()
 		{
-			if (!name || !*name)
+			if (const auto* custom_name = get_custom_bot_name())
 			{
-				if (const auto* custom_name = get_custom_bot_name())
-				{
-					name = custom_name;
-				}
+				return custom_name;
 			}
 
-			return add_bot_hook.invoke<game::mp::gentity_s*>(name, customization_group);
+			return bot_get_random_name_hook.invoke<const char*>();
 		}
 
 		int get_requested_bot_count(const command::params& params)
@@ -154,9 +146,15 @@ namespace bots
 			// Not sure, is LUA related (Might need additional patches since it also checks OnlineGame dvar outside this function)
 			utils::hook::set(0x388210_g, 0xC301B0);
 
-			add_bot_hook.create(game::mp::SV_AddBot, add_bot_stub);
-			scripting::on_shutdown([](int)
+			bot_get_random_name_hook.create(0x6C3600_g, get_random_bot_name_stub);
+			
+			scripting::on_shutdown([](const int clear_scripts)
 			{
+				if (!clear_scripts)
+				{
+					return;
+				}
+
 				bot_names.clear();
 				bot_name_index = 0;
 				bot_names_loaded = false;
