@@ -4,6 +4,7 @@
 #include "game/game.hpp"
 
 #include "game_console.hpp"
+#include "gui/gui.hpp"
 
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
@@ -17,6 +18,11 @@ namespace input
 
 		void cl_char_event_stub(const int local_client_num, const int key)
 		{
+			if (!gui::gui_char_event(local_client_num, key))
+			{
+				return;
+			}
+
 			if (!game_console::console_char_event(local_client_num, key))
 			{
 				return;
@@ -27,6 +33,11 @@ namespace input
 
 		void cl_key_event_stub(const int local_client_num, const int key, const signed int down, const int arg4)
 		{
+			if (!gui::gui_key_event(local_client_num, key, down))
+			{
+				return;
+			}
+
 			if (!game_console::console_key_event(local_client_num, key, down))
 			{
 				return;

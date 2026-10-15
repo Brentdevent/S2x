@@ -2,6 +2,7 @@
 #include "loader/component_loader.hpp"
 
 #include "party.hpp"
+#include "arena.hpp"
 #include "custom_match.hpp"
 #include "dedicated_party.hpp"
 #include "dedicated_party_client.hpp"
@@ -210,6 +211,11 @@ namespace party
 				// unsorted map-name lookup instead.
 				game::GameInfo_UpdateArenas();
 				map_index = game::GameInfo_GetIndexForMapName(map_name.data());
+				if (map_index < 0 && arena::register_map(map_name))
+				{
+					map_index = game::GameInfo_GetIndexForMapName(map_name.data());
+				}
+
 				if (map_index < 0)
 				{
 					console::error(
@@ -224,7 +230,8 @@ namespace party
 			// The sorted UI lookup returns zero for both a missing map and its first
 			// entry. Validate membership with the unambiguous catalog lookup first.
 			game::GameInfo_UpdateArenas();
-			if (game::GameInfo_GetIndexForMapName(map_name.data()) < 0)
+			if (game::GameInfo_GetIndexForMapName(map_name.data()) < 0
+				&& (!arena::register_map(map_name) || game::GameInfo_GetIndexForMapName(map_name.data()) < 0))
 			{
 				console::error(
 					"Multiplayer map '%s' is not present in the stock arena catalog.\n",

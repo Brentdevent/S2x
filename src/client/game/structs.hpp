@@ -298,6 +298,22 @@ namespace game
 		} vector;
 	}; static_assert(sizeof(DvarLimits) == 0x10);
 
+	enum MaterialTechniqueType
+	{
+		TECHNIQUE_UNLIT = 10, // H1 has UNLIT directly before EMISSIVE
+		TECHNIQUE_EMISSIVE = 11,
+		TECHNIQUE_LIT = 15,
+		TECHNIQUE_NONE = 116,
+	};
+
+	struct GfxDrawMethod
+	{
+		int drawScene;
+		int baseTechType;
+		int emissiveTechType;
+		int forceTechType;
+	}; static_assert(sizeof(GfxDrawMethod) == 0x10);
+
 	struct dvar_t
 	{
 		const char* name;
@@ -698,6 +714,21 @@ namespace game
 		XAssetType type;
 		XAssetHeader header;
 	};
+
+	struct XAssetEntry
+	{
+		XAsset asset;
+		unsigned short zoneIndex;
+		volatile char inuseMask;
+		unsigned int nextHash;
+		unsigned int nextOverride;
+		unsigned int nextPoolEntry;
+	};
+	static_assert(offsetof(XAssetEntry, zoneIndex) == 0x10);
+	static_assert(offsetof(XAssetEntry, inuseMask) == 0x12);
+	static_assert(offsetof(XAssetEntry, nextHash) == 0x14);
+	static_assert(offsetof(XAssetEntry, nextOverride) == 0x18);
+	static_assert(sizeof(XAssetEntry) == 0x20);
 
 	enum scr_string_t
 	{
