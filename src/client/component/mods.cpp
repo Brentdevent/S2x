@@ -2,18 +2,15 @@
 #include "loader/component_loader.hpp"
 
 #include "game/game.hpp"
+#include "game/ui_scripting/types.hpp"
 
-#include "console/console.hpp"
 #include "filesystem.hpp"
 #include "mods.hpp"
 #include "scheduler.hpp"
-#include "game/ui_scripting/types.hpp"
 #include "ui_scripting.hpp"
 
-#include <algorithm>
-#include <cctype>
-#include <filesystem>
-#include <rapidjson/document.h>
+#include "console/console.hpp"
+
 #include <utils/io.hpp>
 #include <utils/nt.hpp>
 
@@ -49,6 +46,7 @@ namespace mods
 			const auto has_scripts = std::filesystem::is_directory(path / "scripts", error) && !error;
 			error.clear();
 			const auto has_ui_scripts = std::filesystem::is_directory(path / "ui_scripts", error) && !error;
+			
 			return has_scripts || has_ui_scripts;
 		}
 
@@ -116,14 +114,17 @@ namespace mods
 				const auto separator = value.find(',', start);
 				const auto length = separator == std::string::npos ? std::string::npos : separator - start;
 				auto mode = value.substr(start, length);
+				
 				while (!mode.empty() && std::isspace(static_cast<unsigned char>(mode.front())))
 				{
 					mode.erase(mode.begin());
 				}
+				
 				while (!mode.empty() && std::isspace(static_cast<unsigned char>(mode.back())))
 				{
 					mode.pop_back();
 				}
+				
 				std::ranges::transform(mode, mode.begin(), [](const unsigned char character)
 				{
 					return static_cast<char>(std::tolower(character));
@@ -146,6 +147,7 @@ namespace mods
 				{
 					break;
 				}
+				
 				start = separator + 1;
 			}
 
@@ -157,6 +159,7 @@ namespace mods
 			info.supports_mp = supports_mp;
 			info.supports_zm = supports_zm;
 			info.mode = supports_mp && supports_zm ? "mp, zm" : supports_mp ? "mp" : "zm";
+			
 			return true;
 		}
 
@@ -272,6 +275,7 @@ namespace mods
 		info.description = read_string_member(document, "description", info.description);
 		info.author = read_string_member(document, "author");
 		info.version = read_string_member(document, "version");
+		
 		return info;
 	}
 
@@ -366,7 +370,6 @@ namespace mods
 				mods::unload();
 			}, scheduler::main);
 		};
-
 	}
 
 	class component final : public generic_component
