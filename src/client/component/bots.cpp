@@ -4,17 +4,86 @@
 #include "command.hpp"
 #include "scheduler.hpp"
 #include "party.hpp"
+#include "scripting.hpp"
 
 #include "game/game.hpp"
 
 #include "console/console.hpp"
 
 #include <utils/hook.hpp>
+#include <utils/cryptography.hpp>
+#include <utils/io.hpp>
+#include <utils/nt.hpp>
+#include <utils/string.hpp>
+
+#include <algorithm>
+#include <filesystem>
+#include <random>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace bots
 {
 	namespace
 	{
+		utils::hook::detour add_bot_hook;
+		std::vector<std::string> bot_names;
+		std::size_t bot_name_index{};
+		bool bot_names_loaded{};
+
+		void load_bot_names()
+		{
+			if (bot_names_loaded)
+			{
+				return;
+			}
+
+			bot_names_loaded = true;
+			const auto path = std::filesystem::path{ utils::nt::library{}.get_folder() } / "s2x" / "bots.txt";
+			std::string contents;
+			if (!utils::io::read_file(path.string(), &contents))
+			{
+				return;
+			}
+
+			for (auto& name : utils::string::split(contents, '\n'))
+			{
+				name = utils::string::replace(name, "\r", "");
+				if (!name.empty())
+				{
+					bot_names.emplace_back(std::move(name));
+				}
+			}
+
+			std::mt19937 random{ utils::cryptography::random::get_integer() };
+			std::shuffle(bot_names.begin(), bot_names.end(), random);
+		}
+
+		const char* get_custom_bot_name()
+		{
+			load_bot_names();
+			if (bot_name_index >= bot_names.size())
+			{
+				return nullptr;
+			}
+
+			return bot_names[bot_name_index++].c_str();
+		}
+
+		game::mp::gentity_s* add_bot_stub(const char* name, const int customization_group)
+		{
+			if (!name || !*name)
+			{
+				if (const auto* custom_name = get_custom_bot_name())
+				{
+					name = custom_name;
+				}
+			}
+
+			return add_bot_hook.invoke<game::mp::gentity_s*>(name, customization_group);
+		}
+
 		int get_requested_bot_count(const command::params& params)
 		{
 			if (params.size() <= 1)
@@ -84,6 +153,14 @@ namespace bots
 			
 			// Not sure, is LUA related (Might need additional patches since it also checks OnlineGame dvar outside this function)
 			utils::hook::set(0x388210_g, 0xC301B0);
+
+			add_bot_hook.create(game::mp::SV_AddBot, add_bot_stub);
+			scripting::on_shutdown([](int)
+			{
+				bot_names.clear();
+				bot_name_index = 0;
+				bot_names_loaded = false;
+			});
 
 			command::add("spawnBot", [](const command::params& params)
 			{
