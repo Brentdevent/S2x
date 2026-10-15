@@ -248,7 +248,6 @@ namespace gui
 					ImGui::EndMenu();
 				}
 
-				ImGui::TextDisabled("F11 or Escape to close");
 				ImGui::EndMainMenuBar();
 			}
 		}
