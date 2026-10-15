@@ -26,6 +26,32 @@ local function get_controller_index(element, properties)
     return Engine.GetFirstActiveController()
 end
 
+local function get_loose_files_notice()
+    if type(mods) ~= "table" or type(mods.getloosefiles) ~= "function" then
+        return nil
+    end
+
+    local ok, loose_files = pcall(mods.getloosefiles)
+    if not ok or type(loose_files) ~= "table" then
+        return nil
+    end
+
+    local directories = {}
+    if loose_files.scripts then
+        directories[#directories + 1] = "\"s2x/scripts\""
+    end
+    if loose_files.ui_scripts then
+        directories[#directories + 1] = "\"s2x/ui_scripts\""
+    end
+    if #directories == 0 then
+        return nil
+    end
+
+    return "Loose files detected in " .. table.concat(directories, " and ") ..
+        "\nLoose files do not appear in the Mod Manager but still work in-game" ..
+        "\nLoose files may cause incompatibility with Mods"
+end
+
 local function get_mod_info(folder)
     if not has_mod_api() then
         return {
@@ -224,6 +250,24 @@ local function build_mod_menu(properties)
         description.DescriptionTitle:setText("", 0)
     end
     self:addElement(description)
+
+    local loose_files_notice = get_loose_files_notice()
+    if loose_files_notice then
+        local notice = LUI.UIText.new()
+        notice.id = "S2xModsLooseFilesNotice"
+        notice:setAnchorsAndPosition(0, 1, 0, 1,
+            _1080p * 1010, _1080p * 1790, _1080p * 785, _1080p * 915, 0)
+        notice:setFont(FONTS.BodyFont.Font)
+        notice:setFontSize(18, 0)
+        notice:setHorizontalAlignment(LUI.HorizontalAlignment.Right)
+        notice:setVerticalAlignment(LUI.VerticalAlignment.Bottom)
+        notice:setRGBFromInt(SWATCHES.Menus.MenuOffWhite, 0)
+        if properties.fontIconSet then
+            notice:setFontIconSet(properties.fontIconSet)
+        end
+        notice:setText(loose_files_notice, 0)
+        self:addElement(notice)
+    end
 
     local helper = helper_bar:BeginSet()
     helper = helper:AddBackButton()

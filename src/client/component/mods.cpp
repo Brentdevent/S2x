@@ -2,19 +2,16 @@
 #include "loader/component_loader.hpp"
 
 #include "game/game.hpp"
+#include "game/ui_scripting/types.hpp"
 
-#include "console/console.hpp"
 #include "fastfiles.hpp"
 #include "filesystem.hpp"
 #include "mods.hpp"
 #include "scheduler.hpp"
-#include "game/ui_scripting/types.hpp"
 #include "ui_scripting.hpp"
 
-#include <algorithm>
-#include <cctype>
-#include <filesystem>
-#include <rapidjson/document.h>
+#include "console/console.hpp"
+
 #include <utils/io.hpp>
 #include <utils/nt.hpp>
 
@@ -52,6 +49,7 @@ namespace mods
 			const auto has_ui_scripts = std::filesystem::is_directory(path / "ui_scripts", error) && !error;
 			error.clear();
 			const auto has_zone = std::filesystem::is_directory(path / "zone", error) && !error;
+
 			return has_scripts || has_ui_scripts || has_zone;
 		}
 
@@ -119,14 +117,17 @@ namespace mods
 				const auto separator = value.find(',', start);
 				const auto length = separator == std::string::npos ? std::string::npos : separator - start;
 				auto mode = value.substr(start, length);
+				
 				while (!mode.empty() && std::isspace(static_cast<unsigned char>(mode.front())))
 				{
 					mode.erase(mode.begin());
 				}
+				
 				while (!mode.empty() && std::isspace(static_cast<unsigned char>(mode.back())))
 				{
 					mode.pop_back();
 				}
+				
 				std::ranges::transform(mode, mode.begin(), [](const unsigned char character)
 				{
 					return static_cast<char>(std::tolower(character));
@@ -149,6 +150,7 @@ namespace mods
 				{
 					break;
 				}
+				
 				start = separator + 1;
 			}
 
@@ -160,6 +162,7 @@ namespace mods
 			info.supports_mp = supports_mp;
 			info.supports_zm = supports_zm;
 			info.mode = supports_mp && supports_zm ? "mp, zm" : supports_mp ? "mp" : "zm";
+			
 			return true;
 		}
 
@@ -195,6 +198,31 @@ namespace mods
 			(void)filesystem::get_search_paths();
 			utils::io::create_directory(get_mods_directory());
 			utils::io::remove_file(get_mods_directory() / ".active_mod");
+		}
+
+		bool directory_has_entries(const std::filesystem::path& path)
+		{
+			std::error_code error;
+			if (!std::filesystem::is_directory(path, error))
+			{
+				if (error && error != std::errc::no_such_file_or_directory)
+				{
+					console::warn("[Mods] Could not inspect '%s': %s\n", path.string().data(), error.message().data());
+				}
+				return false;
+			}
+
+			std::filesystem::directory_iterator it(path, error);
+			if (error)
+			{
+				if (error != std::errc::no_such_file_or_directory)
+				{
+					console::warn("[Mods] Could not inspect '%s': %s\n", path.string().data(), error.message().data());
+				}
+				return false;
+			}
+
+			return it != std::filesystem::directory_iterator{};
 		}
 	}
 
@@ -275,6 +303,7 @@ namespace mods
 		info.description = read_string_member(document, "description", info.description);
 		info.author = read_string_member(document, "author");
 		info.version = read_string_member(document, "version");
+		
 		return info;
 	}
 
@@ -337,6 +366,15 @@ namespace mods
 			return mods::get_loaded_mod();
 		};
 
+		mods_table["getloosefiles"] = []()
+		{
+			const auto s2x_directory = std::filesystem::path{ utils::nt::library{}.get_folder() } / "s2x";
+			ui_scripting::table loose_files{};
+			loose_files["scripts"] = directory_has_entries(s2x_directory / "scripts");
+			loose_files["ui_scripts"] = directory_has_entries(s2x_directory / "ui_scripts");
+			return loose_files;
+		};
+
 		mods_table["getlist"] = []()
 		{
 			return mods::get_mod_list();
@@ -370,7 +408,6 @@ namespace mods
 				mods::unload();
 			}, scheduler::main);
 		};
-
 	}
 
 	class component final : public generic_component
