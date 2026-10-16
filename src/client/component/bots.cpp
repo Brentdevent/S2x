@@ -47,6 +47,11 @@ namespace bots
 				name = utils::string::replace(name, "\r", "");
 				if (!name.empty())
 				{
+					if (name.size() > 30)
+					{
+						name.resize(30);
+					}
+					
 					bot_names.emplace_back(std::move(name));
 				}
 			}
