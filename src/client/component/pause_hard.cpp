@@ -815,7 +815,7 @@ namespace pause_hard
 					// Party cleanup may already have cleared membership. The immutable
 					// bootstrap token still authenticates this terminal host decision.
 					network::send(client_host, protocol::ack_command, protocol::encode(client.acknowledgement()));
-					console::info("Hard pause: the host removed you from the match.\n");
+					console::info("Hard pause: you are no longer in this match. Disconnecting.\n");
 					game::Cbuf_AddText(0, "disconnect\n");
 					break;
 				}
@@ -877,7 +877,7 @@ namespace pause_hard
 			case phase::blocked:
 				return "Hard pause: the players or match changed. Cannot resume. End the match.";
 			case phase::removed:
-				return "Hard pause: you were removed from the match. Disconnecting.";
+				return "Hard pause: you are no longer in this match. Disconnecting.";
 			case phase::cancelled:
 				return "Hard pause: not all players could pause. The game is still running.";
 			case phase::released:
@@ -932,6 +932,23 @@ namespace pause_hard
 				: state == phase::cancelled && host.all_acknowledged();
 			if (complete && now - terminal_at >= 1000)
 			{
+				// A guest that missed release may have lost its server slot. Retain
+				// a dismissal so it can exit the hold when its connection returns.
+				if (state == phase::released)
+				{
+					for (std::size_t i = 0; i < protocol::capacity; ++i)
+					{
+						if (host.is_guest(i) && !host.members[i].acknowledged)
+						{
+							auto notice = host.packet(i);
+							notice.state = phase::removed;
+							notice.probe = notice.value = notice.wake = 0;
+							removed_peers.push_back({roster[i].address, notice});
+							next_removal_at = 0;
+						}
+					}
+				}
+
 				clear_state(true);
 			}
 			else if (state == phase::cancelled && now - terminal_at > protocol::prepare_ms)
@@ -1238,10 +1255,10 @@ namespace pause_hard
 			return !controller && client_frozen ? 0 : utils::hook::invoke<int>(0x857B00_g, controller);
 		}
 
-		game::dvar_t* shutdown_stub(const char* reason)
+		void shutdown_stub(const char* reason)
 		{
 			clear_state();
-			return shutdown_hook.invoke<game::dvar_t*>(reason);
+			shutdown_hook.invoke<void>(reason);
 		}
 
 		void restart_stub(const int migrate, const int load_scripts)
@@ -1250,10 +1267,10 @@ namespace pause_hard
 			restart_hook.invoke<void>(migrate, load_scripts);
 		}
 
-		std::int64_t spawn_stub(char* map, const int preloaded, const int restart, const unsigned int migrate)
+		void spawn_stub(char* map, const int preloaded, const int restart, const unsigned int migrate)
 		{
 			clear_state();
-			return spawn_hook.invoke<std::int64_t>(map, preloaded, restart, migrate);
+			spawn_hook.invoke<void>(map, preloaded, restart, migrate);
 		}
 	}
 
