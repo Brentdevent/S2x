@@ -532,7 +532,7 @@ local function patch_soldier_menu( soldier_menu, properties, requested_menu_name
 	local is_zombies = menu_name == "zm_soldier_menu"
 	local left = 100
 	local right = is_zombies and 600 or 440
-	local top = is_zombies and 593 or 386
+	local top = is_zombies and 510 or 386
 	local bottom = top + 62
 	local unlocks_tab = LUI.MenuBuilder.BuildRegisteredType( "soldierscreen_tab_button", {
 		controllerIndex = controller,
