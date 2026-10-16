@@ -200,7 +200,8 @@ namespace arxan::anti_debug
 
 		bool remove_evil_keywords_from_string(const UNICODE_STRING& string)
 		{
-			static const std::wstring evil_keywords[] =
+			// Hook removal can query process names during static destruction.
+			static constexpr std::wstring_view evil_keywords[] =
 			{
 				L"IDA",
 				L"ida",
