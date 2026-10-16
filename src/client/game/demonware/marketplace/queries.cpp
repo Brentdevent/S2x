@@ -58,6 +58,10 @@ namespace demonware::marketplace_queries
 		{
 			return {BD_PARAM_PARSE_ERROR};
 		}
+		if (!dedicated && !fallback_user_id)
+		{
+			return {BD_SERVICE_NOT_AVAILABLE};
+		}
 
 		// Seed the stock voucher inbox before its initial Task 165 snapshot. The
 		// delivery receipt makes later pages/reconnects read-only; failure remains
@@ -84,15 +88,15 @@ namespace demonware::marketplace_queries
 		for (auto index = page->first; index < page->last; ++index)
 		{
 			const auto& entry = state.inventory[index];
-			// A DS record retains its explicit identity; clients cannot hydrate a
-			// legacy zero-owner record until the identity producer is ready.
-			if (!entry.player_id && !fallback_user_id && !dedicated)
+			// The selected local profile owns these rows. Present them under the
+			// current runtime ID without rewriting historical owners on disk.
+			if (!dedicated && !marketplace_store::owns_inventory(entry, fallback_user_id))
 			{
-				return {BD_SERVICE_NOT_AVAILABLE};
+				return {BD_MARKETPLACE_STORAGE_ERROR};
 			}
 
 			auto record = std::make_unique<bdMarketplaceInventory>();
-			record->m_playerId = entry.player_id ? entry.player_id : fallback_user_id;
+			record->m_playerId = dedicated && entry.player_id ? entry.player_id : fallback_user_id;
 			record->unk = entry.account_type.empty() ? "steam" : entry.account_type;
 			record->m_itemId = entry.item_id;
 			record->m_itemQuantity = entry.quantity;

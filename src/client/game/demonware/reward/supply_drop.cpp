@@ -67,8 +67,7 @@ namespace demonware::reward_supply_drop
 
 		bool is_owned_by(const marketplace_store::inventory_record& item, const std::uint64_t user_id)
 		{
-			return (!item.player_id || item.player_id == user_id) &&
-				(item.account_type.empty() || item.account_type == "steam");
+			return marketplace_store::owns_inventory(item, user_id);
 		}
 
 		bool is_presentable(const loot_catalog::loot_item& item, const bool zombies)
@@ -162,9 +161,8 @@ namespace demonware::reward_supply_drop
 			const std::shared_ptr<const loot_catalog::catalog>& catalog, const std::uint32_t now,
 			const float rarity_scale, open_failure& failure)
 		{
-			const auto fingerprint = "open_supply_drop|" + request.supply_drop_id + "|" + std::to_string(user_id);
-
-			return marketplace_store::transact(request.client_tx, fingerprint,
+			return marketplace_store::transact_profile(request.client_tx, user_id,
+				"open_supply_drop|" + request.supply_drop_id + "|", {},
 				[&](marketplace_store::transaction& transaction, std::string& response)
 			{
 				const auto fail = [&](const open_failure reason)

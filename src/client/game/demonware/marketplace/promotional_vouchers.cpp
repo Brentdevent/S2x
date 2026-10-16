@@ -48,8 +48,7 @@ namespace demonware::promotional_vouchers
 
 		bool permanent(const marketplace_store::inventory_record& row, const std::uint64_t user)
 		{
-			return (!row.player_id || row.player_id == user) &&
-				(row.account_type.empty() || row.account_type == "steam") && !row.collision_field &&
+			return marketplace_store::owns_inventory(row, user) && !row.collision_field &&
 				marketplace_store::is_permanent(row);
 		}
 
@@ -103,8 +102,8 @@ namespace demonware::promotional_vouchers
 			return false;
 		}
 
-		const auto saved = marketplace_store::transact("promotions:beta-ambassador:delivery",
-			std::to_string(user), [&](marketplace_store::transaction& state, std::string& receipt)
+		const auto saved = marketplace_store::transact_profile("promotions:beta-ambassador:delivery", user, {}, {},
+			[&](marketplace_store::transaction& state, std::string& receipt)
 			{
 				const auto now = std::time(nullptr);
 				if (now <= 0 || static_cast<std::uint64_t>(now) >= UINT32_MAX)
@@ -153,8 +152,9 @@ namespace demonware::promotional_vouchers
 		std::uint32_t rejected = BD_MARKETPLACE_STORAGE_ERROR;
 		// Claim identity is the promotion, not the native UI's newly generated
 		// ClientTx. Reopening/restarting/retrying cannot redeem it a second time.
-		const auto saved = marketplace_store::transact("promotions:claim:" + std::to_string(found->id),
-			std::to_string(user), [&](marketplace_store::transaction& state, std::string& receipt)
+		const auto saved = marketplace_store::transact_profile("promotions:claim:" + std::to_string(found->id),
+			user, {}, {},
+			[&](marketplace_store::transaction& state, std::string& receipt)
 			{
 				auto item = state.get_inventory(found->id);
 				if (!item || !item->quantity)

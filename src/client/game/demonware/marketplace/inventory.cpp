@@ -149,8 +149,7 @@ namespace demonware::marketplace_inventory
 						return false;
 					}
 
-					if ((record->player_id && record->player_id != local_user_id) ||
-						(!record->account_type.empty() && record->account_type != "steam"))
+					if (!marketplace_store::owns_inventory(*record, local_user_id))
 					{
 						return false;
 					}
@@ -221,7 +220,6 @@ namespace demonware::marketplace_inventory
 			return BD_SERVICE_NOT_AVAILABLE;
 		}
 
-		const auto initial_remaining = buffer ? buffer->remaining_size() : 0;
 		std::string client_tx;
 		std::uint32_t count{};
 		if (!read_header(buffer, client_tx) || !buffer->read_uint32(&count) || !count || count > 30)
@@ -233,6 +231,7 @@ namespace demonware::marketplace_inventory
 		{
 			std::uint32_t id{};
 			std::string data;
+			std::string account_type;
 			std::uint16_t collision{};
 		};
 		std::vector<item_data_update> updates(count);
@@ -240,12 +239,11 @@ namespace demonware::marketplace_inventory
 		{
 			auto& update = updates[index];
 			std::uint64_t user_id{};
-			std::string account_type;
 			// Native 0x27D6B0 sends at most 30 records through SDK 0xA434F0.
 			// Serializer 0xA4AE60: owner/account, GUID, <=64 opaque bytes, collision.
 			if (!buffer->read_uint64(&user_id) || user_id != local_user_id ||
-				!buffer->read_string(&account_type, 9) ||
-				(!account_type.empty() && account_type != "steam") ||
+				!buffer->read_string(&update.account_type, 9) ||
+				(!update.account_type.empty() && update.account_type != "steam") ||
 				!buffer->read_uint32(&update.id) || !update.id ||
 				!buffer->read_blob(&update.data, marketplace_store::max_item_data_length) ||
 				!buffer->read_uint16(&update.collision) ||
@@ -261,21 +259,37 @@ namespace demonware::marketplace_inventory
 			return BD_PARAM_PARSE_ERROR;
 		}
 
-		// Hash the complete typed request, excluding transport padding. Retaining
-		// its receipt prevents an old retry from overwriting newer native metadata.
-		const auto& wire = buffer->get_buffer();
-		const auto fingerprint = "item-data:" + utils::cryptography::sha256::compute(
-			reinterpret_cast<const std::uint8_t*>(wire.data() + wire.size() - initial_remaining),
-			initial_remaining - buffer->remaining_size(), true);
+		// Rebuild the same validated request without transport padding, replacing
+		// only its owner fields. Retain account, order, data and collision values.
+		const auto hash_request = [&](const std::uint64_t owner)
+		{
+			byte_buffer request;
+			request.set_use_data_types(buffer->is_using_data_types());
+			request.write_string("s2_steam");
+			request.write_string(client_tx);
+			request.write_uint32(count);
+
+			for (const auto& update : updates)
+			{
+				request.write_uint64(owner);
+				request.write_string(update.account_type);
+				request.write_uint32(update.id);
+				request.write_blob(update.data);
+				request.write_uint16(update.collision);
+			}
+
+			return utils::cryptography::sha256::compute(request.get_buffer(), true);
+		};
+
 		std::uint32_t error = BD_MARKETPLACE_STORAGE_ERROR;
-		const auto result = marketplace_store::transact("marketplace:168:" + client_tx, fingerprint,
+		const auto result = marketplace_store::transact_profile_hashed("marketplace:168:" + client_tx,
+			local_user_id, "item-data:", hash_request,
 			[&](marketplace_store::transaction& transaction, std::string& receipt)
 			{
 				for (const auto& update : updates)
 				{
 					auto record = transaction.get_inventory(update.id);
-					if (!record || (record->player_id && record->player_id != local_user_id) ||
-						(!record->account_type.empty() && record->account_type != "steam"))
+					if (!record || !marketplace_store::owns_inventory(*record, local_user_id))
 					{
 						error = BD_MARKETPLACE_RESOURCE_NOT_FOUND;
 						return false;

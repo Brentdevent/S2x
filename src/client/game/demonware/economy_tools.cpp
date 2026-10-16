@@ -27,11 +27,8 @@ namespace demonware::economy_tools
 
 		bool can_stack(const marketplace_store::inventory_record& row, const std::uint64_t user, const std::uint32_t amount)
 		{
-			const auto owned_by_user = !row.player_id || row.player_id == user;
-			const auto steam_account = row.account_type.empty() || row.account_type == "steam";
-
-			return owned_by_user && steam_account && !row.collision_field && marketplace_store::is_permanent(row) &&
-				row.quantity <= INT32_MAX - amount;
+			return marketplace_store::owns_inventory(row, user) && !row.collision_field &&
+				marketplace_store::is_permanent(row) && row.quantity <= INT32_MAX - amount;
 		}
 
 		std::string fingerprint(const char* command, const std::uint64_t user, const std::uint32_t id, const std::uint32_t amount)

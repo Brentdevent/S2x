@@ -53,6 +53,11 @@ namespace demonware::marketplace_store
 			(item.expire_date_time == UINT32_MAX && item.expiry_duration == INT64_MAX);
 	}
 
+	// Saved client data belongs to the selected local profile, even if Windows
+	// changes its runtime user ID. Never use this to validate an incoming request.
+	bool is_saved_profile_user(std::uint64_t saved_user, std::uint64_t current_user);
+	bool owns_inventory(const inventory_record& item, std::uint64_t current_user);
+
 	// Accepted atomic economy mutation and the exact response returned on replay.
 	// Progress-only events must not enter this permanent, non-evicting ledger.
 	struct committed_economy_transaction
@@ -159,4 +164,17 @@ namespace demonware::marketplace_store
 	// changing memory or disk. A successful callback must provide valid JSON.
 	transaction_result transact(const std::string& client_tx, const std::string& request_fingerprint,
 								const transaction_callback& callback);
+
+	// Profile-scoped operations retain all operation arguments in the fingerprint,
+	// but do not bind a local receipt to a machine-derived user ID. Recognize the
+	// old prefix + decimal user ID + suffix form without rewriting accepted receipts.
+	transaction_result transact_profile(const std::string& client_tx, std::uint64_t user,
+		const std::string& prefix, const std::string& suffix, const transaction_callback& callback);
+
+	// hash_request returns the legacy SHA-256 hex digest with the supplied owner.
+	// New client receipts use owner zero; legacy receipts must match using an ID
+	// still recorded in this profile. Neither path rewrites accepted receipts.
+	transaction_result transact_profile_hashed(const std::string& client_tx, std::uint64_t user,
+		const std::string& prefix, const std::function<std::string(std::uint64_t)>& hash_request,
+		const transaction_callback& callback);
 }

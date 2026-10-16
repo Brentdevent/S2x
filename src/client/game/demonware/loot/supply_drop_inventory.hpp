@@ -20,7 +20,7 @@ namespace demonware::supply_drop_inventory
 		marketplace_store::inventory_record& result)
 	{
 		const auto owned = transaction.get_inventory(item_id);
-		if (owned && (!can_stack(*owned) || (owned->player_id && owned->player_id != user) || (!owned->account_type.empty() && owned->account_type != "steam")))
+		if (owned && (!can_stack(*owned) || !marketplace_store::owns_inventory(*owned, user)))
 		{
 			return false;
 		}
