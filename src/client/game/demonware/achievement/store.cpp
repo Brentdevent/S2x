@@ -535,9 +535,11 @@ namespace demonware::achievement_store
 				return activation_result::not_scheduled;
 			}
 
-			const auto active = std::ranges::count_if(achievements | std::views::values, [kind, timestamp](const auto& record)
+			const auto moonraven = achievement_kind::moonraven(name, kind);
+			const auto active = std::ranges::count_if(achievements | std::views::values, [kind, timestamp, moonraven](const auto& record)
 			{
-				return record.kind == kind && is_active(record.status) && !is_expired(record, timestamp);
+				return record.kind == kind && achievement_kind::moonraven(record.name, record.kind) == moonraven &&
+					is_active(record.status) && !is_expired(record, timestamp);
 			});
 
 			if (active >= offer->activation_limit)

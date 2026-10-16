@@ -24,6 +24,7 @@ namespace demonware::achievement_response
 		std::uint32_t limit{};
 	};
 
+	bool is_visible_in_current_mode(const achievement_record& achievement);
 	rapidjson::Value serialize_achievements(const std::vector<achievement_record>& achievements,
 		rapidjson::Document::AllocatorType& allocator);
 
