@@ -39,8 +39,7 @@ namespace demonware::achievement_claim
 
 		bool is_owned_by(const inventory_record& item, const std::uint64_t user)
 		{
-			return (!item.player_id || item.player_id == user) &&
-				(item.account_type.empty() || item.account_type == "steam");
+			return marketplace_store::owns_inventory(item, user);
 		}
 
 		std::optional<std::uint32_t> positive_uint(const rapidjson::Value& object, const char* name)

@@ -361,8 +361,7 @@ namespace zombies_progression
 
 		bool conflicts_with_grant(const marketplace_store::inventory_record& item, const std::uint64_t user)
 		{
-			return (item.player_id && item.player_id != user) ||
-				(!item.account_type.empty() && item.account_type != "steam") ||
+			return !marketplace_store::owns_inventory(item, user) ||
 				item.collision_field || !marketplace_store::is_permanent(item);
 		}
 
