@@ -364,6 +364,26 @@ namespace game
 
 		WEAK symbol<mp::gentity_s*(const char* name, int customizationGroup)> SV_AddBot{ 0xF2650 };
 
+		WEAK symbol<HANDLE(int folder, const char* filename)> Sys_CreateFile{ 0x770450 };
+
+		WEAK symbol<unsigned int> db_hashTable{ 0x27D1110 };
+		WEAK symbol<XAssetEntry> g_assetEntryPool{ 0x50F60E0 };
+		WEAK symbol<const char*> g_assetNames{ 0xF89A60 };
+		WEAK symbol<int> g_poolSize{ 0xD90990 };
+		WEAK symbol<int> g_zoneCount{ 0x290B124 };
+		WEAK symbol<unsigned short> g_zoneHandles{ 0x59ADC90 };
+
+		WEAK symbol<int> ui_arenas_dirty{ 0xAB0F8AC };
+
+		WEAK symbol<ID3D11Device*> dx_device{ 0xF9FF78 };
+		WEAK symbol<ID3D11DeviceContext*> dx_context{ 0xF9FF80 };
+		WEAK symbol<HWND> main_window{ 0xD8B0B80 };
+
+		WEAK symbol<void()> R_InitDrawMethod{ 0x888760 };
+		WEAK symbol<void()> R_UpdateFrontEndDvarOptions{ 0x8BDBE0 };
+		WEAK symbol<void()> R_SyncRenderThread{ 0x8BD1F0 };
+		WEAK symbol<GfxDrawMethod> gfxDrawMethod{ 0xFE083E8 };
+
 		WEAK symbol<int(mp::gentity_s* entity)> SV_SpawnTestClient{ 0xF6AA0 };
 		WEAK symbol<bool(char clientNum)> SV_HasAssignedTeam_Internal{ 0x6DF9D0 };
 		WEAK symbol<void(char clientNum, int team)> SV_SetAssignedTeam{ 0x6E1410 };
