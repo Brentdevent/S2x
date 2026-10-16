@@ -30,11 +30,6 @@ namespace demonware::economy_tools
 			return marketplace_store::owns_inventory(row, user) && !row.collision_field &&
 				marketplace_store::is_permanent(row) && row.quantity <= INT32_MAX - amount;
 		}
-
-		std::string fingerprint(const char* command, const std::uint64_t user, const std::uint32_t id, const std::uint32_t amount)
-		{
-			return utils::string::va("%s:%llu:%u:%u", command, user, id, amount);
-		}
 	}
 
 	bool parse_number(std::string_view text, std::uint32_t& value)
@@ -92,7 +87,7 @@ namespace demonware::economy_tools
 			return {};
 		}
 
-		return marketplace_store::transact(transaction, fingerprint("giveItem", user, id, amount),
+		return marketplace_store::transact_profile(transaction, user, "giveItem:", utils::string::va(":%u:%u", id, amount),
 			[&](marketplace_store::transaction& state, std::string& receipt)
 		{
 			auto row = state.get_inventory(id).value_or(marketplace_store::inventory_record{});
@@ -125,7 +120,7 @@ namespace demonware::economy_tools
 			return {};
 		}
 
-		return marketplace_store::transact(transaction, fingerprint("giveCurrency", user, id, amount),
+		return marketplace_store::transact_profile(transaction, user, "giveCurrency:", utils::string::va(":%u:%u", id, amount),
 			[&](marketplace_store::transaction& state, std::string& receipt)
 		{
 			const auto currency = static_cast<std::uint8_t>(id);
