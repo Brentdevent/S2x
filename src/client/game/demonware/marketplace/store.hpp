@@ -9,18 +9,16 @@
 
 namespace demonware::marketplace_store
 {
-	// One current S2x economy format; earlier development schemas are unsupported.
 	inline constexpr std::uint32_t schema_version = 1;
 	inline constexpr std::size_t max_achievement_state_length = 8 * 1024 * 1024;
 	inline constexpr std::size_t max_account_type_length = 10;
 	inline constexpr std::size_t max_item_data_length = 64;
 	inline constexpr std::size_t max_client_tx_length = 64;
 	inline constexpr std::size_t max_request_fingerprint_length = 256;
-	// Stock reward action response buffers are 6144 bytes including the NUL.
+	// Stock response buffers hold 6144 bytes, including the NUL.
 	inline constexpr std::size_t max_response_json_length = 6144 - 1;
 	inline constexpr std::size_t max_inventory_records = 65536;
-	// Keep accepted IDs: replenished stock makes old consume/open/purchase retries
-	// unsafe to forget. Allow years of ordinary play without an eviction policy.
+	// Retain receipts to prevent duplicate grants or consumption on retries.
 	inline constexpr std::size_t max_processed_transactions = 65536;
 
 	struct currency_record
@@ -53,13 +51,11 @@ namespace demonware::marketplace_store
 			(item.expire_date_time == UINT32_MAX && item.expiry_duration == INT64_MAX);
 	}
 
-	// Saved client data belongs to the selected local profile, even if Windows
-	// changes its runtime user ID. Never use this to validate an incoming request.
+	// Local save ownership only; incoming requests must still validate the current user.
 	bool is_saved_profile_user(std::uint64_t saved_user, std::uint64_t current_user);
 	bool owns_inventory(const inventory_record& item, std::uint64_t current_user);
 
-	// Accepted atomic economy mutation and the exact response returned on replay.
-	// Progress-only events must not enter this permanent, non-evicting ledger.
+	// Permanent receipts for economy mutations, not progress-only events.
 	struct committed_economy_transaction
 	{
 		std::string client_tx{};
@@ -152,28 +148,25 @@ namespace demonware::marketplace_store
 		std::string response_json{};
 	};
 
-	// Achievement state shares the authoritative economy file and atomic save.
+	// Progress and inventory are saved atomically in the same file.
 	achievement_snapshot get_achievement_state();
 	bool save_achievement_state(const std::string& json,
 		const std::function<bool(transaction&)>& reward = {});
 	snapshot get_snapshot();
 	std::optional<committed_economy_transaction> find_transaction(const std::string& client_tx);
 
-	// The callback runs synchronously while the store is locked and must not
-	// call another marketplace_store function. Returning false aborts without
-	// changing memory or disk. A successful callback must provide valid JSON.
+	// Runs under the store lock; do not call other marketplace_store functions.
+	// Return false to abort, or true with a valid JSON response to commit.
 	transaction_result transact(const std::string& client_tx, const std::string& request_fingerprint,
 								const transaction_callback& callback);
 
-	// Profile-scoped operations retain all operation arguments in the fingerprint,
-	// but do not bind a local receipt to a machine-derived user ID. Recognize the
-	// old prefix + decimal user ID + suffix form without rewriting accepted receipts.
+	// Matches client receipts across GUID changes without rewriting them.
+	// Other operation arguments must match; dedicated servers remain user-scoped.
 	transaction_result transact_profile(const std::string& client_tx, std::uint64_t user,
 		const std::string& prefix, const std::string& suffix, const transaction_callback& callback);
 
-	// hash_request returns the legacy SHA-256 hex digest with the supplied owner.
-	// New client receipts use owner zero; legacy receipts must match using an ID
-	// still recorded in this profile. Neither path rewrites accepted receipts.
+	// hash_request(owner) returns the legacy SHA-256 hex digest.
+	// Clients hash with owner zero; legacy matches require a saved owner ID.
 	transaction_result transact_profile_hashed(const std::string& client_tx, std::uint64_t user,
 		const std::string& prefix, const std::function<std::string(std::uint64_t)>& hash_request,
 		const transaction_callback& callback);
