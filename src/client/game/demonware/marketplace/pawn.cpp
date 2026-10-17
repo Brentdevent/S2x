@@ -49,8 +49,7 @@ namespace demonware::marketplace_pawn
 				return BD_MARKETPLACE_INSUFFICIENT_ITEM_QUANTITY;
 			}
 
-			if ((item->player_id && item->player_id != user) ||
-				(!item->account_type.empty() && item->account_type != "steam"))
+			if (!marketplace_store::owns_inventory(*item, user))
 			{
 				return BD_MARKETPLACE_INVALID_PARAMETER;
 			}
@@ -133,7 +132,7 @@ namespace demonware::marketplace_pawn
 
 		// SDK task 199 (0xA42CA0), item serializer 0xA4B050.
 		std::vector<item_request> items(count);
-		std::string fingerprint = std::to_string(user) + ":";
+		std::string items_fingerprint;
 		std::unordered_set<std::uint32_t> ids;
 		for (auto& item : items)
 		{
@@ -143,7 +142,7 @@ namespace demonware::marketplace_pawn
 				return BD_MARKETPLACE_INVALID_PARAMETER;
 			}
 
-			fingerprint += std::to_string(item.id) + ":" + std::to_string(item.quantity) + ":" +
+			items_fingerprint += std::to_string(item.id) + ":" + std::to_string(item.quantity) + ":" +
 				std::to_string(item.collision) + ";";
 		}
 
@@ -152,9 +151,14 @@ namespace demonware::marketplace_pawn
 			return BD_MARKETPLACE_INVALID_PARAMETER;
 		}
 
-		fingerprint = "pawn:" + utils::cryptography::sha256::compute(fingerprint, true);
+		const auto hash_request = [&](const std::uint64_t owner)
+		{
+			return utils::cryptography::sha256::compute(std::to_string(owner) + ":" + items_fingerprint, true);
+		};
+
 		std::uint32_t error = BD_MARKETPLACE_STORAGE_ERROR;
-		const auto settled = marketplace_store::transact("marketplace:199:" + client_tx, fingerprint,
+		const auto settled = marketplace_store::transact_profile_hashed("marketplace:199:" + client_tx,
+			user, "pawn:", hash_request,
 			[&](marketplace_store::transaction& transaction, std::string& receipt)
 			{
 				if (!catalog)
@@ -229,8 +233,8 @@ namespace demonware::marketplace_pawn
 		}
 
 		std::uint32_t error = BD_MARKETPLACE_STORAGE_ERROR;
-		const auto settled = marketplace_store::transact("marketplace:242:" + input.client_tx,
-			"pawn:" + std::to_string(user) + ":" + input.rule + ":" + std::to_string(input.quantity),
+		const auto settled = marketplace_store::transact_profile("marketplace:242:" + input.client_tx, user,
+			"pawn:", ":" + input.rule + ":" + std::to_string(input.quantity),
 			[&](marketplace_store::transaction& transaction, std::string& receipt)
 			{
 				if (!catalog)

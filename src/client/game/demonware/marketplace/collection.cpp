@@ -44,8 +44,7 @@ namespace demonware::marketplace_collection
 
 		bool permanent(const marketplace_store::inventory_record& item, const std::uint64_t user)
 		{
-			return (!item.player_id || item.player_id == user) &&
-				(item.account_type.empty() || item.account_type == "steam") && !item.collision_field &&
+			return marketplace_store::owns_inventory(item, user) && !item.collision_field &&
 				marketplace_store::is_permanent(item);
 		}
 
@@ -267,8 +266,8 @@ namespace demonware::marketplace_collection
 		}
 
 		std::uint32_t error = BD_MARKETPLACE_STORAGE_ERROR;
-		const auto settled = marketplace_store::transact("marketplace:242:" + input.client_tx,
-			"collection:" + std::to_string(user_id) + ":" + input.rule + ":1",
+		const auto settled = marketplace_store::transact_profile("marketplace:242:" + input.client_tx, user_id,
+			"collection:", ":" + input.rule + ":1",
 			[&](marketplace_store::transaction& transaction, std::string& receipt)
 			{
 				if (!catalog)

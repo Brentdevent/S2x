@@ -504,7 +504,8 @@ namespace demonware::achievement_store
 		{
 			for (const auto& [key, receipt] : activation_receipts)
 			{
-				if (key.first == user_id && receipt.name == name && receipt.kind == kind)
+				if (marketplace_store::is_saved_profile_user(key.first, user_id) &&
+					receipt.name == name && receipt.kind == kind)
 				{
 					return &receipt;
 				}
@@ -534,9 +535,11 @@ namespace demonware::achievement_store
 				return activation_result::not_scheduled;
 			}
 
-			const auto active = std::ranges::count_if(achievements | std::views::values, [kind, timestamp](const auto& record)
+			const auto moonraven = achievement_kind::moonraven(name, kind);
+			const auto active = std::ranges::count_if(achievements | std::views::values, [kind, timestamp, moonraven](const auto& record)
 			{
-				return record.kind == kind && is_active(record.status) && !is_expired(record, timestamp);
+				return record.kind == kind && achievement_kind::moonraven(record.name, record.kind) == moonraven &&
+					is_active(record.status) && !is_expired(record, timestamp);
 			});
 
 			if (active >= offer->activation_limit)
@@ -582,7 +585,8 @@ namespace demonware::achievement_store
 		// Stock buys one permanent token, other variants have no verified settlement
 		bool is_permanent_token(const marketplace_store::inventory_record& token, const std::uint64_t user_id)
 		{
-			return marketplace_store::is_permanent(token) && token.quantity == 1 && token.player_id == user_id &&
+			return marketplace_store::is_permanent(token) && token.quantity == 1 && token.player_id &&
+				marketplace_store::owns_inventory(token, user_id) &&
 				token.account_type == "steam" && !token.collision_field;
 		}
 
@@ -593,8 +597,8 @@ namespace demonware::achievement_store
 			const auto json = serialize_state();
 			auto failure = activation_result::save_failed;
 
-			const auto settled = marketplace_store::transact("contract:" + transaction,
-				"activate_contract:" + std::to_string(user_id) + ":" + name,
+			const auto settled = marketplace_store::transact_profile("contract:" + transaction, user_id,
+				"activate_contract:", ":" + name,
 				[&](marketplace_store::transaction& economy, std::string& response)
 			{
 				if (activating)
@@ -697,10 +701,21 @@ namespace demonware::achievement_store
 
 		const receipt_key key{user_id, transaction};
 
-		const auto receipt = activation_receipts.find(key);
-		if (receipt != activation_receipts.end() && (receipt->second.name != name || receipt->second.kind != kind))
+		auto receipt = activation_receipts.end();
+		for (auto previous = activation_receipts.begin(); previous != activation_receipts.end(); ++previous)
 		{
-			return activation_result::transaction_conflict;
+			if (previous->first.second != transaction ||
+				!marketplace_store::is_saved_profile_user(previous->first.first, user_id))
+			{
+				continue;
+			}
+
+			if (previous->second.name != name || previous->second.kind != kind)
+			{
+				return activation_result::transaction_conflict;
+			}
+
+			receipt = previous;
 		}
 
 		const auto contract = achievement_kind::contract(kind);
@@ -810,8 +825,8 @@ namespace demonware::achievement_store
 			}
 		});
 
-		auto result = marketplace_store::transact("order_abandon:" + transaction,
-			"abandon_order:" + std::to_string(user_id) + ":" + name,
+		auto result = marketplace_store::transact_profile("order_abandon:" + transaction, user_id,
+			"abandon_order:", ":" + name,
 			[&](marketplace_store::transaction& economy, std::string& response)
 		{
 			auto& record = found->second;
@@ -859,8 +874,8 @@ namespace demonware::achievement_store
 			}
 		});
 
-		auto result = marketplace_store::transact("order_claim:" + transaction,
-			"claim_order:" + std::to_string(user_id) + ":" + name,
+		auto result = marketplace_store::transact_profile("order_claim:" + transaction, user_id,
+			"claim_order:", ":" + name,
 			[&](marketplace_store::transaction& economy, std::string& response)
 		{
 			auto& record = found->second;

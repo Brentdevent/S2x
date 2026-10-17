@@ -1,6 +1,7 @@
 #include <std_include.hpp>
 
 #include "response.hpp"
+#include "game/game.hpp"
 #include "game/demonware/reward/json.hpp"
 
 #include <charconv>
@@ -97,7 +98,7 @@ namespace demonware::achievement_response
 			const auto kind = request.kinds.empty() || std::ranges::find(request.kinds, achievement.kind) != request.kinds.end();
 			const auto name = request.names.empty() || std::ranges::find(request.names, achievement.name) != request.names.end();
 
-			return status && kind && name;
+			return status && kind && name && is_visible_in_current_mode(achievement);
 		}
 
 		bool read_names(const rapidjson::Value& names, std::vector<std::string>& result)
@@ -169,6 +170,12 @@ namespace demonware::achievement_response
 		}
 	}
 
+	bool is_visible_in_current_mode(const achievement_record& achievement)
+	{
+		// Moonraven uses the MP contract kind, but belongs to Zombies.
+		return !achievement_kind::moonraven(achievement.name, achievement.kind) || game::environment::is_zombies();
+	}
+
 	rapidjson::Value serialize_achievements(const std::vector<achievement_record>& achievements,
 		rapidjson::Document::AllocatorType& allocator)
 	{
@@ -176,6 +183,11 @@ namespace demonware::achievement_response
 
 		for (const auto& achievement : achievements)
 		{
+			if (!is_visible_in_current_mode(achievement))
+			{
+				continue;
+			}
+
 			auto value = serialize_achievement(achievement, allocator);
 			if (!value.IsObject())
 			{

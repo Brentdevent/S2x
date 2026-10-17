@@ -36,8 +36,7 @@ namespace demonware::supply_drop_inventory
 				continue;
 			}
 
-			if ((found->player_id && found->player_id != user) ||
-				(!found->account_type.empty() && found->account_type != "steam"))
+			if (!marketplace_store::owns_inventory(*found, user))
 			{
 				return false;
 			}

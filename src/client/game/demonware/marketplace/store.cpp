@@ -2,8 +2,11 @@
 
 #include "store.hpp"
 #include "store_persistence.hpp"
+#include "game/game.hpp"
 
 #include <algorithm>
+#include <charconv>
+#include <set>
 
 namespace demonware::marketplace_store
 {
@@ -34,6 +37,99 @@ namespace demonware::marketplace_store
 			{
 				current_state = std::move(loaded);
 			}
+		}
+
+		std::optional<std::uint64_t> parse_saved_user(const std::string_view text)
+		{
+			std::uint64_t user{};
+			const auto parsed = std::from_chars(text.data(), text.data() + text.size(), user);
+			if (parsed.ec == std::errc{} && parsed.ptr == text.data() + text.size() && user &&
+				std::to_string(user) == text)
+			{
+				return user;
+			}
+
+			return {};
+		}
+
+		std::set<std::uint64_t> saved_profile_users()
+		{
+			std::lock_guard lock{store_mutex};
+			load_store();
+
+			std::set<std::uint64_t> users;
+			if (current_status != store_status::ready)
+			{
+				return users;
+			}
+
+			for (const auto& [id, item] : current_state.inventory)
+			{
+				if (item.player_id)
+				{
+					users.insert(item.player_id);
+				}
+			}
+
+			// These legacy receipt formats explicitly stored the owner. They can
+			// still identify it after every original inventory row has been used.
+			constexpr std::array prefixes
+			{
+				"purchase:"sv,
+				"collection:"sv,
+				"pawn:"sv,
+				"activate_contract:"sv,
+				"abandon_order:"sv,
+				"claim_order:"sv,
+				"giveItem:"sv,
+				"giveCurrency:"sv
+			};
+
+			for (const auto& [key, receipt] : current_state.processed_transactions)
+			{
+				auto owner = std::string_view{receipt.request_fingerprint};
+				if (owner.starts_with("open_supply_drop|"))
+				{
+					owner.remove_prefix(owner.rfind('|') + 1);
+				}
+				else if (!key.starts_with("promotions:"))
+				{
+					const auto prefix = std::ranges::find_if(prefixes, [&](const auto value)
+					{
+						return owner.starts_with(value);
+					});
+
+					if (prefix == prefixes.end())
+					{
+						continue;
+					}
+
+					owner.remove_prefix(prefix->size());
+					owner = owner.substr(0, owner.find(':'));
+				}
+
+				if (const auto user = parse_saved_user(owner))
+				{
+					users.insert(*user);
+				}
+			}
+
+			rapidjson::Document achievements;
+			achievements.Parse(current_state.achievement_state.data(), current_state.achievement_state.size());
+			if (!achievements.HasParseError() && achievements.IsObject() &&
+				achievements.HasMember("orderActivations") && achievements["orderActivations"].IsArray())
+			{
+				for (const auto& receipt : achievements["orderActivations"].GetArray())
+				{
+					if (receipt.IsObject() && receipt.HasMember("userID") &&
+						receipt["userID"].IsUint64() && receipt["userID"].GetUint64())
+					{
+						users.insert(receipt["userID"].GetUint64());
+					}
+				}
+			}
+
+			return users;
 		}
 
 		void compact_transaction_sequences(store_state* state)
@@ -70,6 +166,17 @@ namespace demonware::marketplace_store
 	{
 		store_state* state{};
 	};
+
+	bool is_saved_profile_user(const std::uint64_t saved_user, const std::uint64_t current_user)
+	{
+		return current_user && (!game::environment::is_dedicated() || saved_user == current_user);
+	}
+
+	bool owns_inventory(const inventory_record& item, const std::uint64_t current_user)
+	{
+		return current_user && (!item.player_id || is_saved_profile_user(item.player_id, current_user)) &&
+			(item.account_type.empty() || item.account_type == "steam");
+	}
 
 	transaction::transaction(state_view* state) : state_(state)
 	{
@@ -304,6 +411,80 @@ namespace demonware::marketplace_store
 		const auto found = current_state.processed_transactions.find(client_tx);
 		return found == current_state.processed_transactions.end() ? std::nullopt :
 			std::optional{found->second};
+	}
+
+	transaction_result transact_profile(const std::string& client_tx, const std::uint64_t user,
+		const std::string& prefix, const std::string& suffix, const transaction_callback& callback)
+	{
+		if (!user)
+		{
+			return {};
+		}
+
+		if (game::environment::is_dedicated())
+		{
+			return transact(client_tx, prefix + std::to_string(user) + suffix, callback);
+		}
+
+		auto fingerprint = prefix + "profile" + suffix;
+		if (const auto previous = find_transaction(client_tx))
+		{
+			const auto& saved = previous->request_fingerprint;
+			if (saved.size() > prefix.size() + suffix.size() &&
+				saved.starts_with(prefix) && saved.ends_with(suffix))
+			{
+				const auto owner = std::string_view{saved}.substr(prefix.size(),
+					saved.size() - prefix.size() - suffix.size());
+				if (parse_saved_user(owner))
+				{
+					fingerprint = saved;
+				}
+			}
+		}
+
+		// Accepted receipts are immutable and never evicted. transact still checks
+		// under its lock, so concurrent first requests cannot grant twice.
+		return transact(client_tx, fingerprint, callback);
+	}
+
+	transaction_result transact_profile_hashed(const std::string& client_tx, const std::uint64_t user,
+		const std::string& prefix, const std::function<std::string(std::uint64_t)>& hash_request,
+		const transaction_callback& callback)
+	{
+		if (!user || !hash_request)
+		{
+			return {};
+		}
+
+		if (game::environment::is_dedicated())
+		{
+			return transact(client_tx, prefix + hash_request(user), callback);
+		}
+
+		// Zero is only a canonical hash input, never an accepted request owner.
+		auto fingerprint = prefix + "profile:" + hash_request(0);
+		if (const auto previous = find_transaction(client_tx))
+		{
+			const auto& saved = previous->request_fingerprint;
+			if (saved.starts_with(prefix) && saved.size() == prefix.size() + 64)
+			{
+				auto users = saved_profile_users();
+				users.insert(user);
+
+				for (const auto old_user : users)
+				{
+					if (saved == prefix + hash_request(old_user))
+					{
+						fingerprint = saved;
+						break;
+					}
+				}
+			}
+		}
+
+		// Never accept an opaque legacy hash without matching the full request.
+		// Missing historical identity evidence remains a conflict, not a regrant.
+		return transact(client_tx, fingerprint, callback);
 	}
 
 	transaction_result transact(const std::string& client_tx, const std::string& request_fingerprint,

@@ -647,7 +647,8 @@ namespace demonware::achievement_orders
 
 		for (const auto& order : snapshot.orders)
 		{
-			if (order.next_period_start <= timestamp || (order.cost_item_id && !has_contract_catalog(order.cost_item_id)))
+			if (!achievement_response::is_visible_in_current_mode(order.achievement) ||
+				order.next_period_start <= timestamp || (order.cost_item_id && !has_contract_catalog(order.cost_item_id)))
 			{
 				continue;
 			}

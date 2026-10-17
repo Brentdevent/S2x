@@ -121,6 +121,70 @@ namespace dedicated
 			return true;
 		}
 
+		// DB_InitStreams (0x4D68A0) reads seven of these records from the
+		// beginning of the current zone allocation. Only block 0 holds the
+		// embedded sound bytes read at 0x4B700E.
+		struct db_stream_block
+		{
+			std::uint8_t* data;
+			std::uint64_t size;
+		};
+
+		static_assert(sizeof(db_stream_block) == 0x10);
+		static_assert(offsetof(db_stream_block, data) == 0x0);
+		static_assert(offsetof(db_stream_block, size) == 0x8);
+
+		void load_dedicated_sound_data(const bool at_stream_start, void* const data,
+			const size_t size)
+		{
+			// Keep the native read, decompression and cursor advance intact. The
+			// reader copies from its own decompression buffers synchronously; it
+			// does not retain this destination as a decompression dictionary.
+			utils::hook::invoke<void>(0x4D6B90_g, at_stream_start, data, size);
+
+			const auto* const blocks = *reinterpret_cast<const db_stream_block**>(0x9B8EB28_g);
+			if (!at_stream_start || !data || !size || !blocks
+				|| *reinterpret_cast<const int*>(0x9B8EB20_g) != 0)
+			{
+				return;
+			}
+
+			const auto address = reinterpret_cast<std::uintptr_t>(data);
+			const auto block_start = reinterpret_cast<std::uintptr_t>(blocks[0].data);
+			if (address < block_start || size > blocks[0].size
+				|| address - block_start > blocks[0].size - size)
+			{
+				return;
+			}
+
+			// The native DB allocator uses 4 KiB pages. Keep both partial boundary
+			// pages: they may also contain names, other assets or the seek table.
+			constexpr std::uintptr_t page_mask = 0xFFF;
+			const auto prefix = (0 - address) & page_mask;
+			if (prefix >= size)
+			{
+				return;
+			}
+
+			const auto reclaim_size = (size - prefix) & ~page_mask;
+			if (!reclaim_size)
+			{
+				return;
+			}
+
+			// Preserve the virtual span, block sizes and native page-range
+			// ownership. DB_FreeXZoneMemory (0x4D6550) decommits the whole span
+			// on unload, which also accepts already-decommitted pages; its next
+			// allocation recommits the span before reading into it. The native
+			// partial-free helper only supports trimming range ends, not holes.
+			// No asset pointers or deferred work survive this synchronous hook.
+			if (!VirtualFree(reinterpret_cast<void*>(address + prefix), reclaim_size, MEM_DECOMMIT))
+			{
+				console::warn("Failed to reclaim %zu bytes of dedicated sound data (Windows error %lu).\n",
+					reclaim_size, GetLastError());
+			}
+		}
+
 		std::uint32_t disable_dedicated_xpak_loading(void*, std::int64_t,
 			std::uint8_t, int, std::uint16_t* flags)
 		{
@@ -942,6 +1006,11 @@ namespace dedicated
 			// Convert them to native absent descriptors after S2 transforms the
 			// header, while retaining the counts used by sequential consumers.
 			utils::hook::call(0x4A5D7C_g, disable_dedicated_external_streams);
+
+			// Load_LoadedSound's fresh embedded-byte read, before asset linking.
+			// Dedicated playback is disabled below. Leave sound headers, timing,
+			// seek tables and packed aliases intact; reclaim only payload pages.
+			utils::hook::call(0x4B700E_g, load_dedicated_sound_data);
 
 			// Release the completed fastfile readers' OVERLAPPED events before
 			// DB_TryLoadXFileInternal clears and reuses their zone-load record.

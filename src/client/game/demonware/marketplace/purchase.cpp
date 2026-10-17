@@ -87,7 +87,8 @@ namespace demonware::marketplace_purchase
 			std::uint32_t count{}, ignored{};
 			std::uint8_t currency_id{};
 			if (!wire.read_string(&client_tx, 24) || client_tx != input.client_tx ||
-				!wire.read_uint64(&user) || user != input.player_id ||
+				!wire.read_uint64(&user) || !user ||
+				!marketplace_store::is_saved_profile_user(user, input.player_id) ||
 				!wire.read_string(&account, 9) || account != "steam" ||
 				!wire.read_uint32(&count) || count != 1 || !wire.read_ubyte(&currency_id) ||
 				!wire.read_uint32(&ignored) || !wire.read_uint32(&count) || !count || count > marketplace_product::maximum_items)
@@ -198,10 +199,9 @@ namespace demonware::marketplace_purchase
 		const auto* cwl = marketplace_cwl::find(input.sku_id);
 		const auto contract = product && product->items.size() == 1 && product->items[0].second == 1 ?
 			achievement_orders::contract_for_token(product->items[0].first, static_cast<std::uint64_t>(time(nullptr))) : std::nullopt;
-		const auto fingerprint = "purchase:" + std::to_string(input.player_id) + ":" +
-			std::to_string(input.sku_id) + ":1";
 		std::uint32_t error = BD_MARKETPLACE_STORAGE_ERROR;
-		const auto settled = marketplace_store::transact("marketplace:123:" + input.client_tx, fingerprint,
+		const auto settled = marketplace_store::transact_profile("marketplace:123:" + input.client_tx, local_user_id,
+			"purchase:", ":" + std::to_string(input.sku_id) + ":1",
 			[&](marketplace_store::transaction& transaction, std::string& receipt)
 			{
 				if (!sku)
@@ -383,8 +383,7 @@ namespace demonware::marketplace_purchase
 					}
 
 					auto item = transaction.get_inventory(item_id).value_or(marketplace_store::inventory_record{});
-					if ((item.player_id && item.player_id != local_user_id) ||
-						(!item.account_type.empty() && item.account_type != "steam") || item.collision_field ||
+					if (!marketplace_store::owns_inventory(item, local_user_id) || item.collision_field ||
 						!marketplace_store::is_permanent(item) ||
 						item.quantity > INT32_MAX - quantity)
 					{
