@@ -334,7 +334,7 @@ namespace mods
 		}
 
 		mount_mod(name);
-		fastfiles::load_mod_zone();
+		fastfiles::reload_mod_zone();
 		restart_lui();
 	}
 
@@ -352,6 +352,7 @@ namespace mods
 		}
 
 		mount_mod("");
+		fastfiles::reload_mod_zone();
 		restart_lui();
 	}
 

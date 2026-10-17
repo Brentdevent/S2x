@@ -372,6 +372,8 @@ namespace game
 		WEAK symbol<int> g_poolSize{ 0xD90990 };
 		WEAK symbol<int> g_zoneCount{ 0x290B124 };
 		WEAK symbol<unsigned short> g_zoneHandles{ 0x59ADC90 };
+		WEAK symbol<volatile long> db_assetReadCount{ 0x1BA03C8 };
+		WEAK symbol<volatile long> db_assetWriteCount{ 0x1BA03CC };
 
 		WEAK symbol<int> ui_arenas_dirty{ 0xAB0F8AC };
 

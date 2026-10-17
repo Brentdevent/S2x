@@ -24,10 +24,32 @@ namespace fastfiles
 		// Zone slots in g_zones (0x58360E0, stride 0x5B0)
 		constexpr auto max_zone_slots = 0x421u;
 
-		// Alloc flag of the ui_mp/ui_zm_mp group (0x8DFCD). The 0x3BC free mask before it (0x8DF12)
-		// unloads that group on every ui reload, so the mod zone is reloaded in step with it.
-		constexpr auto mod_zone_alloc_flags = 4;
+		constexpr auto ui_zone_alloc_flags = 4;
+
+		constexpr auto mod_zone_alloc_flags = 0x10000000;
 		constexpr auto mod_zone_name = "mod";
+
+		// makeshift database read (0xA0B00)
+		class db_read_lock
+		{
+		public:
+			db_read_lock()
+			{
+				InterlockedIncrement(game::mp::db_assetReadCount);
+				while (*game::mp::db_assetWriteCount)
+				{
+					Sleep(0);
+				}
+			}
+
+			~db_read_lock()
+			{
+				InterlockedDecrement(game::mp::db_assetReadCount);
+			}
+
+			db_read_lock(const db_read_lock&) = delete;
+			db_read_lock& operator=(const db_read_lock&) = delete;
+		};
 
 		utils::hook::detour sys_create_file_hook;
 
@@ -107,6 +129,14 @@ namespace fastfiles
 			return name && (!std::strcmp(name, "ui_mp") || !std::strcmp(name, "ui_zm_mp"));
 		}
 
+		bool is_mod_zone_loaded()
+		{
+			return std::ranges::any_of(get_loaded_zones(), [](const zone_info& info)
+			{
+				return (info.flags & mod_zone_alloc_flags) != 0;
+			});
+		}
+
 		bool should_add_mod_zone(const std::vector<game::XZoneInfo>& zones)
 		{
 			if (mods::get_loaded_mod().empty())
@@ -129,7 +159,7 @@ namespace fastfiles
 				return (zone.freeFlags & mod_zone_alloc_flags) != 0;
 			});
 
-			if (!frees_mod_zone && is_zone_loaded(mod_zone_name))
+			if (!frees_mod_zone && is_mod_zone_loaded())
 			{
 				return false;
 			}
@@ -162,6 +192,14 @@ namespace fastfiles
 		void db_load_xassets_stub(game::XZoneInfo* zones, const unsigned int count, const game::DBSyncMode sync_mode)
 		{
 			std::vector<game::XZoneInfo> data(zones, zones + count);
+
+			for (auto& zone : data)
+			{
+				if (zone.freeFlags & ui_zone_alloc_flags)
+				{
+					zone.freeFlags |= mod_zone_alloc_flags;
+				}
+			}
 
 			if (should_add_mod_zone(data))
 			{
@@ -293,6 +331,8 @@ namespace fastfiles
 	void enum_asset_entries(const game::XAssetType type, const std::function<void(game::XAssetEntry*)>& callback,
 		const bool include_override)
 	{
+		db_read_lock lock;
+
 		for (auto bucket = 0u; bucket < db_hash_table_size; bucket++)
 		{
 			for (auto i = game::mp::db_hashTable[bucket]; i;)
@@ -322,6 +362,8 @@ namespace fastfiles
 	void get_asset_counts(int (&counts)[game::ASSET_TYPE_COUNT])
 	{
 		std::memset(counts, 0, sizeof(counts));
+
+		db_read_lock lock;
 
 		for (auto bucket = 0u; bucket < db_hash_table_size; bucket++)
 		{
@@ -355,24 +397,31 @@ namespace fastfiles
 		return game::mp::g_poolSize[type];
 	}
 
-	void load_mod_zone()
+	void reload_mod_zone()
 	{
-		if (!is_supported() || mods::get_loaded_mod().empty())
+		if (!is_supported())
 		{
 			return;
 		}
 
 		scheduler::once([]
 		{
-			if (mods::get_loaded_mod().empty() || is_zone_loaded(mod_zone_name))
+			game::XZoneInfo info{};
+			info.freeFlags = mod_zone_alloc_flags;
+
+			if (!mods::get_loaded_mod().empty() && exists(mod_zone_name))
+			{
+				console::info("[Fastfiles] Loading zone '%s' for mod '%s'\n", mod_zone_name, mods::get_loaded_mod().data());
+
+				info.name = mod_zone_name;
+				info.allocFlags = mod_zone_alloc_flags;
+			}
+			else if (!is_mod_zone_loaded())
 			{
 				return;
 			}
 
-			if (try_load_zone(mod_zone_name, mod_zone_alloc_flags))
-			{
-				console::info("[Fastfiles] Loading zone '%s' for mod '%s'\n", mod_zone_name, mods::get_loaded_mod().data());
-			}
+			game::DB_LoadXAssets(&info, 1, game::DB_LOAD_ASYNC);
 		}, scheduler::pipeline::main);
 	}
 
@@ -391,7 +440,8 @@ namespace fastfiles
 			// allow unsigned ff
 			utils::hook::set<std::uint8_t>(0x4A6BC3_g, 0xEB);
 
-			// ui_mp/ui_zm_mp reload and the post gfx group load, both call DB_LoadXAssets
+			// ui group free and reload, and the post gfx group load, all call DB_LoadXAssets
+			utils::hook::call(0x8DF12_g, db_load_xassets_stub);
 			utils::hook::call(0x8DFCD_g, db_load_xassets_stub);
 			utils::hook::call(0x89B38B_g, db_load_xassets_stub);
 
@@ -434,7 +484,7 @@ namespace fastfiles
 				const std::string name = params.get(1);
 				const auto alloc_flags = params.size() > 2
 					? static_cast<int>(std::strtol(params.get(2), nullptr, 0))
-					: mod_zone_alloc_flags;
+					: ui_zone_alloc_flags;
 
 				if (!try_load_zone(name, alloc_flags))
 				{

@@ -19,8 +19,9 @@ namespace gui::asset_list
 
 		struct asset_row
 		{
-			const game::XAssetEntry* entry;
-			const char* name;
+			std::string name;
+			std::string value;
+			unsigned int zone_index;
 		};
 
 		struct text_viewer
@@ -130,16 +131,32 @@ namespace gui::asset_list
 			table_viewers.emplace_back(std::move(viewer));
 		}
 
-		void open_viewer(const game::XAssetType type, const char* name, const game::XAssetHeader header)
+		void open_viewer(const game::XAssetType type, const asset_row& row)
 		{
-			if (type == game::ASSET_TYPE_RAWFILE)
+			auto found = false;
+			fastfiles::enum_asset_entries(type, [&](const game::XAssetEntry* entry)
 			{
-				open_rawfile(name, header);
-			}
-			else if (type == game::ASSET_TYPE_STRINGTABLE)
-			{
-				open_stringtable(name, header);
-			}
+				if (found || entry->zoneIndex != row.zone_index)
+				{
+					return;
+				}
+
+				const auto* name = game::DB_GetXAssetName(&entry->asset);
+				if (!name || row.name != name)
+				{
+					return;
+				}
+
+				found = true;
+				if (type == game::ASSET_TYPE_RAWFILE)
+				{
+					open_rawfile(name, entry->asset.header);
+				}
+				else if (type == game::ASSET_TYPE_STRINGTABLE)
+				{
+					open_stringtable(name, entry->asset.header);
+				}
+			}, true);
 		}
 
 		void draw_viewers()
@@ -226,8 +243,7 @@ namespace gui::asset_list
 
 		void draw_table_row(const game::XAssetType type, const asset_row& row, const int id)
 		{
-			const auto* entry = row.entry;
-			const auto is_default = entry->zoneIndex == 0;
+			const auto is_default = row.zone_index == 0;
 
 			if (is_default)
 			{
@@ -245,18 +261,18 @@ namespace gui::asset_list
 				ImGui::TableSetColumnIndex(column++);
 				if (ImGui::Button("view"))
 				{
-					open_viewer(type, row.name, entry->asset.header);
+					open_viewer(type, row);
 				}
 			}
 
 			if (show_asset_zone)
 			{
 				ImGui::TableSetColumnIndex(column++);
-				ImGui::TextUnformatted(get_zone_label(entry->zoneIndex).data());
+				ImGui::TextUnformatted(get_zone_label(row.zone_index).data());
 			}
 
 			ImGui::TableSetColumnIndex(column++);
-			if (ImGui::Button(row.name))
+			if (ImGui::Button(row.name.data()))
 			{
 				copy_to_clipboard(row.name);
 			}
@@ -264,10 +280,9 @@ namespace gui::asset_list
 			if (type == game::ASSET_TYPE_LOCALIZE)
 			{
 				ImGui::TableSetColumnIndex(column++);
-				const auto* value = entry->asset.header.localize->value;
-				if (ImGui::Button(value ? value : ""))
+				if (ImGui::Button(row.value.data()))
 				{
-					copy_to_clipboard(value ? value : "");
+					copy_to_clipboard(row.value);
 				}
 			}
 
@@ -321,10 +336,13 @@ namespace gui::asset_list
 				total++;
 
 				const auto name = game::DB_GetXAssetName(&entry->asset);
-				if (is_row_shown(type, entry, name))
+				if (!is_row_shown(type, entry, name))
 				{
-					rows.emplace_back(entry, name);
+					return;
 				}
+
+				const auto* value = type == game::ASSET_TYPE_LOCALIZE ? entry->asset.header.localize->value : nullptr;
+				rows.emplace_back(name, value ? value : "", entry->zoneIndex);
 			}, true);
 
 			ImGui::Text("count: %i / %i, shown: %zu", total, fastfiles::get_pool_size(type), rows.size());
