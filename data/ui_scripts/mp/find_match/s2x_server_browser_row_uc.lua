@@ -8,8 +8,12 @@ local function postload_server_row( row, _, properties )
 
 	local function style( focused )
 		for _, name in ipairs( columns ) do
-			row[name]:setFont( focused and FONTS.BodyBoldFont.Font or FONTS.BodyFont.Font )
-			row[name]:setRGBFromInt( focused and SWATCHES.Menus.MenuGold or SWATCHES.Menus.MenuOffWhite, 0 )
+			local text = row[name]
+
+			if text then
+				text:setFont( focused and FONTS.BodyBoldFont.Font or FONTS.BodyFont.Font )
+				text:setRGBFromInt( focused and SWATCHES.Menus.MenuGold or SWATCHES.Menus.MenuOffWhite, 0 )
+			end
 		end
 
 		row.Border:setAlpha( focused and 1 or 0, 0 )

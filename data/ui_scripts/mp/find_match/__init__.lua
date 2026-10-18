@@ -3,6 +3,7 @@ if game:issingleplayer() or not Engine.InFrontend() then
 end
 
 local MODULES_TO_RELOAD = {
+	"s2x_headquarters",
 	"s2x_findgame_menu",
 	"s2x_server_browser_model",
 	"s2x_server_browser_row_uc",
@@ -18,6 +19,7 @@ end
 local browser_controller = require( "s2x_server_browser_uc" )
 require( "s2x_server_browser_row" )
 require( "s2x_server_browser" )
+require( "s2x_headquarters" ).install()
 
 -- Wrap the packaged UC table instead of maintaining a decompiled copy. The
 -- wrapper applies the S2x Find Match layouts to the stock controller state.
@@ -62,4 +64,23 @@ if not loaded or type( menu_builders["findgame_menu"] ) ~= "function" then
 	local failure_message = not loaded and load_error or
 		"Stock findgame_menu did not register a builder"
 	error( failure_message )
+end
+
+if Engine.IsZombiesMode() then
+	return
+end
+
+-- Like Find Match, the vendor builder captures its UC functions at load time.
+local vendor_controller = require( "s2.hub_vendor_menu_uc" )
+require( "s2x_headquarters" ).wrap_vendor_controller( vendor_controller )
+local previous_vendor_builder = menu_builders["hub_vendor_menu"]
+local previous_vendor_module = package.loaded["s2.hub_vendor_menu"]
+menu_builders["hub_vendor_menu"] = nil
+package.loaded["s2.hub_vendor_menu"] = nil
+
+local vendor_loaded, vendor_error = pcall( require, "s2.hub_vendor_menu" )
+if not vendor_loaded or type( menu_builders["hub_vendor_menu"] ) ~= "function" then
+	menu_builders["hub_vendor_menu"] = previous_vendor_builder
+	package.loaded["s2.hub_vendor_menu"] = previous_vendor_module
+	error( vendor_loaded and "Stock hub_vendor_menu did not register a builder" or vendor_error )
 end
