@@ -146,6 +146,7 @@ namespace game
 	WEAK symbol<void(const char* mapName)> CL_PreloadMap2{ 0x837E0 };
 	WEAK symbol<void(unsigned int localClientNum)> CL_CheckForResend{ 0x6AF20 };
 	WEAK symbol<bool(int localClientNum)> CL_IsLocalClientInGame{ 0x7E110 };
+	WEAK symbol<void(int localClientNum, bool active)> CL_SetLocalClientActive{ 0x4A2600 };
 	// Copy cg->refdef.view.org / axis[0]; the native wrappers handle CG_GetLocalClient's caller check.
 	WEAK symbol<void(int localClientNum, float* pos)> CL_GetViewPos{ 0x7B8B0 };
 	WEAK symbol<void(int localClientNum, float* forward)> CL_GetViewForward{ 0x7B880 };

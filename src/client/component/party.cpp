@@ -624,6 +624,11 @@ namespace party
 
 			*game::sv_migrate = 0;
 			dedicated_party_client::reset();
+
+			// HQ disconnect can leave the frontend loaded with no active local client.
+			// CL_MapLoading only connects active clients; without one, CL_InitUI enters
+			// the frontend path and waits for memory already released by map startup.
+			game::CL_SetLocalClientActive(0, true);
 			game::UI_StartServer(0);
 		}
 
