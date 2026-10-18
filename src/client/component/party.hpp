@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/game.hpp"
+#include "party_session.hpp"
 
 #include <cstdint>
 #include <string>
@@ -8,26 +9,10 @@
 
 namespace party
 {
-	namespace session
-	{
-		enum class kind
-		{
-			none,
-			dedicated,
-			custom,
-			invalid,
-		};
-
-		kind classify(std::string_view value);
-		bool valid_descriptor(std::string_view host, std::string_view key, std::string_view id);
-	}
-
 	struct internal_connect_request
 	{
 		std::uint64_t attempt_id{};
-		std::string host_address{};
-		std::string key{};
-		std::string session_id{};
+		session::descriptor session{};
 		std::string map_name{};
 		std::string gametype{};
 	};

@@ -3,6 +3,7 @@
 
 #include "dedicated_party.hpp"
 #include "dedicated_party_client.hpp"
+#include "headquarters.hpp"
 #include "network.hpp"
 #include "party.hpp"
 #include "command.hpp"
@@ -340,15 +341,6 @@ namespace dedicated_party
 				&& is_active_party_host(game_lobby)
 				&& party_is_owned_by_local_client_zero(game_lobby)
 				&& get_party_host_state(game_lobby) == 4;
-		}
-
-		bool is_session_hex_string(const std::string& value, const std::size_t expected_size)
-		{
-			return value.size() == expected_size
-				&& std::all_of(value.begin(), value.end(), [](const unsigned char character)
-				{
-					return std::isxdigit(character) != 0;
-				});
 		}
 
 		int get_remote_party_member_count(game::PartyData* party_data)
@@ -1177,7 +1169,7 @@ namespace dedicated_party
 
 	void start()
 	{
-		if (!game::environment::is_dedicated() || is_active()
+		if (!game::environment::is_dedicated() || headquarters::is_host() || is_active()
 			|| !game::virtual_lobby_loaded())
 		{
 			return;
@@ -1318,7 +1310,7 @@ namespace dedicated_party
 
 	bool set_rotation(std::vector<dedicated_match_t> rotation)
 	{
-		if (is_active() || rotation.empty())
+		if (headquarters::is_host() || is_active() || rotation.empty())
 		{
 			return false;
 		}
@@ -1362,7 +1354,7 @@ namespace dedicated_party
 
 	bool set_next_match(const std::string& map_name, const std::string& gametype, const int map_index)
 	{
-		if (!game::environment::is_dedicated())
+		if (!game::environment::is_dedicated() || headquarters::is_host())
 		{
 			return false;
 		}
@@ -1374,7 +1366,7 @@ namespace dedicated_party
 		return true;
 	}
 
-	bool get_connect_info(connect_info& info)
+	bool get_connect_info(party::session::connect_info& info)
 	{
 		if (!game::environment::is_dedicated() || !is_active())
 		{
@@ -1393,38 +1385,24 @@ namespace dedicated_party
 			return false;
 		}
 
-		std::array<char, 81> host_address{};
-		std::array<char, 33> key{};
-		std::array<char, 17> session_id{};
-
-		// Serialize the hosted session fields in the stock CL_Connect command
-		// format used by the LAN server browser.
-		game::Session_HostAddressToString(&session->hostAddress, host_address.data());
-		game::Session_KeyToString(&session->sessionKey, key.data());
-		game::Session_IdToString(session->sessionId, session_id.data());
-
 		if (dedicated_party_state.current_match.map_name.empty()
 			|| dedicated_party_state.current_match.gametype.empty())
 		{
 			return false;
 		}
 
-		info.host_address = host_address.data();
-		info.key = key.data();
-		info.session_id = session_id.data();
+		info.session = party::session::describe(*session);
 		info.map_name = dedicated_party_state.current_match.map_name;
 		info.gametype = dedicated_party_state.current_match.gametype;
 		info.match_sequence = dedicated_party_state.match_sequence;
 		auto* hosted_game_lobby = dedicated_party_state.game_lobby
 			? dedicated_party_state.game_lobby
 			: game_lobby;
-		info.member_count = get_remote_party_member_count(hosted_game_lobby);
-		info.max_members = dedicated_party_state.player_capacity;
+		info.player_count = get_remote_party_member_count(hosted_game_lobby);
+		info.max_players = dedicated_party_state.player_capacity;
 		info.match_running = party::server_running();
 
-		return is_session_hex_string(info.host_address, 80)
-			&& is_session_hex_string(info.key, 32)
-			&& is_session_hex_string(info.session_id, 16)
+		return party::session::valid_descriptor(info.session)
 			&& !info.map_name.empty()
 			&& !info.gametype.empty();
 	}
@@ -1434,7 +1412,7 @@ namespace dedicated_party
 	public:
 		void post_unpack() override
 		{
-			if (!game::environment::is_dedicated())
+			if (!game::environment::is_dedicated() || headquarters::is_host())
 			{
 				return;
 			}

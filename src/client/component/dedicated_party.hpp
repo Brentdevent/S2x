@@ -1,5 +1,7 @@
 #pragma once
 
+#include "party_session.hpp"
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -26,19 +28,6 @@ namespace dedicated_party
 		std::string map_name{};
 		std::string gametype{};
 		int map_index{};
-	};
-
-	struct connect_info
-	{
-		std::string host_address{};
-		std::string key{};
-		std::string session_id{};
-		std::string map_name{};
-		std::string gametype{};
-		std::uint64_t match_sequence{};
-		int member_count{};
-		int max_members{};
-		bool match_running{};
 	};
 
 	struct lobby_member
@@ -68,5 +57,5 @@ namespace dedicated_party
 	bool set_rotation(std::vector<dedicated_match_t> rotation);
 	bool rotate();
 	bool set_next_match(const std::string& map_name, const std::string& gametype, int map_index);
-	bool get_connect_info(connect_info& info);
+	bool get_connect_info(party::session::connect_info& info);
 }

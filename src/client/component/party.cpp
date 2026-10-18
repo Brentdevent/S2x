@@ -5,6 +5,7 @@
 #include "custom_match.hpp"
 #include "dedicated_party.hpp"
 #include "dedicated_party_client.hpp"
+#include "headquarters.hpp"
 #include "command.hpp"
 #include "scheduler.hpp"
 #include "network.hpp"
@@ -1084,7 +1085,7 @@ namespace party
 			return counts;
 		}
 
-		bool get_custom_lobby_connect_info(dedicated_party::connect_info& info)
+		bool get_custom_lobby_connect_info(party::session::connect_info& info)
 		{
 			// Multiplayer and Zombies Custom Match use the same native private session.
 			// This only exposes its join descriptor; progression remains mode-specific.
@@ -1108,28 +1109,20 @@ namespace party
 				return false; // Host creation/teardown has not produced a usable session.
 			}
 
-			std::array<char, 81> address{};
-			std::array<char, 33> key{};
-			std::array<char, 17> id{};
-			game::Session_HostAddressToString(&session->hostAddress, address.data());
-			game::Session_KeyToString(&session->sessionKey, key.data());
-			game::Session_IdToString(session->sessionId, id.data());
-			info.host_address = address.data();
-			info.key = key.data();
-			info.session_id = id.data();
+			info.session = party::session::describe(*session);
 			info.map_name = game::Party_GetMapName(lobby);
 			info.gametype = game::Party_GetGameType(lobby);
-			info.max_members = utils::hook::invoke<int>(0x197110_g, lobby);
-			info.member_count = 0;
-			for (int member = 0; member < 48; ++member)
+			info.max_players = utils::hook::invoke<int>(0x197110_g, lobby);
+			info.player_count = 0;
+			for (auto member_index = 0; member_index < static_cast<int>(std::size(lobby->members)); ++member_index)
 			{
-				info.member_count += game::Party_IsMemberUIVisible(lobby, member) != 0;
+				info.player_count += game::Party_IsMemberUIVisible(lobby, member_index) != 0;
 			}
 			info.match_running = game::is_server_running();
-			return party::session::valid_descriptor(info.host_address, info.key, info.session_id)
+			return party::session::valid_descriptor(info.session)
 				&& !info.map_name.empty() && !info.gametype.empty()
-				&& info.max_members > 0
-				&& info.max_members <= game::environment::get_online_mode_info().max_players;
+				&& info.max_players > 0
+				&& info.max_players <= game::environment::get_online_mode_info().max_players;
 		}
 
 		void send_info_response(const game::netadr_s& from, std::string_view data, const std::string& response_command)
@@ -1157,21 +1150,28 @@ namespace party
 			const auto gameplay_running = game::is_server_running();
 			auto match_running = gameplay_running;
 
-			dedicated_party::connect_info party_connect_info{};
-			const auto has_dedicated_session = dedicated_party::get_connect_info(party_connect_info);
-			const auto has_custom_session = !has_dedicated_session
+			party::session::connect_info party_connect_info{};
+			const auto has_hq_session = headquarters::get_connect_info(party_connect_info);
+			if (headquarters::is_host() && !has_hq_session)
+			{
+				return; // A loading/stopped HQ is not a direct-connect game server.
+			}
+
+			const auto has_dedicated_session = !has_hq_session
+				&& dedicated_party::get_connect_info(party_connect_info);
+			const auto has_custom_session = !has_hq_session && !has_dedicated_session
 				&& get_custom_lobby_connect_info(party_connect_info);
-			const auto has_party_session = has_dedicated_session || has_custom_session;
+			const auto has_party_session = has_hq_session || has_dedicated_session || has_custom_session;
 			if (has_party_session)
 			{
 				mapname = party_connect_info.map_name;
 				gametype = party_connect_info.gametype;
-				max_clients = party_connect_info.max_members;
+				max_clients = party_connect_info.max_players;
 				match_running = party_connect_info.match_running;
 			}
 
 			client_counts counts{};
-			if (gameplay_running)
+			if (gameplay_running && !has_hq_session)
 			{
 				// Party membership omits match bots. Count both from the gameplay slots.
 				counts = get_match_client_counts(max_clients);
@@ -1179,7 +1179,7 @@ namespace party
 			else if (has_party_session)
 			{
 				// Frontend actors and old map slots are not current match players.
-				counts.clients = std::clamp(party_connect_info.member_count, 0, max_clients);
+				counts.clients = std::clamp(party_connect_info.player_count, 0, max_clients);
 			}
 
 			if (!data.empty())
@@ -1201,10 +1201,10 @@ namespace party
 
 			if (has_party_session && response_command == "s2x_infoResponse")
 			{
-				info.set("party_session", has_custom_session ? "2" : "1");
-				info.set("session_host", party_connect_info.host_address);
-				info.set("session_key", party_connect_info.key);
-				info.set("session_id", party_connect_info.session_id);
+				info.set("party_session", has_hq_session ? "3" : has_custom_session ? "2" : "1");
+				info.set("session_host", party_connect_info.session.host_address);
+				info.set("session_key", party_connect_info.session.key);
+				info.set("session_id", party_connect_info.session.session_id);
 				info.set("party_mapname", party_connect_info.map_name);
 				info.set("party_gametype", party_connect_info.gametype);
 				if (has_dedicated_session)
@@ -1215,44 +1215,6 @@ namespace party
 			}
 
 			network::send(from, response_command, info.build(), '\n');
-		}
-	}
-
-	namespace session
-	{
-		namespace
-		{
-			bool is_hex(const std::string_view value, const std::size_t size)
-			{
-				return value.size() == size && std::all_of(value.begin(), value.end(), [](const char c)
-				{
-					return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-				});
-			}
-		}
-
-		// party_session: absent/0 = direct game, 1 = dedicated lobby, 2 = custom lobby.
-		kind classify(const std::string_view value)
-		{
-			if (value.empty() || value == "0")
-			{
-				return kind::none;
-			}
-			if (value == "1")
-			{
-				return kind::dedicated;
-			}
-			if (value == "2")
-			{
-				return kind::custom;
-			}
-			return kind::invalid;
-		}
-
-		bool valid_descriptor(const std::string_view host, const std::string_view key,
-			const std::string_view id)
-		{
-			return is_hex(host, 80) && is_hex(key, 32) && is_hex(id, 16);
 		}
 	}
 
@@ -1330,16 +1292,16 @@ namespace party
 	void execute_internal_connect(const internal_connect_request& request)
 	{
 		if (!is_connection_attempt_current(request.attempt_id)
-			|| !dedicated_party_client::is_pending_internal_connect(request.session_id, request.attempt_id))
+			|| !dedicated_party_client::is_pending_internal_connect(request.session.session_id, request.attempt_id))
 		{
 			return;
 		}
 
 		const std::string connect_command = utils::string::va(
 			"connect %s %s %s 0 0 %s %s",
-			request.host_address.data(),
-			request.key.data(),
-			request.session_id.data(),
+			request.session.host_address.data(),
+			request.session.key.data(),
+			request.session.session_id.data(),
 			request.map_name.data(),
 			request.gametype.data()
 		);
@@ -1527,12 +1489,14 @@ namespace party
 					return;
 				}
 
+				const auto session_kind = party::session::classify(info.get("party_session"));
+				const auto player_limit = party::session::get_player_limit(session_kind);
 				int client_count{};
 				int bot_count{};
 				int max_clients{};
-				if (!parse_info_int(info.get("clients"), 0, mode.max_players, client_count)
-					|| !parse_info_int(info.get("bots"), 0, mode.max_players, bot_count)
-					|| !parse_info_int(info.get("sv_maxclients"), 1, mode.max_players, max_clients)
+				if (!parse_info_int(info.get("clients"), 0, player_limit, client_count)
+					|| !parse_info_int(info.get("bots"), 0, player_limit, bot_count)
+					|| !parse_info_int(info.get("sv_maxclients"), 1, player_limit, max_clients)
 					|| client_count > max_clients || bot_count > client_count)
 				{
 					console::error("Connection failed: invalid server player counts.\n");

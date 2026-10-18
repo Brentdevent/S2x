@@ -4,6 +4,7 @@
 #include "console/console.hpp"
 #include "command.hpp"
 #include "dedicated_party.hpp"
+#include "headquarters.hpp"
 #include "scheduler.hpp"
 
 #include "game/game.hpp"
@@ -828,7 +829,7 @@ namespace dedicated
 
 		void cl_check_for_resend_stub(const unsigned int local_client_num)
 		{
-			if (game::virtual_lobby_loaded())
+			if (!headquarters::is_host() && game::virtual_lobby_loaded())
 			{
 				// PartyHost_Frame requires the frontend owner to finish its virtual-lobby
 				// connection before the native prematch state machine can start a match.
@@ -836,7 +837,8 @@ namespace dedicated
 			}
 
 			// Virtual-lobby shutdown clears the loaded flag before gameplay reconnects,
-			// keeping the dedicated process out of gameplay server-client slots.
+			// keeping the dedicated process out of gameplay server-client slots. HQ
+			// has no prematch transition and never needs a local gameplay connection.
 		}
 
 		void kill_server()
@@ -921,7 +923,16 @@ namespace dedicated
 				}
 
 				console::info("Virtual lobby initialized.\n");
-				dedicated_party::start();
+
+				if (headquarters::is_host())
+				{
+					headquarters::start();
+				}
+				else
+				{
+					dedicated_party::start();
+				}
+
 				return scheduler::cond_end;
 			}, scheduler::pipeline::main, 100ms);
 		}
@@ -1298,18 +1309,22 @@ namespace dedicated
 			
 			disable_p2p_auth_ticket_validation();
 
-			// The persistent frontend leaves S2's virtual-lobby allocation flag set.
-			// Force SV_Startup to use sv_maxClients instead of its 48-client frontend
-			// allocation; gameplay client sidecars only contain 18 valid entries.
-			utils::hook::set<std::uint8_t>(0x6DCE04_g, 0xEB);
+			// HQ retains its native 48-slot allocation for party-indexed clients.
+			if (!headquarters::is_host())
+			{
+				// The persistent frontend leaves S2's virtual-lobby allocation flag set.
+				// Force SV_Startup to use sv_maxClients instead of its 48-client frontend
+				// allocation; gameplay client sidecars only contain 18 valid entries.
+				utils::hook::set<std::uint8_t>(0x6DCE04_g, 0xEB);
 
-			// SV_DirectConnect reserves a minimum of one local gameplay slot on listen
-			// servers. Dedicated hosts live outside the gameplay range. Start invited
-			// peers at 0 and other peers at private_slots, including the bot replacement
-			// scan which shares r14d. Keep native session reservation checks intact.
-			utils::hook::nop(0xF3A43_g, 4); // remove setz r14b (r14d is already zero)
-			utils::hook::set<std::uint8_t>(0xF3A5F_g, 0); // cmp eax, 0
-			utils::hook::set<std::uint32_t>(0xF3A61_g, 0); // mov eax, 0
+				// SV_DirectConnect reserves a minimum of one local gameplay slot on listen
+				// servers. Dedicated hosts live outside the gameplay range. Start invited
+				// peers at 0 and other peers at private_slots, including the bot replacement
+				// scan which shares r14d. Keep native session reservation checks intact.
+				utils::hook::nop(0xF3A43_g, 4); // remove setz r14b (r14d is already zero)
+				utils::hook::set<std::uint8_t>(0xF3A5F_g, 0); // cmp eax, 0
+				utils::hook::set<std::uint32_t>(0xF3A61_g, 0); // mov eax, 0
+			}
 
 			if (game::environment::is_multiplayer())
 			{
