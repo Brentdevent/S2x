@@ -13,6 +13,7 @@
 #include "game/game.hpp"
 #include "game/player_profile.hpp"
 #include "launcher/launcher.hpp"
+#include "game/pause/process.hpp"
 #include "component/console/console.hpp"
 #include "component/updater.hpp"
 
@@ -213,6 +214,11 @@ namespace
 
 int main()
 {
+	if (const auto result = pause::process::run_helper())
+	{
+		return *result;
+	}
+
 	if (handle_process_runner())
 	{
 		return 0;

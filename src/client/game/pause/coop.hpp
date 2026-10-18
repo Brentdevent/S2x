@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 
-namespace pause_hard::protocol
+namespace pause::coop::protocol
 {
 	constexpr std::size_t capacity = 4;
 
@@ -18,6 +18,7 @@ namespace pause_hard::protocol
 
 	// '$' has no stock CG_DeployServerCommandString case. Old clients ignore
 	// the capability probe instead of interpreting it as a native 's' command.
+	// Keep the wire names compatible with earlier co-op test builds.
 	constexpr std::string_view bootstrap_command = "$s2x_pause_hard";
 	constexpr auto state_command = "s2x_hp_state";
 	constexpr auto ack_command = "s2x_hp_ack";
