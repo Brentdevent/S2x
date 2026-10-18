@@ -4,7 +4,7 @@
 #include "game/game.hpp"
 
 #include "game_console.hpp"
-#include "pause_hard.hpp"
+#include "pause_coop.hpp"
 
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
@@ -35,7 +35,7 @@ namespace input
 
 			const auto catchers_before = *game::keyCatchers;
 			cl_key_event_hook.invoke<void>(local_client_num, key, down, arg4);
-			pause_hard::key_event(local_client_num, key, down, catchers_before);
+			pause::coop::key_event(local_client_num, key, down, catchers_before);
 		}
 	}
 
