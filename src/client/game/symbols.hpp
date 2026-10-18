@@ -158,6 +158,7 @@ namespace game
 	WEAK symbol<void()> CL_Connect{ 0x6D0A0 };
 	WEAK symbol<void()> CL_Disconnect_f{ 0x6F7A0 };
 	WEAK symbol<void()> CL_Live_StartPrivateMatchHost{ 0x80290 };
+	WEAK symbol<void()> CL_Live_StopHub{ 0x804C0 };
 	WEAK symbol<int(int localClientNum)> CL_ControllerIndexFromClientNum{ 0x4A0B80 };
 	WEAK symbol<char*(int controllerIndex)> CL_GetUsernameForLocalClient{ 0x789680 };
 	WEAK symbol<bool(int controllerIndex, char* name, std::size_t nameSize)> Live_GetLocalClientName{ 0x7896E0 };

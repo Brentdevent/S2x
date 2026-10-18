@@ -953,7 +953,20 @@ namespace party
 			party::cancel_pending_connection();
 			client_map_session_active = false;
 			queued_map_start.reset();
-			disconnect_command_hook.invoke<void>();
+
+			if (!game::environment::is_dedicated() && game::environment::is_multiplayer()
+				&& game::virtual_lobby_loaded() && get_current_mapname() == headquarters::map_name)
+			{
+				// Raw disconnect leaves HQ's virtual lobby loaded with no client to render it.
+				// Use the native xstophub handler, as the HQ Exit menu does, to also unload
+				// the virtual lobby and restore the main menu.
+				game::CL_Live_StopHub();
+			}
+			else
+			{
+				disconnect_command_hook.invoke<void>();
+			}
+
 			dedicated_party_client::reset();
 		}
 
