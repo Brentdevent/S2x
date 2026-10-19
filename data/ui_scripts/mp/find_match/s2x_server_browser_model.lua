@@ -15,7 +15,8 @@ function model.visibleServers( servers, favoritesOnly, filter, sort, headquarter
 	for _, server in ipairs( servers ) do
 		local matches = server.online or favoritesOnly
 		matches = matches and (not favoritesOnly or server.favorite)
-		matches = matches and ((server.headquarters == true) == (headquarters == true))
+		-- An offline favorite's category is unknown until the server replies.
+		matches = matches and (not server.online or ((server.headquarters == true) == (headquarters == true)))
 
 		if filter == 2 then
 			matches = matches and server.online and server.clients > server.bots
