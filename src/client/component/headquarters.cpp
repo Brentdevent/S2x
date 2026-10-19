@@ -63,7 +63,7 @@ namespace headquarters
 		}
 
 		started = true;
-		console::info("[HQ] Starting persistent full HQ; capacity %d remote players.\n", player_capacity);
+		console::info("[HQ] Starting...\n");
 
 		// Stock handle_fullhub (persistentforeground.lua) uses this command.
 		// SV_VirtualLobby_f -> 0x484130 switches out of the slim scene, stops
@@ -77,14 +77,13 @@ namespace headquarters
 			party::session::connect_info info{};
 			if (headquarters::get_connect_info(info))
 			{
-				console::info("[HQ] Ready: %s, native HQ session %s. Join using connect <ip:port>.\n",
-					map_name, info.session.session_id.data());
+				console::info("[HQ] Ready for players (%d slots).\n", player_capacity);
 				return scheduler::cond_end;
 			}
 
 			if (std::chrono::steady_clock::now() >= deadline)
 			{
-				console::error("[HQ] Startup timed out waiting for a joinable session.\n");
+				console::error("[HQ] Startup timed out.\n");
 				return scheduler::cond_end;
 			}
 

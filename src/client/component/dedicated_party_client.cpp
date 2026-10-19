@@ -509,7 +509,7 @@ namespace dedicated_party_client
 				// Retain the validated session identity for owner filtering. HQ still
 				// owns its lifecycle; skip game-party presentation and rotation.
 				joined_hq_session_id = pending_join.session_id;
-				console::info("[HQ] Joining native HQ session through %s.\n",
+				console::info("[HQ] Joining %s...\n",
 					network::net_adr_to_string(pending_join.target));
 				return true;
 			}
@@ -549,7 +549,7 @@ namespace dedicated_party_client
 			if (!preparation_started)
 			{
 				preparation_started = true;
-				console::info("[HQ] Loading full HQ before the native session join.\n");
+				console::info("[HQ] Loading Headquarters...\n");
 				// SV_VirtualLobby_f's fullhub branch (0x6D8CD0 -> 0x484130).
 				// Wait for CA_ACTIVE before joining: local HQ startup otherwise races
 				// the remote gamestate and can replace the session during loading.
@@ -660,10 +660,12 @@ namespace dedicated_party_client
 			return true;
 		}
 
-		console::info("Joining %s lobby on map '%s' gametype '%s'.\n",
-			is_hq_join ? "HQ"
-				: kind == party::session::kind::custom ? "custom match" : "hosted dedicated",
-			map_name.data(), gametype.data());
+		if (!is_hq_join)
+		{
+			console::info("Joining %s lobby on map '%s' gametype '%s'.\n",
+				kind == party::session::kind::custom ? "custom match" : "hosted dedicated",
+				map_name.data(), gametype.data());
+		}
 
 		if (!party::is_connection_attempt_current(attempt_id))
 		{
@@ -692,13 +694,13 @@ namespace dedicated_party_client
 				if (!game::environment::is_multiplayer() || game::is_local_play()
 					|| (!*game::virtualLobby_Loaded && !*game::virtualLobby_Requested))
 				{
-					console::error("[HQ] Enter the online Multiplayer HQ before joining.\n");
+					console::error("[HQ] Return to the online Multiplayer menu before joining.\n");
 					return scheduler::cond_end;
 				}
 
 				if (std::chrono::steady_clock::now() >= deadline)
 				{
-					console::error("[HQ] Full HQ preparation timed out; join cancelled.\n");
+					console::error("[HQ] Loading timed out; join cancelled.\n");
 					return scheduler::cond_end;
 				}
 
