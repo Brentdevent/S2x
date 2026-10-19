@@ -73,7 +73,7 @@ builders.s2x_server_browser = function ( _, properties )
 		left = 0, right = 0, top = 0, bottom = 0,
 		leftAnchor = true, rightAnchor = true, topAnchor = true, bottomAnchor = true
 	} )
-	menu.id = "s2x_server_browser"
+	menu.id = properties.headquarters and "s2x_hq_browser" or "s2x_server_browser"
 
 	local controller = properties.controllerIndex
 
@@ -82,7 +82,7 @@ builders.s2x_server_browser = function ( _, properties )
 	end
 
 	properties.controllerIndex = controller
-	browser.PreLoadFunc( menu, controller )
+	browser.PreLoadFunc( menu, controller, properties )
 
 	if CONDITIONS.IsE3Build() then
 		browser.setup_for_e3( controller )
@@ -94,12 +94,13 @@ builders.s2x_server_browser = function ( _, properties )
 	position( title, 100, 1790, 110, 158 )
 
 	if title.Title then
-		title.Title:setText( browser.S2X_LABELS.SERVER_BROWSER, 0 )
+		title.Title:setText( properties.headquarters and browser.S2X_LABELS.HQ_BROWSER or browser.S2X_LABELS.SERVER_BROWSER, 0 )
 		title.Title:setFont( FONTS.BodyBoldFont.Font )
 	end
 
 	menu:addElement( title )
-	add_text( menu, properties, "MenuDescription", 100, 1790, 164, 192, 20, browser.S2X_LABELS.SERVER_BROWSER_DESCRIPTION )
+	add_text( menu, properties, "MenuDescription", 100, 1790, 164, 192, 20,
+		properties.headquarters and browser.S2X_LABELS.HQ_BROWSER_DESCRIPTION or browser.S2X_LABELS.SERVER_BROWSER_DESCRIPTION )
 
 	add_button( menu, properties, "SourceButton", 100, 445, 212, "SOURCE: INTERNET", "Switch between Internet servers and your saved favorites.",
 		function ()
@@ -111,7 +112,8 @@ builders.s2x_server_browser = function ( _, properties )
 			browser.change_option( menu, "filter" )
 		end )
 
-	add_button( menu, properties, "SortButton", 890, 1270, 212, "SORT: PLAYERS", "Sort by human players, ping, server name, or map.",
+	add_button( menu, properties, "SortButton", 890, 1270, 212, "SORT: PLAYERS",
+		properties.headquarters and "Sort by players, ping, or server name." or "Sort by human players, ping, server name, or map.",
 		function ()
 			browser.change_option( menu, "sort" )
 		end )
@@ -119,7 +121,8 @@ builders.s2x_server_browser = function ( _, properties )
 	add_button( menu, properties, "RefreshListButton", 1330, 1790, 212, "REFRESH", "Query Internet servers and saved favorites.", browser.refresh_server_list )
 
 	local header = LUI.MenuBuilder.BuildRegisteredType( "s2x_server_browser_row", {
-		controllerIndex = controller, fontIconSet = properties.fontIconSet, disableInteractivity = true
+		controllerIndex = controller, fontIconSet = properties.fontIconSet, disableInteractivity = true,
+		headquarters = properties.headquarters
 	} )
 	position( header, 100, 1270, 288, 328 )
 	menu:addElement( header )
@@ -138,7 +141,8 @@ builders.s2x_server_browser = function ( _, properties )
 		controllerIndex = controller, fontIconSet = properties.fontIconSet,
 		buildChild = function ()
 			return LUI.MenuBuilder.BuildRegisteredType( "s2x_server_browser_row", {
-				controllerIndex = controller, fontIconSet = properties.fontIconSet, isBuildChild = true
+				controllerIndex = controller, fontIconSet = properties.fontIconSet, isBuildChild = true,
+				headquarters = properties.headquarters
 			} )
 		end,
 		columnWidth = 1170 * _1080p, rowHeight = 40 * _1080p,
@@ -173,7 +177,7 @@ builders.s2x_server_browser = function ( _, properties )
 
 	add_text( menu, properties, "EmptyState", 120, 1250, 380, 460, 26, "Searching for servers..." )
 
-	add_image( menu, "DetailBackground", 1330, 1790, 288, 892, 0x161A1B, 0.85 )
+	add_image( menu, "DetailBackground", 1330, 1790, 288, properties.headquarters and 828 or 892, 0x161A1B, 0.85 )
 	add_text( menu, properties, "DetailHost", 1346, 1774, 298, 344, 28, "SELECT A SERVER", true ):setupAutoScaleText()
 	add_image( menu, "PreviewBackground", 1346, 1774, 356, 597, 0x292B2B, 1 )
 	add_image( menu, "MapPreview", 1346, 1774, 356, 597, 0xFFFFFF, 0 )
@@ -181,18 +185,24 @@ builders.s2x_server_browser = function ( _, properties )
 	local placeholder = add_text( menu, properties, "PreviewPlaceholder", 1358, 1762, 446, 502, 22, "MAP PREVIEW UNAVAILABLE" )
 	placeholder:setHorizontalAlignment( LUI.HorizontalAlignment.Center )
 
-	add_image( menu, "MapCaptionBackground", 1346, 1774, 535, 597, 0x000000, 0.7 )
-	add_text( menu, properties, "DetailMap", 1358, 1762, 538, 568, 26, "", true ):setupAutoScaleText()
-	add_text( menu, properties, "DetailMode", 1358, 1762, 568, 592, 20 ):setupAutoScaleText()
+	if properties.headquarters then
+		add_image( menu, "MapCaptionBackground", 1346, 1774, 557, 597, 0x000000, 0.7 )
+		add_text( menu, properties, "DetailMap", 1358, 1762, 560, 592, 26, "", true ):setupAutoScaleText()
+	else
+		add_image( menu, "MapCaptionBackground", 1346, 1774, 535, 597, 0x000000, 0.7 )
+		add_text( menu, properties, "DetailMap", 1358, 1762, 538, 568, 26, "", true ):setupAutoScaleText()
+		add_text( menu, properties, "DetailMode", 1358, 1762, 568, 592, 20 ):setupAutoScaleText()
+	end
 
 	add_text( menu, properties, "DetailStatus", 1346, 1644, 612, 644, 22 ):setupAutoScaleText()
 	local ping = add_text( menu, properties, "DetailPing", 1644, 1774, 612, 644, 22, "", true )
 	ping:setHorizontalAlignment( LUI.HorizontalAlignment.Right )
 	add_text( menu, properties, "DetailAddress", 1346, 1774, 656, 688, 20 )
 
-	add_button( menu, properties, "JoinButton", 1346, 1774, 754, "JOIN SERVER", "Join the selected server.", browser.join_selected_server )
-	add_button( menu, properties, "FavoriteButton", 1346, 1774, 818, "ADD FAVORITE", "Save or remove this server from your favorites.", browser.toggle_favorite )
-	add_text( menu, properties, "ActionMessage", 1330, 1790, 902, 963, 20 )
+	add_button( menu, properties, "JoinButton", 1346, 1774, properties.headquarters and 690 or 754, "JOIN SERVER", "Join the selected server.", browser.join_selected_server )
+	add_button( menu, properties, "FavoriteButton", 1346, 1774, properties.headquarters and 754 or 818, "ADD FAVORITE", "Save or remove this server from your favorites.", browser.toggle_favorite )
+	add_text( menu, properties, "ActionMessage", 1330, 1790,
+		properties.headquarters and 838 or 902, properties.headquarters and 899 or 963, 20 )
 
 	local helper = LUI.MenuBuilder.BuildRegisteredType( "button_helper_bar", properties )
 	helper:setAnchorsAndPosition( 0, 0, 1, 0, 0, 0, -92 * _1080p, -42 * _1080p, 0 )
@@ -231,4 +241,11 @@ builders.s2x_server_browser = function ( _, properties )
 	browser.PostLoadFunc( menu, controller )
 
 	return menu
+end
+
+-- Both entry points share the same layout, controller and discovery snapshot.
+builders.s2x_hq_browser = function ( menu, properties )
+	properties = properties or {}
+	properties.headquarters = true
+	return builders.s2x_server_browser( menu, properties )
 end

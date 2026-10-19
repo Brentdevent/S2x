@@ -23,7 +23,12 @@ builders.s2x_server_browser_row = function ( _, properties )
 	row:addElement( background )
 	row.Background = background
 
-	local columns = {
+	local columns = properties.headquarters and {
+		{ "Favorite", 8, 34, "+" },
+		{ "HostName", 42, 870, "SERVER NAME" },
+		{ "Players", 878, 1024, "PLAYERS" },
+		{ "Ping", 1040, 1162, "PING" }
+	} or {
 		{ "Favorite", 8, 34, "+" },
 		{ "HostName", 42, 414, "SERVER NAME" },
 		{ "MapName", 430, 642, "MAP" },

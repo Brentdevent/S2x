@@ -2,18 +2,21 @@
 local model = {}
 
 model.sortLabels = { "PLAYERS", "PING", "NAME", "MAP" }
+model.hqSortLabels = { "PLAYERS", "PING", "NAME" }
 model.filterLabels = { "ALL SERVERS", "HAS PLAYERS", "OPEN SLOTS" }
 
 function model.plainText( text )
 	return (text or ""):gsub( "%^%d", "" ):gsub( "[%c]", " " )
 end
 
-function model.visibleServers( servers, favoritesOnly, filter, sort )
+function model.visibleServers( servers, favoritesOnly, filter, sort, headquarters )
 	local visible = {}
 
 	for _, server in ipairs( servers ) do
 		local matches = server.online or favoritesOnly
 		matches = matches and (not favoritesOnly or server.favorite)
+		-- An offline favorite's category is unknown until the server replies.
+		matches = matches and (not server.online or ((server.headquarters == true) == (headquarters == true)))
 
 		if filter == 2 then
 			matches = matches and server.online and server.clients > server.bots
@@ -64,7 +67,7 @@ function model.sameServers( previous, current )
 	for index, server in ipairs( previous ) do
 		for _, field in ipairs( {
 			"address", "hostname", "map", "mapReference", "gametype", "clients",
-			"bots", "maxClients", "ping", "favorite", "online", "status"
+			"bots", "maxClients", "ping", "favorite", "online", "status", "headquarters"
 		} ) do
 			if server[field] ~= current[index][field] then
 				return false

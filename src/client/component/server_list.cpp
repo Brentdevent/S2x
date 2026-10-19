@@ -38,6 +38,7 @@ namespace server_list
 			game::netadr_s address{};
 			std::string address_string{};
 			bool valid{};
+			bool headquarters{};
 
 			std::string hostname{};
 			std::string mapname{};
@@ -575,6 +576,7 @@ namespace server_list
 				entry["ping"] = server.ping;
 				entry["status"] = server.status;
 				entry["online"] = server.valid;
+				entry["headquarters"] = server.headquarters;
 				entry["favorite"] = favorite;
 				entries[index++] = entry;
 			};
@@ -738,9 +740,10 @@ namespace server_list
 			int bots{};
 			int max_clients{};
 			const auto max_clients_value = get_info_value(info, "sv_maxclients", "maxclients");
-			if (!parse_info_int(info.get("clients"), 0, mode.max_players, clients)
-				|| !parse_info_int(info.get("bots"), 0, mode.max_players, bots)
-				|| !parse_info_int(max_clients_value, 1, mode.max_players, max_clients)
+			const auto player_limit = party::session::get_player_limit(session_kind);
+			if (!parse_info_int(info.get("clients"), 0, player_limit, clients)
+				|| !parse_info_int(info.get("bots"), 0, player_limit, bots)
+				|| !parse_info_int(max_clients_value, 1, player_limit, max_clients)
 				|| clients > max_clients || bots > clients)
 			{
 				drop_server(address, challenge);
@@ -787,6 +790,7 @@ namespace server_list
 				server->clients = clients;
 				server->bots = bots;
 				server->max_clients = max_clients;
+				server->headquarters = session_kind == party::session::kind::headquarters;
 				// The least delayed sample reduces frame/processing jitter in the browser estimate.
 				server->ping = server->valid ? std::min(server->ping, ping) : ping;
 				// Bots yield their slots to joining players.

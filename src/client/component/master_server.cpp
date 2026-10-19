@@ -5,6 +5,7 @@
 
 #include "console/console.hpp"
 #include "dedicated_party.hpp"
+#include "headquarters.hpp"
 #include "network.hpp"
 #include "scheduler.hpp"
 
@@ -162,8 +163,11 @@ namespace master_server
 				return;
 			}
 
-			dedicated_party::connect_info connect_info{};
-			if (!dedicated_party::get_connect_info(connect_info))
+			party::session::connect_info connect_info{};
+			const auto joinable = headquarters::is_host()
+				? headquarters::get_connect_info(connect_info)
+				: dedicated_party::get_connect_info(connect_info);
+			if (!joinable)
 			{
 				party_was_joinable = false;
 				return;

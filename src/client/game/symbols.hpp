@@ -146,6 +146,7 @@ namespace game
 	WEAK symbol<void(const char* mapName)> CL_PreloadMap2{ 0x837E0 };
 	WEAK symbol<void(unsigned int localClientNum)> CL_CheckForResend{ 0x6AF20 };
 	WEAK symbol<bool(int localClientNum)> CL_IsLocalClientInGame{ 0x7E110 };
+	WEAK symbol<void(int localClientNum, bool active)> CL_SetLocalClientActive{ 0x4A2600 };
 	// Copy cg->refdef.view.org / axis[0]; the native wrappers handle CG_GetLocalClient's caller check.
 	WEAK symbol<void(int localClientNum, float* pos)> CL_GetViewPos{ 0x7B8B0 };
 	WEAK symbol<void(int localClientNum, float* forward)> CL_GetViewForward{ 0x7B880 };
@@ -157,6 +158,7 @@ namespace game
 	WEAK symbol<void()> CL_Connect{ 0x6D0A0 };
 	WEAK symbol<void()> CL_Disconnect_f{ 0x6F7A0 };
 	WEAK symbol<void()> CL_Live_StartPrivateMatchHost{ 0x80290 };
+	WEAK symbol<void()> CL_Live_StopHub{ 0x804C0 };
 	WEAK symbol<int(int localClientNum)> CL_ControllerIndexFromClientNum{ 0x4A0B80 };
 	WEAK symbol<char*(int controllerIndex)> CL_GetUsernameForLocalClient{ 0x789680 };
 	WEAK symbol<bool(int controllerIndex, char* name, std::size_t nameSize)> Live_GetLocalClientName{ 0x7896E0 };

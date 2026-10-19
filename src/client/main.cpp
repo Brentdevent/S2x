@@ -259,6 +259,12 @@ int main()
 				throw std::runtime_error("Singleplayer dedicated servers are not supported.");
 			}
 
+			if (utils::flags::has_flag("-hq")
+				&& (!options.dedicated || options.gameplay_mode != game::environment::mode::multiplayer))
+			{
+				throw std::runtime_error("-hq requires a Multiplayer dedicated server (-dedicated -multiplayer).");
+			}
+
 			if (options.gameplay_mode.has_value())
 			{
 				game::environment::set_mode(*options.gameplay_mode);

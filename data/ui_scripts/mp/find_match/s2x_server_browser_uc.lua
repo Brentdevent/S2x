@@ -1,4 +1,5 @@
 local model = require( "s2x_server_browser_model" )
+local headquarters = require( "s2x_headquarters" )
 local REFRESH_COOLDOWN_MS = 2000
 local SERVER_ROW_FOCUS = "serverButton"
 
@@ -6,6 +7,8 @@ local S2X_LABELS = {
 	SERVER_BROWSER = "SERVER BROWSER",
 	SERVER_BROWSER_HELPER = "Server Browser",
 	SERVER_BROWSER_DESCRIPTION = "Browse dedicated S2x servers.",
+	HQ_BROWSER = "HEADQUARTERS",
+	HQ_BROWSER_DESCRIPTION = "Choose a public HQ by players or ping, or create an unlisted private HQ.",
 	SERVER_BROWSER_FIND_MATCH_DESCRIPTION = "Browse available S2x servers.",
 	FIND_MATCH_TITLE = "MODE SELECT",
 	FIND_MATCH_DESCRIPTION = "Choose how you want to play."
@@ -35,7 +38,7 @@ local function update_details( menu, state )
 	local server = selected_server( state )
 
 	set_text( menu.DetailHost, server and server.hostname or "SELECT A SERVER" )
-	set_text( menu.DetailMap, server and server.map or "" )
+	set_text( menu.DetailMap, server and (state.headquarters and "Headquarters" or server.map) or "" )
 	set_text( menu.DetailMode, server and server.gametype or "" )
 	set_text( menu.DetailAddress, server and server.address or "" )
 	set_text( menu.DetailStatus, server and server.status or "Browse the list to see server details." )
@@ -98,7 +101,10 @@ local function join_selected_server( menu )
 			Engine.SetDvarBool( "871", true )
 		end
 
-		CharacterScene.RunCharacterScene( false )
+		-- HQ owns its frontend scene during the native full-HQ transition.
+		if not state.headquarters then
+			CharacterScene.RunCharacterScene( false )
+		end
 	end
 end
 
@@ -119,7 +125,7 @@ local function update_server_list( menu )
 	end
 
 	local snapshot = Lobby.GetServerSnapshot()
-	local servers = model.visibleServers( snapshot.servers, state.favoritesOnly, state.filter, state.sort )
+	local servers = model.visibleServers( snapshot.servers, state.favoritesOnly, state.filter, state.sort, state.headquarters )
 	local index = model.selectionIndex( servers, state.selectedAddress )
 	local was_list_focused = state.lastFocusedElement == SERVER_ROW_FOCUS or
 		state.lastFocusedElement == menu.AvailableGames
@@ -165,7 +171,7 @@ local function update_server_list( menu )
 		(state.favoritesOnly and "No favorites match this filter.\nAdd a server from the Internet list." or
 		"No servers match this filter.\nTry another filter or refresh the list.") )
 	set_text( menu.SourceButton.Name, state.favoritesOnly and "SOURCE: FAVORITES" or "SOURCE: INTERNET" )
-	set_text( menu.SortButton.Name, "SORT: " .. model.sortLabels[state.sort] )
+	set_text( menu.SortButton.Name, "SORT: " .. state.sortLabels[state.sort] )
 	set_text( menu.FilterButton.Name, "SHOW: " .. model.filterLabels[state.filter] )
 
 	update_details( menu, state )
@@ -203,7 +209,7 @@ local function change_option( menu, option )
 	if option == "source" then
 		state.favoritesOnly = not state.favoritesOnly
 	elseif option == "sort" then
-		state.sort = state.sort % #model.sortLabels + 1
+		state.sort = state.sort % #state.sortLabels + 1
 	elseif option == "filter" then
 		state.filter = state.filter % #model.filterLabels + 1
 	end
@@ -262,12 +268,22 @@ local function can_focus_list_item( element, _, index )
 	return state ~= nil and type( index ) == "number" and index >= 0 and index < #state.servers
 end
 
-local function preload_server_browser( menu, controller )
+local function create_private_hq( menu, controller, helper_bar )
+	local state = get_browser_state( menu )
+
+	if state and state.headquarters then
+		headquarters.create_private( menu, controller or state.controllerIndex, helper_bar )
+	end
+end
+
+local function preload_server_browser( menu, controller, properties )
 	PersistentBackground.Set( PersistentBackground.Variants.HubDefault )
 
 	local scoped = LUI.FlowManager.GetScopedData( menu )
+	local is_hq = properties and properties.headquarters == true or false
 	scoped.s2xServerBrowser = {
 		menu = menu, controllerIndex = controller, servers = {},
+		headquarters = is_hq, sortLabels = is_hq and model.hqSortLabels or model.sortLabels,
 		favoritesOnly = false, filter = 1, sort = 1, refreshCooldownMs = 0
 	}
 
@@ -333,6 +349,10 @@ local function postload_server_browser( menu, controller )
 	local helper = menu.ButtonHelperBar:BeginSet()
 	helper:AddLeft( LuaButton.primary, "LUA_MENU_SELECT", join_focused_server )
 
+	if state.headquarters then
+		helper:AddLeft( LuaButton.alt1, "Create Private HQ", create_private_hq )
+	end
+
 	if not CONDITIONS.IsE3Build() then
 		helper:AddRight( LuaButton.secondary, "LUA_MENU_BACK", leave )
 	end
@@ -360,6 +380,7 @@ return {
 	record_focus = record_focus,
 	select_row = select_row,
 	join_selected_server = join_selected_server,
+	create_private_hq = create_private_hq,
 	refresh_server_list = refresh_server_list,
 	update_server_list = update_server_list,
 	change_option = change_option,
