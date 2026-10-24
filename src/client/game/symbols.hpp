@@ -262,6 +262,7 @@ namespace game
 	WEAK symbol<void()> Scr_LoadLevel{ 0x5AF770, 0x3B2250 };
 	WEAK symbol<void(unsigned int threadName, const char* codePos)> Scr_SetThreadPosition{ 0x685380, 0x48BBD0 };
 	WEAK symbol<void(const char* fmt, ...)> Scr_Error{ 0x6900F0, 0x496830 };
+	WEAK symbol<void(const char* fmt, ...)> Scr_ObjectError{ 0x6915F0, 0x497EA0 };
 	WEAK symbol<void(int paramIndex, const char* fmt, ...)> Scr_Error2{ 0x691660, 0x497F10 };
 
 	WEAK symbol<void()> GScr_LoadConsts{ 0x5CE110, 0x3E7E50 };
@@ -281,6 +282,8 @@ namespace game
 	WEAK symbol<unsigned int(char const* str)> SL_GetCanonicalString{ 0x685510, 0x48BD60 };
 
 	WEAK symbol<void(errorParm_t code, const char* message, ...)> Com_Error{ 0x90750, 0x46F7C0 };
+	WEAK symbol<void(const char* fmt, ...)> Sys_Error{ 0x78AC90, 0x4E9E20 };
+	WEAK symbol<void(const char* fmt, ...)> BG_AnimParseError{ 0x375000 };
 
 	WEAK symbol<void*(std::size_t size, std::size_t alignment, int selector)> PMem_AllocFromSource_NoDebug{ 0x769910, 0x4D38D0 };
 	WEAK symbol<uint8_t*(uint32_t*)> PMem_GetScriptMemory{ 0x4D6740, 0x2A86F0 };
