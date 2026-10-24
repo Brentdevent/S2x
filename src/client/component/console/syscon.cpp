@@ -11,7 +11,6 @@
 #include "component/scheduler.hpp"
 
 #include <utils/thread.hpp>
-#include <utils/concurrency.hpp>
 
 namespace
 {
@@ -66,6 +65,21 @@ namespace syscon
 
 	namespace
 	{
+		struct console_output
+		{
+			std::queue<std::string> messages;
+			std::size_t bytes{};
+			bool dropped{};
+			bool accepting{true};
+			std::optional<std::string> title;
+		};
+
+		constexpr std::size_t maximum_queued_output = 1024 * 1024;
+		constexpr std::size_t maximum_queued_messages = 4096;
+		constexpr std::size_t maximum_message_length = (sizeof(s_wcd.cleanBuffer) - 1) / 2;
+		std::mutex output_mutex;
+		console_output pending_output;
+
 		// The syscon window is created before the protected game binary has finished unpacking.
 		// Keep every call into the game behind the post_unpack lifecycle boundary.
 		std::mutex game_call_mutex;
@@ -266,7 +280,65 @@ namespace syscon
 
 	void Sys_Print(const char* msg)
 	{
-		Conbuf_AppendText(msg);
+		if (!msg || !*msg)
+		{
+			return;
+		}
+
+		// Own the text before returning to the caller. Never wait for the window
+		// thread here: even a minimized console can stop pumping messages.
+		const auto length = std::strlen(msg);
+		std::string text{msg + (length > maximum_message_length ? length - maximum_message_length : 0)};
+		std::lock_guard lock{output_mutex};
+		if (!pending_output.accepting)
+		{
+			return;
+		}
+
+		// Keep recent output if the window is busy, without blocking producers
+		// or allowing a log flood to grow the display queue indefinitely.
+		while (!pending_output.messages.empty() && (pending_output.bytes + text.size() > maximum_queued_output ||
+			pending_output.messages.size() >= maximum_queued_messages))
+		{
+			pending_output.bytes -= pending_output.messages.front().size();
+			pending_output.messages.pop();
+			pending_output.dropped = true;
+		}
+
+		pending_output.messages.push(std::move(text));
+		pending_output.bytes += pending_output.messages.back().size();
+	}
+
+	void drain_console_output()
+	{
+		std::queue<std::string> messages;
+		std::optional<std::string> title;
+		bool dropped{};
+		{
+			std::lock_guard lock{output_mutex};
+			messages.swap(pending_output.messages);
+			pending_output.bytes = 0;
+			dropped = std::exchange(pending_output.dropped, false);
+			title = std::exchange(pending_output.title, {});
+		}
+
+		// Only the window owner accesses the edit control and its text buffer.
+		// Release the queue lock before any Windows call or text formatting.
+		if (title && s_wcd.hWnd)
+		{
+			SetWindowTextA(s_wcd.hWnd, title->c_str());
+		}
+
+		if (dropped)
+		{
+			Conbuf_AppendText("[console display backlog truncated]\n");
+		}
+
+		while (!messages.empty())
+		{
+			Conbuf_AppendText(messages.front().c_str());
+			messages.pop();
+		}
 	}
 
 	LRESULT InputLineWndProc(const HWND hwnd, const UINT umsg, const WPARAM wparam, const LPARAM lparam)
@@ -498,8 +570,10 @@ namespace syscon
 			(void)_dup2(this->handles_[1], 1);
 			(void)_dup2(this->handles_[1], 2);
 
-			//setvbuf(stdout, nullptr, _IONBF, 0);
-			//setvbuf(stderr, nullptr, _IONBF, 0);
+			// The pipe reader drains independently of the window thread. Do not
+			// make the window flush CRT streams while their writers can be waiting.
+			setvbuf(stdout, nullptr, _IONBF, 0);
+			setvbuf(stderr, nullptr, _IONBF, 0);
 		}
 
 		~component()
@@ -533,16 +607,12 @@ namespace syscon
 		}
 
 	private:
-		std::atomic_bool console_initialized_{ false };
 		std::atomic_bool terminate_runner_{ false };
 
 		std::thread console_runner_;
 		std::thread console_thread_;
 
 		int handles_[2]{};
-
-		using message_queue = std::queue<std::string>;
-		utils::concurrency::container<message_queue> messages;
 
 		void initialize()
 		{
@@ -556,13 +626,6 @@ namespace syscon
 					ShowWindow(syscon::s_wcd.hWnd, SW_MINIMIZE);
 				}
 
-				{
-					messages.access([&](message_queue&)
-					{
-						this->console_initialized_ = true;
-					});
-				}
-
 				MSG msg;
 				while (!this->terminate_runner_.load())
 				{
@@ -573,7 +636,7 @@ namespace syscon
 					}
 					else
 					{
-						this->log_messages();
+						drain_console_output();
 						std::this_thread::sleep_for(1ms);
 					}
 				}
@@ -584,6 +647,14 @@ namespace syscon
 
 		void destroy()
 		{
+			{
+				std::lock_guard lock{output_mutex};
+				pending_output.accepting = false;
+				pending_output.messages = {};
+				pending_output.bytes = 0;
+				pending_output.title.reset();
+			}
+
 			this->terminate_runner_.store(true);
 
 			// Wake the blocking _read()
@@ -603,49 +674,8 @@ namespace syscon
 				this->console_thread_.join();
 			}
 
-			syscon::Sys_DestroyConsole();
-
 			_close(this->handles_[0]);
 			_close(this->handles_[1]);
-
-			messages.access([&](message_queue& msgs)
-			{
-				msgs = {};
-			});
-		}
-
-		void log_messages()
-		{
-			if (!this->console_initialized_.load())
-			{
-				return;
-			}
-
-			std::queue<std::string> message_queue_copy;
-
-			messages.access([&](message_queue& msgs)
-			{
-				if (!msgs.empty())
-				{
-					message_queue_copy = std::move(msgs);
-					msgs = {};
-				}
-			});
-
-			while (!message_queue_copy.empty())
-			{
-				log_message(message_queue_copy.front());
-				message_queue_copy.pop();
-			}
-
-			fflush(stdout);
-			fflush(stderr);
-		}
-
-		static void log_message(const std::string& message)
-		{
-			//OutputDebugStringA(message.data());
-			syscon::Conbuf_AppendText(message.data());
 		}
 
 		void runner()
@@ -676,9 +706,10 @@ namespace syscon
 
 	void set_title(const std::string& title)
 	{
-		if (syscon::s_wcd.hWnd)
+		std::lock_guard lock{output_mutex};
+		if (pending_output.accepting)
 		{
-			SetWindowTextA(syscon::s_wcd.hWnd, title.data());
+			pending_output.title = title;
 		}
 	}
 }
