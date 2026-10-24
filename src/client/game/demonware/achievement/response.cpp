@@ -172,8 +172,9 @@ namespace demonware::achievement_response
 
 	bool is_visible_in_current_mode(const achievement_record& achievement)
 	{
-		// Moonraven uses the MP contract kind, but belongs to Zombies.
-		return !achievement_kind::moonraven(achievement.name, achievement.kind) || game::environment::is_zombies();
+		// Shared achievements stay visible; periodic Orders and contracts belong to one mode.
+		return !achievement_kind::periodic(achievement.kind) ||
+			achievement_kind::in_mode(achievement.kind, game::environment::is_zombies(), achievement.name);
 	}
 
 	rapidjson::Value serialize_achievements(const std::vector<achievement_record>& achievements,

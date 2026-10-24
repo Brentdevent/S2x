@@ -503,7 +503,8 @@ namespace demonware::achievement_claim
 
 			for (const auto& record : achievement_store::get_all())
 			{
-				if (!achievement_kind::periodic(record.kind) || !record.activation_timestamp)
+				if (!achievement_kind::periodic(record.kind) || !record.activation_timestamp ||
+					!achievement_response::is_visible_in_current_mode(record))
 				{
 					continue;
 				}
