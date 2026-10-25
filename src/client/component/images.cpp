@@ -5,6 +5,7 @@
 #include "filesystem.hpp"
 #include "images/overrides.hpp"
 #include "images/originals.hpp"
+#include "images/export.hpp"
 #include <utils/hook.hpp>
 
 namespace images
@@ -102,6 +103,7 @@ namespace images
 
 			copy_texture_hook.create(game::select(0x896580, 0x615700), copy_texture_stub);
 			overrides::initialize();
+			exports::register_commands();
 		}
 
 		void pre_destroy() override
