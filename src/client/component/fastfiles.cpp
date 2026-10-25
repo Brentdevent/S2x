@@ -103,16 +103,36 @@ namespace fastfiles
 			return handle;
 		}
 
-		// Sys_CreateFile (0x770450) prefixes the file with a 0x100 byte folder string from this table,
-		// folder 0 is "zone\\" and folder 1 is the localized "zone\\<language>\\"
+		// Sys_CreateFile (0x770450) prefixes the file with a 0x100 byte folder string from the table at
+		// 0xD8896C0. Folder 0 holds zones and folder 1 localized zones. The native strings depend on the
+		// install (0x78B240): "zone\\" and "zone\\<language>\\" when the game folder has a zone directory,
+		// otherwise "" and "<language>\\". Custom zones always use the zone/ layout, so only the language
+		// directory is taken from the native table.
 		constexpr auto zone_folder = 0;
 		constexpr auto localized_zone_folder = 1;
 		constexpr auto folder_name_size = 0x100u;
 
-		std::string get_folder_name(const int folder)
+		std::string get_language_folder()
 		{
-			const auto* name = reinterpret_cast<const char*>(0xD8896C0_g + folder_name_size * folder);
-			return std::string(name, strnlen(name, folder_name_size));
+			const auto* name = reinterpret_cast<const char*>(0xD8896C0_g + folder_name_size * localized_zone_folder);
+			std::string language(name, strnlen(name, folder_name_size));
+
+			if (language.starts_with("zone\\") || language.starts_with("zone/"))
+			{
+				language.erase(0, 5);
+			}
+
+			while (!language.empty() && (language.back() == '\\' || language.back() == '/'))
+			{
+				language.pop_back();
+			}
+
+			if (language.empty() || std::strpbrk(language.data(), "/\\:") || language.find("..") != std::string::npos)
+			{
+				return {};
+			}
+
+			return language;
 		}
 
 		HANDLE find_custom_file(const int folder, const char* filename)
@@ -122,36 +142,60 @@ namespace fastfiles
 				return INVALID_HANDLE_VALUE;
 			}
 
-			const auto folder_name = get_folder_name(folder);
-			if (folder_name.empty() || folder_name.find("..") != std::string::npos)
-			{
-				return INVALID_HANDLE_VALUE;
-			}
+			std::filesystem::path zone_directory = "zone";
 
 			// Localized usermap zones are named "<language>_<map>" and live next to the map's own zone
 			auto usermap = get_usermap_name(filename);
 			if (folder == localized_zone_folder)
 			{
+				const auto language = get_language_folder();
+				if (language.empty())
+				{
+					zone_directory.clear();
+				}
+				else
+				{
+					zone_directory /= language;
+				}
+
 				const auto separator = usermap.find('_');
 				if (separator == std::string::npos)
 				{
-					return INVALID_HANDLE_VALUE;
+					usermap.clear();
 				}
+				else
+				{
+					usermap.erase(0, separator + 1);
+				}
+			}
 
-				usermap.erase(0, separator + 1);
+			std::vector<std::filesystem::path> relative_paths;
+			if (!zone_directory.empty())
+			{
+				relative_paths.emplace_back(zone_directory / filename);
+			}
+
+			if (!usermap.empty())
+			{
+				relative_paths.emplace_back(std::filesystem::path("usermaps") / usermap / filename);
 			}
 
 			for (const auto& search_path : filesystem::get_search_paths())
 			{
 				const std::filesystem::path root{ search_path };
-				for (const auto& path : { root / folder_name / filename, root / "usermaps" / usermap / filename })
+				for (const auto& relative_path : relative_paths)
 				{
-					const auto handle = try_open_zone_file(path);
+					const auto handle = try_open_zone_file(root / relative_path);
 					if (handle != INVALID_HANDLE_VALUE)
 					{
 						return handle;
 					}
 				}
+			}
+
+			if (usermap.empty())
+			{
+				return INVALID_HANDLE_VALUE;
 			}
 
 			return try_open_zone_file(utils::nt::library{}.get_folder() / "usermaps" / usermap / filename);
