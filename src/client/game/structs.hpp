@@ -3,6 +3,8 @@
 #define PROTOCOL 1
 
 #ifdef __cplusplus
+#include "types/materials.hpp"
+
 namespace game
 {
 #endif
@@ -10,11 +12,6 @@ namespace game
 	typedef vec_t vec2_t[2];
 	typedef vec_t vec3_t[3];
 	typedef vec_t vec4_t[4];
-
-	struct Material
-	{
-		const char* name;
-	};
 
 	struct Glyph
 	{

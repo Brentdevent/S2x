@@ -87,7 +87,7 @@ namespace game
 	WEAK symbol<void(const char* dvarName, const char* string)> Dvar_SetCommand{ 0xB2360 };
 	WEAK symbol<void(dvar_t* dvar, bool value)> Dvar_SetBool{ 0xB1FD0 };
 	WEAK symbol<void(dvar_t* dvar, float value)> Dvar_SetFloat{ 0xB2700 };
-	WEAK symbol<void(dvar_t* dvar, int value)> Dvar_SetInt{ 0xB29C0 };
+	WEAK symbol<void(dvar_t* dvar, int value)> Dvar_SetInt{ 0xB29C0, 0x4CFF10 };
 	WEAK symbol<void(dvar_t* dvar, const char* value)> Dvar_SetString{ 0xB2E30 };
 
 	WEAK symbol<bool(int* min, int* max)> CG_GetFovRange{ 0x45830, 0x23F6B0 };
