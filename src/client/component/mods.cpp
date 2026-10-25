@@ -4,6 +4,7 @@
 #include "game/game.hpp"
 #include "game/ui_scripting/types.hpp"
 
+#include "fastfiles.hpp"
 #include "filesystem.hpp"
 #include "mods.hpp"
 #include "scheduler.hpp"
@@ -46,8 +47,10 @@ namespace mods
 			const auto has_scripts = std::filesystem::is_directory(path / "scripts", error) && !error;
 			error.clear();
 			const auto has_ui_scripts = std::filesystem::is_directory(path / "ui_scripts", error) && !error;
-			
-			return has_scripts || has_ui_scripts;
+			error.clear();
+			const auto has_zone = std::filesystem::is_directory(path / "zone", error) && !error;
+
+			return has_scripts || has_ui_scripts || has_zone;
 		}
 
 		std::filesystem::path get_mod_path(const std::string& name)
@@ -314,7 +317,7 @@ namespace mods
 
 		if (!is_safe_mod_name(name) || !is_supported_mod_folder(get_mod_path(name)))
 		{
-			console::warn("[Mods] '%s' is not a valid S2x mod folder. Expected s2x/mods/<name>/scripts or ui_scripts.\n", name.data());
+			console::warn("[Mods] '%s' is not a valid S2x mod folder. Expected s2x/mods/<name>/scripts, ui_scripts or zone.\n", name.data());
 			return;
 		}
 
@@ -331,6 +334,7 @@ namespace mods
 		}
 
 		mount_mod(name);
+		fastfiles::reload_mod_zone();
 		restart_lui();
 	}
 
@@ -348,6 +352,7 @@ namespace mods
 		}
 
 		mount_mod("");
+		fastfiles::reload_mod_zone();
 		restart_lui();
 	}
 

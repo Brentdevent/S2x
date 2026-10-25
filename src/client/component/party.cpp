@@ -2,9 +2,11 @@
 #include "loader/component_loader.hpp"
 
 #include "party.hpp"
+#include "arena.hpp"
 #include "custom_match.hpp"
 #include "dedicated_party.hpp"
 #include "dedicated_party_client.hpp"
+#include "fastfiles.hpp"
 #include "headquarters.hpp"
 #include "command.hpp"
 #include "scheduler.hpp"
@@ -146,29 +148,6 @@ namespace party
 			return connect_state.attempt_id;
 		}
 
-		bool zombies_fastfile_is_installed(const std::string& map_name)
-		{
-			const auto fastfile_name = map_name + ".ff";
-			const auto game_directory = utils::nt::library{}.get_folder();
-			const std::array<std::filesystem::path, 2> candidates{
-				fastfile_name,
-				std::filesystem::path{"zone"} / fastfile_name,
-			};
-
-			for (const auto& candidate : candidates)
-			{
-				// Stock installs keep map fastfiles in the game root. Standalone
-				// dedicated packages commonly keep the same files in zone/.
-				if (utils::io::file_exists(candidate.generic_string())
-					|| utils::io::file_exists((game_directory / candidate).generic_string()))
-				{
-					return true;
-				}
-			}
-
-			return false;
-		}
-
 		bool get_map_index(const std::string& map_name, int& map_index)
 		{
 			const auto& mode = game::environment::get_online_mode_info();
@@ -197,11 +176,11 @@ namespace party
 					{
 						return std::isalnum(character) != 0 || character == '_';
 					});
-				if (!safe_name || !zombies_fastfile_is_installed(map_name))
+				if (!safe_name || !fastfiles::exists(map_name))
 				{
 					console::error(
 						"Zombies map '%s' is not installed locally "
-						"(checked the game root and zone folder).\n",
+						"(checked the zone, usermaps and mod folders).\n",
 						map_name.data());
 					return false;
 				}
@@ -211,6 +190,11 @@ namespace party
 				// unsorted map-name lookup instead.
 				game::GameInfo_UpdateArenas();
 				map_index = game::GameInfo_GetIndexForMapName(map_name.data());
+				if (map_index < 0 && arena::register_map(map_name))
+				{
+					map_index = game::GameInfo_GetIndexForMapName(map_name.data());
+				}
+
 				if (map_index < 0)
 				{
 					console::error(
@@ -225,7 +209,8 @@ namespace party
 			// The sorted UI lookup returns zero for both a missing map and its first
 			// entry. Validate membership with the unambiguous catalog lookup first.
 			game::GameInfo_UpdateArenas();
-			if (game::GameInfo_GetIndexForMapName(map_name.data()) < 0)
+			if (game::GameInfo_GetIndexForMapName(map_name.data()) < 0
+				&& (!arena::register_map(map_name) || game::GameInfo_GetIndexForMapName(map_name.data()) < 0))
 			{
 				console::error(
 					"Multiplayer map '%s' is not present in the stock arena catalog.\n",
