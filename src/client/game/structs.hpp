@@ -166,11 +166,11 @@ namespace game
 		K_KP_NUMLOCK = 0xC5,
 		K_KP_STAR = 0xC6,
 		K_KP_EQUALS = 0xC7,
-		K_MOUSE1 = 0xC8,
-		K_MOUSE2 = 0xC9,
-		K_MOUSE3 = 0xCA,
-		K_MOUSE4 = 0xCB,
-		K_MOUSE5 = 0xCC,
+		K_MOUSE1 = 0xC9,
+		K_MOUSE2 = 0xCA,
+		K_MOUSE3 = 0xCB,
+		K_MOUSE4 = 0xCC,
+		K_MOUSE5 = 0xCD,
 		K_MWHEELDOWN = 0xCE,
 		K_MWHEELUP = 0xCF,
 		//K_AUX1 = 0xCF,
@@ -194,20 +194,33 @@ namespace game
 
 	struct KeyState
 	{
-		int unk;
 		int down;
 		int repeats;
 		int binding;
+		int bindingOverride;
 	};
+
+	static_assert(sizeof(KeyState) == 0x10);
+	static_assert(offsetof(KeyState, down) == 0);
+	static_assert(offsetof(KeyState, repeats) == 4);
+	static_assert(offsetof(KeyState, binding) == 8);
+	static_assert(offsetof(KeyState, bindingOverride) == 0xC);
 
 	struct PlayerKeyState
 	{
 		int overstrikeMode;
 		int anyKeyDown;
+		int bindingOverrideFlags;
 		char __pad0[0x40];
 		KeyState keys[256];
-		char __pad1[0x364];
-	}; static_assert(sizeof(PlayerKeyState) == 0x13AC);
+		char __pad1[0x360];
+	};
+
+	static_assert(sizeof(PlayerKeyState) == 0x13AC);
+
+	// CL_KeyEvent and Key_SetBinding agree in both supported binaries.
+	static_assert(offsetof(PlayerKeyState, bindingOverrideFlags) == 8);
+	static_assert(offsetof(PlayerKeyState, keys) == 0x4C);
 
 	enum DvarSetSource : std::uint32_t
 	{
