@@ -669,7 +669,7 @@ namespace game
 		int len;
 		const char* buffer;
 	};
-	
+
 	struct MapEnts
 	{
 		const char* name;

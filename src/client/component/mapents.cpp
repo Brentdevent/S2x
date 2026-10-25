@@ -105,7 +105,9 @@ namespace mapents
 				const auto id = gsc::gsc_ctx->token_id(key_);
 				if (!id)
 				{
-					console::warn("[map_ents parser] Key '%s' not found, on line %i (%s)\n", key_.data(), line_num, line.data());
+					// G_ParseSpawnVars (0x55E1E0) reads the key name after a zero token id
+					// and resolves it through SL_GetCanonicalString
+					out_buffer.append(std::format("0 \"{}\" \"{}\"\n", key_, value));
 					continue;
 				}
 

@@ -334,8 +334,7 @@ namespace mods
 		}
 
 		mount_mod(name);
-		fastfiles::reload_mod_zone();
-		restart_lui();
+		fastfiles::reload_mod_zone(restart_lui);
 	}
 
 	void unload()
@@ -352,8 +351,7 @@ namespace mods
 		}
 
 		mount_mod("");
-		fastfiles::reload_mod_zone();
-		restart_lui();
+		fastfiles::reload_mod_zone(restart_lui);
 	}
 
 	void install_lua_api()

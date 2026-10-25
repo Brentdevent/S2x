@@ -103,19 +103,48 @@ namespace fastfiles
 			return handle;
 		}
 
-		HANDLE find_custom_file(const char* filename)
+		// Sys_CreateFile (0x770450) prefixes the file with a 0x100 byte folder string from this table,
+		// folder 0 is "zone\\" and folder 1 is the localized "zone\\<language>\\"
+		constexpr auto zone_folder = 0;
+		constexpr auto localized_zone_folder = 1;
+		constexpr auto folder_name_size = 0x100u;
+
+		std::string get_folder_name(const int folder)
+		{
+			const auto* name = reinterpret_cast<const char*>(0xD8896C0_g + folder_name_size * folder);
+			return std::string(name, strnlen(name, folder_name_size));
+		}
+
+		HANDLE find_custom_file(const int folder, const char* filename)
 		{
 			if (!filename || !*filename || std::strpbrk(filename, "/\\:"))
 			{
 				return INVALID_HANDLE_VALUE;
 			}
 
-			const auto usermap = get_usermap_name(filename);
+			const auto folder_name = get_folder_name(folder);
+			if (folder_name.empty() || folder_name.find("..") != std::string::npos)
+			{
+				return INVALID_HANDLE_VALUE;
+			}
+
+			// Localized usermap zones are named "<language>_<map>" and live next to the map's own zone
+			auto usermap = get_usermap_name(filename);
+			if (folder == localized_zone_folder)
+			{
+				const auto separator = usermap.find('_');
+				if (separator == std::string::npos)
+				{
+					return INVALID_HANDLE_VALUE;
+				}
+
+				usermap.erase(0, separator + 1);
+			}
 
 			for (const auto& search_path : filesystem::get_search_paths())
 			{
 				const std::filesystem::path root{ search_path };
-				for (const auto& path : { root / "zone" / filename, root / "usermaps" / usermap / filename })
+				for (const auto& path : { root / folder_name / filename, root / "usermaps" / usermap / filename })
 				{
 					const auto handle = try_open_zone_file(path);
 					if (handle != INVALID_HANDLE_VALUE)
@@ -130,8 +159,9 @@ namespace fastfiles
 
 		HANDLE sys_create_file_stub(const int folder, const char* filename)
 		{
-			// Folder 0 is "zone\\" in the Sys_CreateFile folder table (0xD8896C0)
-			const auto handle = folder == 0 ? find_custom_file(filename) : INVALID_HANDLE_VALUE;
+			const auto handle = folder == zone_folder || folder == localized_zone_folder
+				? find_custom_file(folder, filename)
+				: INVALID_HANDLE_VALUE;
 			if (handle != INVALID_HANDLE_VALUE)
 			{
 				return handle;
@@ -153,6 +183,23 @@ namespace fastfiles
 			});
 		}
 
+		// DB_LoadXAssets (0xA4F60) unloads the assets of every zone matching the free flags, but only
+		// releases zone memory and g_zoneHandles slots through DB_UnloadXAssetsMemoryForZone (0xADCE0)
+		// for the stock flags 0x100, 0x20, 8, 0x10, 4, 2 and 0x200. Release the mod zone explicitly.
+		void free_mod_zone()
+		{
+			if (!is_mod_zone_loaded())
+			{
+				return;
+			}
+
+			game::XZoneInfo info{};
+			info.freeFlags = mod_zone_alloc_flags;
+			game::DB_LoadXAssets(&info, 1, game::DB_LOAD_ASYNC);
+
+			utils::hook::invoke<void>(0xADCE0_g, mod_zone_alloc_flags, mod_zone_alloc_flags);
+		}
+
 		bool should_add_mod_zone(const std::vector<game::XZoneInfo>& zones)
 		{
 			if (mods::get_loaded_mod().empty())
@@ -165,17 +212,7 @@ namespace fastfiles
 				return is_ui_zone(zone.name);
 			});
 
-			if (!has_ui_zone)
-			{
-				return false;
-			}
-
-			const auto frees_mod_zone = std::ranges::any_of(zones, [](const game::XZoneInfo& zone)
-			{
-				return (zone.freeFlags & mod_zone_alloc_flags) != 0;
-			});
-
-			if (!frees_mod_zone && is_mod_zone_loaded())
+			if (!has_ui_zone || is_mod_zone_loaded())
 			{
 				return false;
 			}
@@ -209,12 +246,15 @@ namespace fastfiles
 		{
 			std::vector<game::XZoneInfo> data(zones, zones + count);
 
-			for (auto& zone : data)
+			// The mod zone shares the lifetime of the ui zones
+			const auto frees_ui_zones = std::ranges::any_of(data, [](const game::XZoneInfo& zone)
 			{
-				if (zone.freeFlags & ui_zone_alloc_flags)
-				{
-					zone.freeFlags |= mod_zone_alloc_flags;
-				}
+				return (zone.freeFlags & ui_zone_alloc_flags) != 0;
+			});
+
+			if (frees_ui_zones)
+			{
+				free_mod_zone();
 			}
 
 			if (should_add_mod_zone(data))
@@ -413,31 +453,33 @@ namespace fastfiles
 		return game::mp::g_poolSize[type];
 	}
 
-	void reload_mod_zone()
+	void reload_mod_zone(const std::function<void()>& on_loaded)
 	{
 		if (!is_supported())
 		{
+			on_loaded();
 			return;
 		}
 
-		scheduler::once([]
+		scheduler::once([on_loaded]
 		{
-			game::XZoneInfo info{};
-			info.freeFlags = mod_zone_alloc_flags;
+			free_mod_zone();
 
 			if (!mods::get_loaded_mod().empty() && exists(mod_zone_name))
 			{
 				console::info("[Fastfiles] Loading zone '%s' for mod '%s'\n", mod_zone_name, mods::get_loaded_mod().data());
 
+				game::XZoneInfo info{};
 				info.name = mod_zone_name;
 				info.allocFlags = mod_zone_alloc_flags;
-			}
-			else if (!is_mod_zone_loaded())
-			{
-				return;
+				info.freeFlags = 0;
+
+				// DB_LOAD_SYNC waits in DB_LoadXAssets until the zone is loaded, so the mod's assets
+				// are available before the caller continues (e.g. restarting LUI)
+				game::DB_LoadXAssets(&info, 1, game::DB_LOAD_SYNC);
 			}
 
-			game::DB_LoadXAssets(&info, 1, game::DB_LOAD_ASYNC);
+			on_loaded();
 		}, scheduler::pipeline::main);
 	}
 

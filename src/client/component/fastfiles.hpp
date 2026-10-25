@@ -25,5 +25,5 @@ namespace fastfiles
 	void get_asset_counts(int (&counts)[game::ASSET_TYPE_COUNT]);
 	int get_pool_size(game::XAssetType type);
 
-	void reload_mod_zone();
+	void reload_mod_zone(const std::function<void()>& on_loaded);
 }
