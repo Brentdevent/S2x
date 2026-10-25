@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -26,4 +27,5 @@ namespace filesystem
 
 	std::vector<std::string> get_search_paths();
 	std::vector<std::string> get_search_paths_rev();
+	std::uint64_t search_paths_version();
 }

@@ -6,6 +6,7 @@
 
 #include "game/game.hpp"
 
+#include <utils/concurrency.hpp>
 #include <utils/hook.hpp>
 #include <utils/io.hpp>
 #include <utils/nt.hpp>
@@ -16,8 +17,8 @@ namespace filesystem
 	{
 		utils::hook::detour fs_startup_hook;
 
-		bool initialized = false;
 		bool custom_path_registered = false;
+		std::atomic_uint64_t path_version{};
 
 		void register_custom_path()
 		{
@@ -97,57 +98,39 @@ namespace filesystem
 			return buffer;
 		}
 
-		std::deque<std::filesystem::path>& get_search_paths_internal()
+		utils::concurrency::container<std::deque<std::filesystem::path>>& get_search_paths_internal()
 		{
-			static std::deque<std::filesystem::path> search_paths{};
+			static utils::concurrency::container<std::deque<std::filesystem::path>> search_paths{};
 			return search_paths;
-		}
-
-		bool can_insert_path(const std::filesystem::path& path)
-		{
-			const auto normalized = path.lexically_normal();
-
-			for (const auto& path_ : get_search_paths_internal())
-			{
-				if (path_.lexically_normal() == normalized)
-				{
-					return false;
-				}
-			}
-
-			return true;
 		}
 
 		void startup()
 		{
-			if (initialized)
+			static std::once_flag initialized;
+			std::call_once(initialized, []()
 			{
-				return;
-			}
+				const auto base = std::filesystem::path{
+					utils::nt::library{}.get_folder()
+				};
 
-			initialized = true;
+				register_path(base / "main");
+				register_path(base / "raw");
+				register_path(base / "raw_shared");
+				register_path(base / "devraw_shared");
+				register_path(base / "devraw");
 
-			const auto base = std::filesystem::path{
-				utils::nt::library{}.get_folder()
-			};
-
-			register_path(base / "main");
-			register_path(base / "raw");
-			register_path(base / "raw_shared");
-			register_path(base / "devraw_shared");
-			register_path(base / "devraw");
-
-			// Client custom folders
-			register_path(base / "s2x");
-			register_path(game::get_appdata_path() / "data");
+				// Client custom folders
+				register_path(base / "s2x");
+				register_path(game::get_appdata_path() / "data");
+			});
 		}
 
-		void check_for_startup()
+		std::deque<std::filesystem::path> snapshot_search_paths()
 		{
-			if (!initialized)
-			{
-				startup();
-			}
+			startup();
+
+			// Mod changes can overlap DB/async reads. Copy under the lock, then do I/O without it.
+			return get_search_paths_internal().copy();
 		}
 	}
 
@@ -165,9 +148,7 @@ namespace filesystem
 			return false;
 		}
 
-		check_for_startup();
-
-		for (const auto& search_path : get_search_paths_internal())
+		for (const auto& search_path : snapshot_search_paths())
 		{
 			const auto path_ = search_path / path;
 
@@ -187,9 +168,7 @@ namespace filesystem
 
 	bool find_file(const std::string& path, std::string* real_path)
 	{
-		check_for_startup();
-
-		for (const auto& search_path : get_search_paths_internal())
+		for (const auto& search_path : snapshot_search_paths())
 		{
 			const auto path_ = search_path / path;
 
@@ -216,42 +195,58 @@ namespace filesystem
 	void register_path(const std::filesystem::path& path)
 	{
 		const auto normalized = path.lexically_normal();
+		const auto inserted = get_search_paths_internal().access<bool>([&](auto& paths)
+		{
+			if (std::find(paths.begin(), paths.end(), normalized) != paths.end())
+			{
+				return false;
+			}
 
-		if (can_insert_path(normalized))
+			paths.push_front(normalized);
+			++path_version;
+
+			return true;
+		});
+
+		if (inserted)
 		{
 			console::debug("[FS] Registering path '%s'\n", normalized.generic_string().data());
-			get_search_paths_internal().push_front(normalized);
 		}
 	}
 
 	void unregister_path(const std::filesystem::path& path)
 	{
-		check_for_startup();
+		startup();
 
 		const auto normalized = path.lexically_normal();
-		auto& search_paths = get_search_paths_internal();
-
-		for (auto i = search_paths.begin(); i != search_paths.end();)
+		const auto removed = get_search_paths_internal().access<bool>([&](auto& paths)
 		{
-			if (i->lexically_normal() == normalized)
+			if (!std::erase(paths, normalized))
 			{
-				console::debug("[FS] Unregistering path '%s'\n", i->generic_string().data());
-				i = search_paths.erase(i);
+				return false;
 			}
-			else
-			{
-				++i;
-			}
+
+			++path_version;
+
+			return true;
+		});
+
+		if (removed)
+		{
+			console::debug("[FS] Unregistering path '%s'\n", normalized.generic_string().data());
 		}
+	}
+
+	std::uint64_t search_paths_version()
+	{
+		return path_version.load();
 	}
 
 	std::vector<std::string> get_search_paths()
 	{
-		check_for_startup();
-
 		std::vector<std::string> paths{};
 
-		for (const auto& path : get_search_paths_internal())
+		for (const auto& path : snapshot_search_paths())
 		{
 			paths.push_back(path.generic_string());
 		}
@@ -261,10 +256,8 @@ namespace filesystem
 
 	std::vector<std::string> get_search_paths_rev()
 	{
-		check_for_startup();
-
 		std::vector<std::string> paths{};
-		const auto& search_paths = get_search_paths_internal();
+		const auto search_paths = snapshot_search_paths();
 
 		for (auto i = search_paths.rbegin(); i != search_paths.rend(); ++i)
 		{
