@@ -42,6 +42,12 @@ namespace game
 	WEAK symbol<void()> SV_FastRestart_f{ 0x6D6BA0, 0x5885D0 };
 	WEAK symbol<void()> Cbuf_AddServerText_f{ 0x64A1A0, 0x464E60 };
 
+	WEAK symbol<int(const char* name)> Key_StringToKeynum{ 0x45FD70, 0x266BE0 };
+	WEAK symbol<const char*(int key, int localized, int controller)> Key_KeynumToString{ 0x45F950, 0x266710 };
+	WEAK symbol<int(const char* command)> Key_GetBindingForCmd{ 0x64B460, 0x465990 };
+	WEAK symbol<void(int local_client, int action, int key, int release)> CL_ExecuteKey{ 0x72990, 0x260750 };
+	WEAK symbol<std::int64_t(std::int64_t file, const char* format, ...)> FS_Printf{ 0x756A90, 0x4BF890 };
+
 	WEAK symbol<void(const int critical_section)> RtlEnterCriticalSection{ 0x7729B0, 0x4DA170 };
 	WEAK symbol<void(const int critical_section)> RtlLeaveCriticalSection{ 0x772A20, 0x4DA1E0 };
 
