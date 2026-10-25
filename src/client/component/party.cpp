@@ -2,9 +2,11 @@
 #include "loader/component_loader.hpp"
 
 #include "party.hpp"
+#include "arena.hpp"
 #include "custom_match.hpp"
 #include "dedicated_party.hpp"
 #include "dedicated_party_client.hpp"
+#include "fastfiles.hpp"
 #include "headquarters.hpp"
 #include "command.hpp"
 #include "scheduler.hpp"
@@ -146,29 +148,6 @@ namespace party
 			return connect_state.attempt_id;
 		}
 
-		bool zombies_fastfile_is_installed(const std::string& map_name)
-		{
-			const auto fastfile_name = map_name + ".ff";
-			const auto game_directory = utils::nt::library{}.get_folder();
-			const std::array<std::filesystem::path, 2> candidates{
-				fastfile_name,
-				std::filesystem::path{"zone"} / fastfile_name,
-			};
-
-			for (const auto& candidate : candidates)
-			{
-				// Stock installs keep map fastfiles in the game root. Standalone
-				// dedicated packages commonly keep the same files in zone/.
-				if (utils::io::file_exists(candidate.generic_string())
-					|| utils::io::file_exists((game_directory / candidate).generic_string()))
-				{
-					return true;
-				}
-			}
-
-			return false;
-		}
-
 		bool get_map_index(const std::string& map_name, int& map_index)
 		{
 			const auto& mode = game::environment::get_online_mode_info();
@@ -197,11 +176,11 @@ namespace party
 					{
 						return std::isalnum(character) != 0 || character == '_';
 					});
-				if (!safe_name || !zombies_fastfile_is_installed(map_name))
+				if (!safe_name || !fastfiles::exists(map_name))
 				{
 					console::error(
 						"Zombies map '%s' is not installed locally "
-						"(checked the game root and zone folder).\n",
+						"(checked the zone, usermaps and mod folders).\n",
 						map_name.data());
 					return false;
 				}
@@ -210,7 +189,13 @@ namespace party
 				// Refresh the mode-selected arena catalog and use its authoritative
 				// unsorted map-name lookup instead.
 				game::GameInfo_UpdateArenas();
+				arena::map_registration_scope registration;
 				map_index = game::GameInfo_GetIndexForMapName(map_name.data());
+				if (map_index < 0 && arena::register_map(map_name))
+				{
+					map_index = game::GameInfo_GetIndexForMapName(map_name.data());
+				}
+
 				if (map_index < 0)
 				{
 					console::error(
@@ -219,13 +204,16 @@ namespace party
 					return false;
 				}
 
+				registration.keep();
 				return true;
 			}
 
 			// The sorted UI lookup returns zero for both a missing map and its first
 			// entry. Validate membership with the unambiguous catalog lookup first.
 			game::GameInfo_UpdateArenas();
-			if (game::GameInfo_GetIndexForMapName(map_name.data()) < 0)
+			arena::map_registration_scope registration;
+			if (game::GameInfo_GetIndexForMapName(map_name.data()) < 0
+				&& (!arena::register_map(map_name) || game::GameInfo_GetIndexForMapName(map_name.data()) < 0))
 			{
 				console::error(
 					"Multiplayer map '%s' is not present in the stock arena catalog.\n",
@@ -233,6 +221,7 @@ namespace party
 				return false;
 			}
 
+			registration.keep();
 			map_index = game::UI_GetListIndexFromMapName(map_name.data());
 			return true;
 		}
@@ -797,6 +786,9 @@ namespace party
 				return;
 			}
 
+			// A map the server named only stays in the arena catalog once we connect to it
+			arena::map_registration_scope registration;
+
 			if (!validate_map_and_gametype(mapname, gametype))
 			{
 				return;
@@ -813,6 +805,7 @@ namespace party
 				return;
 			}
 
+			registration.keep();
 			dedicated_party_client::commit_direct_connection();
 
 			const auto& mode = game::environment::get_online_mode_info();
@@ -989,6 +982,10 @@ namespace party
 			bool set_gametype{};
 			auto gametype = get_gametype_or_default(params, map_name, set_gametype);
 			const bool has_gametype = params.size() >= 3;
+
+			// A generated arena entry is only kept once the map is actually started or queued
+			arena::map_registration_scope registration;
+
 			if (!validate_map_and_gametype(map_name, gametype))
 			{
 				return;
@@ -1018,14 +1015,17 @@ namespace party
 				if (!dedicated_party::set_next_match(map_name, gametype, map_index))
 				{
 					console::error("Dedicated party lifecycle is not active.\n");
+					return;
 				}
 
+				registration.keep();
 				return;
 			}
 
 			if (!is_dedicated)
 			{
 				cancel_pending_connection();
+				registration.keep();
 			}
 
 			if (server_running && get_current_mapname() == map_name
@@ -1048,6 +1048,8 @@ namespace party
 					console::error("Unable to queue the dedicated match override.\n");
 					return;
 				}
+
+				registration.keep();
 
 				if (!game::virtual_lobby_loaded())
 				{
@@ -1542,9 +1544,13 @@ namespace party
 				const auto mapname = info.get("mapname");
 				const auto gametype = info.get("gametype");
 
-				if (!validate_map_and_gametype(mapname, gametype))
 				{
-					return;
+					// Only validates the map, connect_to_server registers it again when it connects
+					arena::map_registration_scope registration;
+					if (!validate_map_and_gametype(mapname, gametype))
+					{
+						return;
+					}
 				}
 
 				console::info(

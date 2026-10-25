@@ -5,6 +5,7 @@
 #include "game/dvars.hpp"
 
 #include "console/console.hpp"
+#include "imagefiles.hpp"
 
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
@@ -43,13 +44,15 @@ namespace logger
 
 		void db_unload_x_zones_stub(uint16_t* zone_indices, unsigned int zone_count, bool create_default)
 		{
+			std::vector<std::string> zone_names;
 			for (unsigned int i = 0; i < zone_count; i++)
 			{
-				const auto zone_index = zone_indices[i];	
+				const auto zone_index = zone_indices[i];
 				const auto zone_info = get_zone_info(zone_index);
 
 				if (zone_info.name && *zone_info.name)
 				{
+					zone_names.emplace_back(zone_info.name);
 					console::info("Unloading zone %s\n", zone_info.name);
 				}
 				else
@@ -67,6 +70,11 @@ namespace logger
 			}
 					
 			db_unload_x_zones_hook.invoke<void>(zone_indices, zone_count, create_default);
+
+			for (const auto& zone_name : zone_names)
+			{
+				imagefiles::close_zone_pak(zone_name.data());
+			}
 		}
 
 		int db_try_load_x_file_internal(const char* zone_name, int zone_flags, int is_base_map)
@@ -78,6 +86,8 @@ namespace logger
 				console::info("Loading details: flags=0x%X base=%d\n", zone_flags, is_base_map);
 			}
 
+			// image streams of the zone resolve its zone pak while it loads
+			imagefiles::set_loading_zone(zone_name);
 			return db_try_load_x_file_internal_hook.invoke<int>(zone_name, zone_flags, is_base_map);
 		}
 	}

@@ -51,6 +51,25 @@ namespace gsc
 			}
 		}
 
+		std::string get_script_file_name(const std::string& name)
+		{
+			const auto id = gsc_ctx->token_id(name);
+			if (!id)
+			{
+				return name;
+			}
+
+			return std::to_string(id);
+		}
+
+		bool has_compiled_script_file(const std::string& name)
+		{
+			const auto script_name = std::filesystem::path(name).replace_extension().generic_string();
+			const auto file_name = get_script_file_name(script_name);
+			return game::DB_XAssetExists(game::ASSET_TYPE_SCRIPTFILE, file_name.data()) &&
+				!game::DB_IsXAssetDefault(game::ASSET_TYPE_SCRIPTFILE, file_name.data());
+		}
+
 		bool read_raw_script_file(const std::string& name, std::string* data)
 		{
 			if (filesystem::read_file(name, data))
@@ -60,10 +79,11 @@ namespace gsc
 
 			// This will prevent 'fake' GSC raw files from being compiled.
 			// They are parsed by the game's own parser later as they are special files.
-			if (name.starts_with("maps/createfx") || name.starts_with("maps/createart") ||
-				(name.starts_with("maps/mp") && name.ends_with("_fx.gsc")))
+			// Stock zones ship a ScriptFile counterpart for them, custom zones may only have the rawfile.
+			if ((name.starts_with("maps/createfx") || name.starts_with("maps/createart") ||
+				(name.starts_with("maps/mp") && name.ends_with("_fx.gsc"))) && has_compiled_script_file(name))
 			{
-				console::debug("Refusing to compile rawfile '%s\n", name.data());
+				console::debug("Refusing to compile rawfile '%s'\n", name.data());
 				return false;
 			}
 
@@ -178,17 +198,6 @@ namespace gsc
 				console::error("**********************************************\n");
 				return nullptr;
 			}
-		}
-
-		std::string get_script_file_name(const std::string& name)
-		{
-			const auto id = gsc_ctx->token_id(name);
-			if (!id)
-			{
-				return name;
-			}
-
-			return std::to_string(id);
 		}
 
 		std::pair<xsk::gsc::buffer, std::vector<std::uint8_t>> read_compiled_script_file(const std::string& name, const std::string& real_name)
