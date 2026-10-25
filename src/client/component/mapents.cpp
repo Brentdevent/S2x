@@ -46,7 +46,7 @@ namespace mapents
 					continue;
 				}
 
-				if (in_comment || line.starts_with("//"))
+				if (in_comment || line.empty() || line.starts_with("//"))
 				{
 					continue;
 				}
@@ -73,7 +73,7 @@ namespace mapents
 				}
 
 				std::smatch match{};
-				if (!std::regex_search(line, match, expr) && !line.empty())
+				if (!std::regex_search(line, match, expr))
 				{
 					console::warn("[map_ents parser] Failed to parse line %i (%s)\n", line_num, line.data());
 					continue;
@@ -88,16 +88,16 @@ namespace mapents
 					continue;
 				}
 
-				if (value.empty())
-				{
-					continue;
-				}
-
-				// Numeric and unquoted keys are passed through unchanged
+				// Numeric and unquoted keys are passed through unchanged, including empty values
 				if (utils::string::is_numeric(key) || key.size() < 3 || !key.starts_with('"') || !key.ends_with('"'))
 				{
 					out_buffer.append(line);
 					out_buffer.append("\n");
+					continue;
+				}
+
+				if (value.empty())
+				{
 					continue;
 				}
 
@@ -145,6 +145,27 @@ namespace mapents
 		// cache was parsed from instead, so a newly loaded map never reuses the previous one.
 		std::string entity_source;
 
+		// Stock entity strings use numeric keys. Only zones built by custom tools carry
+		// quoted key names that have to be converted to their token ids.
+		bool has_quoted_keys(const char* ents)
+		{
+			for (auto* line = ents; line && *line;)
+			{
+				if (*line == '"')
+				{
+					return true;
+				}
+
+				line = std::strchr(line, '\n');
+				if (line)
+				{
+					++line;
+				}
+			}
+
+			return false;
+		}
+
 		const char* cm_entity_string_stub()
 		{
 			const char* ents = nullptr;
@@ -164,6 +185,13 @@ namespace mapents
 				if (!entity_string.empty() && entity_source == ents)
 				{
 					return entity_string.data();
+				}
+
+				if (!has_quoted_keys(ents))
+				{
+					entity_source.clear();
+					entity_string.clear();
+					return ents;
 				}
 
 				entity_source = ents;

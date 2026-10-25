@@ -2,6 +2,7 @@
 #include "loader/component_loader.hpp"
 
 #include "dedicated_party_client.hpp"
+#include "arena.hpp"
 #include "command.hpp"
 #include "dedicated_party.hpp"
 #include "headquarters.hpp"
@@ -286,12 +287,15 @@ namespace dedicated_party_client
 			const std::string map_name_value{ map_name };
 			const std::string gametype_value{ gametype };
 			int map_index = 0;
+			arena::map_registration_scope registration;
 			if (map_name_value.empty() || gametype_value.empty()
 				|| !party::resolve_map_index(map_name_value, map_index)
 				|| !party::validate_gametype(gametype_value))
 			{
 				return false;
 			}
+
+			registration.keep();
 
 			const auto changed = hosted_dedicated_party_state.map_name != map_name_value
 				|| hosted_dedicated_party_state.gametype != gametype_value;
@@ -645,6 +649,9 @@ namespace dedicated_party_client
 		const auto gametype = info.get("party_gametype");
 		std::uint64_t match_sequence{};
 
+		// A map the lobby named only stays in the arena catalog once the join proceeds
+		arena::map_registration_scope registration;
+
 		if (!party::session::valid_descriptor(session)
 			|| max_players < 1
 			|| max_players > party::session::get_player_limit(kind)
@@ -672,6 +679,7 @@ namespace dedicated_party_client
 			return true;
 		}
 
+		registration.keep();
 		cancel_pending_connection();
 
 		auto target = from;

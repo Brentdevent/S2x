@@ -22,6 +22,8 @@ namespace arena
 		std::recursive_mutex arena_mutex;
 		std::vector<std::string> generated_maps;
 
+		map_registration_scope* active_scope = nullptr;
+
 		bool is_valid_map_name(const std::string& name)
 		{
 			return !name.empty() && std::ranges::all_of(name, [](const unsigned char character)
@@ -171,10 +173,64 @@ namespace arena
 		}
 	}
 
+	namespace
+	{
+		void reparse_arenas()
+		{
+			// GameInfo_UpdateArenas only reparses the arena file when this flag is set (0x650A74)
+			*game::mp::ui_arenas_dirty = 1;
+			game::GameInfo_UpdateArenas();
+		}
+	}
+
+	map_registration_scope::map_registration_scope()
+		: previous_(active_scope)
+	{
+		active_scope = this;
+	}
+
+	map_registration_scope::~map_registration_scope()
+	{
+		active_scope = this->previous_;
+
+		if (this->keep_)
+		{
+			// An enclosing scope still decides whether the maps outlive it
+			if (this->previous_)
+			{
+				this->previous_->maps_.insert(this->previous_->maps_.end(), this->maps_.begin(), this->maps_.end());
+			}
+
+			return;
+		}
+
+		if (this->maps_.empty())
+		{
+			return;
+		}
+
+		{
+			std::lock_guard _(arena_mutex);
+			for (const auto& name : this->maps_)
+			{
+				console::debug("[Arena] Removing unused map '%s' from the arena catalog\n", name.data());
+				std::erase(generated_maps, name);
+			}
+		}
+
+		reparse_arenas();
+	}
+
+	void map_registration_scope::keep()
+	{
+		this->keep_ = true;
+	}
+
 	bool register_map(const std::string& map_name)
 	{
 		const auto name = utils::string::to_lower(map_name);
-		if (!game::environment::uses_multiplayer_binary() || !is_valid_map_name(name) || !fastfiles::exists(name))
+		if (!game::environment::uses_multiplayer_binary() || !is_valid_map_name(name) || name.ends_with("_load")
+			|| !fastfiles::exists(name))
 		{
 			return false;
 		}
@@ -184,14 +240,17 @@ namespace arena
 			if (std::ranges::find(generated_maps, name) == generated_maps.end())
 			{
 				generated_maps.emplace_back(name);
+
+				if (active_scope)
+				{
+					active_scope->maps_.emplace_back(name);
+				}
 			}
 		}
 
 		console::info("[Arena] Adding map '%s' to the arena catalog\n", name.data());
 
-		// GameInfo_UpdateArenas only reparses the arena file when this flag is set (0x650A74)
-		*game::mp::ui_arenas_dirty = 1;
-		game::GameInfo_UpdateArenas();
+		reparse_arenas();
 		return true;
 	}
 

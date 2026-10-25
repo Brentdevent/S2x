@@ -189,6 +189,7 @@ namespace party
 				// Refresh the mode-selected arena catalog and use its authoritative
 				// unsorted map-name lookup instead.
 				game::GameInfo_UpdateArenas();
+				arena::map_registration_scope registration;
 				map_index = game::GameInfo_GetIndexForMapName(map_name.data());
 				if (map_index < 0 && arena::register_map(map_name))
 				{
@@ -203,12 +204,14 @@ namespace party
 					return false;
 				}
 
+				registration.keep();
 				return true;
 			}
 
 			// The sorted UI lookup returns zero for both a missing map and its first
 			// entry. Validate membership with the unambiguous catalog lookup first.
 			game::GameInfo_UpdateArenas();
+			arena::map_registration_scope registration;
 			if (game::GameInfo_GetIndexForMapName(map_name.data()) < 0
 				&& (!arena::register_map(map_name) || game::GameInfo_GetIndexForMapName(map_name.data()) < 0))
 			{
@@ -218,6 +221,7 @@ namespace party
 				return false;
 			}
 
+			registration.keep();
 			map_index = game::UI_GetListIndexFromMapName(map_name.data());
 			return true;
 		}
@@ -782,6 +786,9 @@ namespace party
 				return;
 			}
 
+			// A map the server named only stays in the arena catalog once we connect to it
+			arena::map_registration_scope registration;
+
 			if (!validate_map_and_gametype(mapname, gametype))
 			{
 				return;
@@ -798,6 +805,7 @@ namespace party
 				return;
 			}
 
+			registration.keep();
 			dedicated_party_client::commit_direct_connection();
 
 			const auto& mode = game::environment::get_online_mode_info();
@@ -974,6 +982,10 @@ namespace party
 			bool set_gametype{};
 			auto gametype = get_gametype_or_default(params, map_name, set_gametype);
 			const bool has_gametype = params.size() >= 3;
+
+			// A generated arena entry is only kept once the map is actually started or queued
+			arena::map_registration_scope registration;
+
 			if (!validate_map_and_gametype(map_name, gametype))
 			{
 				return;
@@ -1003,14 +1015,17 @@ namespace party
 				if (!dedicated_party::set_next_match(map_name, gametype, map_index))
 				{
 					console::error("Dedicated party lifecycle is not active.\n");
+					return;
 				}
 
+				registration.keep();
 				return;
 			}
 
 			if (!is_dedicated)
 			{
 				cancel_pending_connection();
+				registration.keep();
 			}
 
 			if (server_running && get_current_mapname() == map_name
@@ -1033,6 +1048,8 @@ namespace party
 					console::error("Unable to queue the dedicated match override.\n");
 					return;
 				}
+
+				registration.keep();
 
 				if (!game::virtual_lobby_loaded())
 				{
@@ -1527,9 +1544,13 @@ namespace party
 				const auto mapname = info.get("mapname");
 				const auto gametype = info.get("gametype");
 
-				if (!validate_map_and_gametype(mapname, gametype))
 				{
-					return;
+					// Only validates the map, connect_to_server registers it again when it connects
+					arena::map_registration_scope registration;
+					if (!validate_map_and_gametype(mapname, gametype))
+					{
+						return;
+					}
 				}
 
 				console::info(
