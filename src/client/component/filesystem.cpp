@@ -18,7 +18,6 @@ namespace filesystem
 		utils::hook::detour fs_startup_hook;
 
 		bool custom_path_registered = false;
-		std::atomic_uint64_t path_version{};
 
 		void register_custom_path()
 		{
@@ -203,7 +202,6 @@ namespace filesystem
 			}
 
 			paths.push_front(normalized);
-			++path_version;
 
 			return true;
 		});
@@ -221,25 +219,13 @@ namespace filesystem
 		const auto normalized = path.lexically_normal();
 		const auto removed = get_search_paths_internal().access<bool>([&](auto& paths)
 		{
-			if (!std::erase(paths, normalized))
-			{
-				return false;
-			}
-
-			++path_version;
-
-			return true;
+			return std::erase(paths, normalized) != 0;
 		});
 
 		if (removed)
 		{
 			console::debug("[FS] Unregistering path '%s'\n", normalized.generic_string().data());
 		}
-	}
-
-	std::uint64_t search_paths_version()
-	{
-		return path_version.load();
 	}
 
 	std::vector<std::string> get_search_paths()

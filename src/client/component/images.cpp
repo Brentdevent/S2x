@@ -2,7 +2,6 @@
 
 #include "loader/component_loader.hpp"
 #include "game/game.hpp"
-#include "filesystem.hpp"
 #include "images/overrides.hpp"
 #include "images/originals.hpp"
 #include "images/export.hpp"
@@ -88,9 +87,6 @@ namespace images
 			{
 				return;
 			}
-
-			// Initialize custom search paths before DB/render threads request files.
-			filesystem::get_search_paths();
 
 			load_texture_hook.create(game::select(0x897A70, 0x616BE0), load_texture_stub);
 			upload_stream_hook.create(game::select(0x8973A0, 0x616510), upload_stream_stub);
