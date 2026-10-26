@@ -4,6 +4,7 @@
 #include "network.hpp"
 
 #include "game/game.hpp"
+#include "game/packet_routing.hpp"
 
 #include "console/console.hpp"
 #include "master_server.hpp"
@@ -114,18 +115,64 @@ namespace network
 			utils::hook::jump(0x8281F9_g, stub);
 		}
 
-		void skip_packet_checksum()
+		int read_packet_routing(game::netadr_s* from, game::msg_t* message, const int length,
+			const bool secure_packet)
+		{
+			if (!message->data || length < 0 || length > message->maxsize)
+			{
+				return 0;
+			}
+
+			if (secure_packet || game::is_local_play())
+			{
+				// Local Play and Steam packets still carry the stock checksum/routing trailer.
+				return length >= 3 ? -1 : 0;
+			}
+
+			std::string_view payload{message->data, static_cast<std::size_t>(length)};
+			int source{}, target{};
+			if (!routing::decode(payload, source, target))
+			{
+				return 0;
+			}
+
+			if (payload.data() != message->data)
+			{
+				std::memmove(message->data, payload.data(), payload.size());
+				message->readcount = 0;
+			}
+
+			message->cursize = static_cast<int>(payload.size());
+			message->targetLocalNetID = static_cast<game::netsrc_t>(target);
+			from->localNetID = static_cast<game::netsrc_t>(source);
+			return 1;
+		}
+
+		void restore_packet_routing()
 		{
 			const auto packet_received = 0x7B0ED6_g;
-			const auto stub = utils::hook::assemble([packet_received](utils::hook::assembler& a)
+			const auto stock_checksum = 0x7B0F09_g;
+			const auto stub = utils::hook::assemble([packet_received, stock_checksum](utils::hook::assembler& a)
 			{
-				a.mov(dword_ptr(rdi, 0x1C), ebx);
-				a.mov(dword_ptr(rdi, 0x30), 0);
-				a.mov(dword_ptr(r14, 0xC), 0);
-				a.mov(eax, 1);
+				const auto stock = a.new_label();
+				// Sys_GetPacket: R14 = sender, RDI = msg, EBX = received length,
+				// BPL = received through Steam rather than the raw UDP socket.
+				a.mov(rcx, r14);
+				a.mov(rdx, rdi);
+				a.mov(r8d, ebx);
+				a.movzx(r9d, bpl);
+				a.call_aligned(read_packet_routing);
+				a.cmp(eax, -1);
+				a.je(stock);
 				a.jmp(reinterpret_cast<void*>(packet_received));
+
+				a.bind(stock);
+				a.mov(rcx, qword_ptr(rdi, 8));
+				a.sub(ebx, 3);
+				a.jmp(reinterpret_cast<void*>(stock_checksum));
 			});
 
+			utils::hook::nop(0x7B0F02_g, 7);
 			utils::hook::jump(0x7B0F02_g, stub);
 		}
 
@@ -220,19 +267,32 @@ namespace network
 				return 0;
 			}
 
-			constexpr std::size_t max_packet_payload_size = 0x4EE; // 1262 bytes
-
 			const auto payload_size = static_cast<std::size_t>(length);
 
-			if (payload_size > max_packet_payload_size)
+			if (payload_size > routing::max_payload_size)
 			{
 				console::warn(
 					"[network] Sys_SendPacket: packet too large: payload=%zu max=%zu\n",
 					payload_size,
-					max_packet_payload_size
+					routing::max_payload_size
 				);
 
 				return 0;
+			}
+
+			// Only guest traffic needs an envelope. Primary clients and external tools
+			// retain the existing protocol; no per-peer state survives a disconnect.
+			std::array<char, routing::max_wire_size> routed_packet;
+			const auto* wire_data = data;
+			auto wire_length = length;
+			if (routing::needs_routing(sock, to->localNetID))
+			{
+				wire_length = static_cast<int>(routing::encode(routed_packet, {data, payload_size}, sock, to->localNetID));
+				if (!wire_length)
+				{
+					return 0;
+				}
+				wire_data = routed_packet.data();
 			}
 
 			sockaddr_in address{};
@@ -242,8 +302,8 @@ namespace network
 
 			const auto result = sendto(
 				socket,
-				data,
-				length,
+				wire_data,
+				wire_length,
 				0,
 				reinterpret_cast<sockaddr*>(&address),
 				sizeof(address)
@@ -443,8 +503,7 @@ namespace network
 			// Skip another onlinegame check (drops client EXE_TRANSMITERROR)
 			utils::hook::jump(0xF739E_g, 0xF73F7_g);
 
-			// Don't read checksum
-			skip_packet_checksum();
+			restore_packet_routing();
 
 			// Disable built in "print" OOB command
 			utils::hook::set<std::uint8_t>(0x7023F_g, 0xEB);

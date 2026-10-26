@@ -17,6 +17,7 @@
 #include "ui_scripting.hpp"
 
 #include <utils/cryptography.hpp>
+#include <utils/finally.hpp>
 #include <utils/hook.hpp>
 #include <utils/info_string.hpp>
 #include <utils/string.hpp>
@@ -31,6 +32,7 @@ namespace dedicated_party_client
 
 		utils::hook::detour cl_connect_and_preload_map_hook;
 		utils::hook::detour party_atomic_setup_potential_host_hook;
+		utils::hook::detour party_atomic_request_join_hook;
 		utils::hook::detour party_client_handle_go_hook;
 		utils::hook::detour party_client_process_party_state_hook;
 
@@ -66,6 +68,7 @@ namespace dedicated_party_client
 		std::string joined_custom_session_id{};
 		std::string joined_hq_session_id{};
 		bool hosted_dedicated_go_in_progress{};
+		thread_local bool preserve_local_players_for_join{};
 
 		bool has_joined_session(game::PartyData* party_data, const int party_type,
 			const std::string& joined_session_id)
@@ -273,6 +276,34 @@ namespace dedicated_party_client
 			game::Session_IdToString(
 				*reinterpret_cast<const std::uint64_t*>(session_info), session_id.data());
 			return hosted_party_join_state.session_id == session_id.data();
+		}
+
+		void party_atomic_request_join_stub(game::PartyAtomicJoinInfo* join_info,
+			const int controller_index, const void* session_info)
+		{
+			const auto previous = preserve_local_players_for_join;
+			const auto restore = utils::finally([previous]
+			{
+				preserve_local_players_for_join = previous;
+			});
+
+			preserve_local_players_for_join = pending_hosted_party_join_matches(session_info)
+				&& (hosted_party_join_state.kind == party::session::kind::dedicated
+					|| hosted_party_join_state.kind == party::session::kind::custom)
+				&& utils::hook::invoke<bool>(0x4A1EB0_g, 0) // CL_IsLocalClientActive
+				&& utils::hook::invoke<bool>(0x4A1EB0_g, 1);
+
+			if (preserve_local_players_for_join)
+			{
+				console::info("Hosted lobby: preserving both local players during the join.\n");
+			}
+
+			party_atomic_request_join_hook.invoke<void>(join_info, controller_index, session_info);
+		}
+
+		bool party_join_uses_local_controllers_stub()
+		{
+			return preserve_local_players_for_join || utils::hook::invoke<bool>(0x856770_g);
 		}
 
 		bool is_hosted_dedicated_party_address(const game::netadr_s* address)
@@ -928,6 +959,15 @@ namespace dedicated_party_client
 				game::CL_ConnectAndPreloadMap, cl_connect_and_preload_map_stub);
 			party_atomic_setup_potential_host_hook.create(
 				0x497EF0_g, party_atomic_setup_potential_host_stub);
+
+			party_atomic_request_join_hook.create(0x497B50_g, party_atomic_request_join_stub);
+
+			// The online invite path removes client 1 before constructing the join.
+			// For a validated hosted join with two active local players, reuse the
+			// native controller-pair path and its local sign-in check. Only these
+			// two predicates change; session setup keeps the real online mode.
+			utils::hook::call(0x497B82_g, party_join_uses_local_controllers_stub);
+			utils::hook::call(0x483E0D_g, party_join_uses_local_controllers_stub);
 
 			utils::hook::call(0x497767_g, party_atomic_activate_lobby_stub);
 

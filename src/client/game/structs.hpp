@@ -444,6 +444,7 @@ namespace game
 		uint32_t addrHandleIndex;
 	};
 	static_assert(sizeof(netadr_s) == 0x14);
+	static_assert(offsetof(netadr_s, localNetID) == 0x0C);
 
 	struct PartySettings
 	{
@@ -570,6 +571,9 @@ namespace game
 		int useZlib;
 	};
 	static_assert(sizeof(msg_t) == 0x38);
+	static_assert(offsetof(msg_t, data) == 0x08);
+	static_assert(offsetof(msg_t, cursize) == 0x1C);
+	static_assert(offsetof(msg_t, targetLocalNetID) == 0x30);
 
 	enum XAssetType
 	{
