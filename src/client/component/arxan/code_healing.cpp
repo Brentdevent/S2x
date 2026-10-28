@@ -4,12 +4,14 @@
 #include "integrity_locations.hpp"
 #include "breakpoint_locations.hpp"
 #include "code_healing_locations.hpp"
+#include "anti_debug_locations.hpp"
 
 #include "game/game.hpp"
 
 #include "utils/hook.hpp"
 #include "utils/string.hpp"
 
+#include <algorithm>
 #include <span>
 
 #define PRECOMPUTED
@@ -74,9 +76,9 @@ namespace arxan::code_healing
 			uint64_t size;
 		};
 
-		const std::array<patch_region, 9>& current_regions()
+		const std::array<patch_region, 16>& current_regions()
 		{
-			static const std::array<patch_region, 9> mp_regions
+			static const std::array<patch_region, 16> mp_regions
 			{
 				patch_region{mp::big_intact_integrity_offsets, 0xA},
 				patch_region{mp::big_split_integrity_offsets, 0x5},
@@ -87,9 +89,16 @@ namespace arxan::code_healing
 				patch_region{mp::eax_split_healing_offsets, 0x5},
 				patch_region{mp::eax_obfuscated_healing_offsets, 0x7},
 				patch_region{mp::int2d_breakpoint_offsets, 0x7},
+				patch_region{mp::being_debugged_read_offsets, 0x4},
+				patch_region{mp::nt_global_flag_read_offsets, 0x6},
+				patch_region{mp::heap_flags_read_offsets, 0x7},
+				patch_region{mp::heap_force_flags_read_offsets, 0x4},
+				patch_region{mp::heap_tail_read_offsets, 0x7},
+				patch_region{empty_offsets, 0x6},
+				patch_region{mp::worker_resume_offsets, 0x6},
 			};
 
-			static const std::array<patch_region, 9> sp_regions
+			static const std::array<patch_region, 16> sp_regions
 			{
 				patch_region{sp::big_intact_integrity_offsets, 0xA},
 				patch_region{sp::big_split_integrity_offsets, 0x5},
@@ -100,6 +109,13 @@ namespace arxan::code_healing
 				patch_region{sp::eax_split_healing_offsets, 0x5},
 				patch_region{sp::eax_obfuscated_healing_offsets, 0x7},
 				patch_region{sp::int2d_breakpoint_offsets, 0x7},
+				patch_region{sp::being_debugged_read_offsets, 0x4},
+				patch_region{sp::nt_global_flag_read_offsets, 0x6},
+				patch_region{sp::heap_flags_read_offsets, 0x7},
+				patch_region{sp::heap_force_flags_read_offsets, 0x4},
+				patch_region{sp::heap_tail_read_offsets, 0x7},
+				patch_region{sp::heap_flags_split_read_offsets, 0x6},
+				patch_region{sp::worker_resume_offsets, 0x6},
 			};
 
 			return game::environment::uses_multiplayer_binary() ? mp_regions : sp_regions;
@@ -133,21 +149,51 @@ namespace arxan::code_healing
 			return nullptr;
 		}
 
-		bool overlaps_region(const uint64_t heal_start, const uint64_t heal_end, const patch_region& region)
+		struct patch_range
 		{
-			for (const auto patched_address : region.offsets)
-			{
-				const auto patch_start = game::relocate(patched_address);
-				const auto patch_end = patch_start + region.size;
+			uint64_t start;
+			uint64_t end;
+		};
 
-				// [heal_start, heal_end) overlaps [patch_start, patch_end)
-				if (heal_start < patch_end && heal_end > patch_start)
+		std::vector<patch_range> build_protected_ranges()
+		{
+			std::vector<patch_range> ranges;
+			for (const auto& region : current_regions())
+			{
+				for (const auto offset : region.offsets)
 				{
-					return true;
+					const auto start = game::relocate(offset);
+					ranges.push_back({start, start + region.size});
 				}
 			}
 
-			return false;
+			std::sort(ranges.begin(), ranges.end(), [](const patch_range& a, const patch_range& b)
+			{
+				return a.start < b.start;
+			});
+
+			// Merge overlapping or adjacent ranges before searching by their ends.
+			size_t count = 0;
+			for (const auto range : ranges)
+			{
+				if (count != 0 && range.start <= ranges[count - 1].end)
+				{
+					ranges[count - 1].end = std::max(ranges[count - 1].end, range.end);
+				}
+				else
+				{
+					ranges[count++] = range;
+				}
+			}
+			ranges.resize(count);
+			return ranges;
+		}
+
+		const std::vector<patch_range>& get_protected_ranges()
+		{
+			// Game hooks can still run during static destruction.
+			static const auto* ranges = new std::vector<patch_range>(build_protected_ranges());
+			return *ranges;
 		}
 
 		bool allow_code_healing(void* heal_location, const uint32_t patch_length)
@@ -155,15 +201,18 @@ namespace arxan::code_healing
 			const auto heal_start = reinterpret_cast<uint64_t>(heal_location);
 			const auto heal_end = heal_start + patch_length;
 
-			for (const auto& region : current_regions())
+			const auto& ranges = get_protected_ranges();
+			const auto range = std::upper_bound(ranges.begin(), ranges.end(), heal_start,
+				[](const uint64_t address, const patch_range& candidate)
 			{
-				if (overlaps_region(heal_start, heal_end, region))
-				{
+				return address < candidate.end;
+			});
+			if (range != ranges.end() && range->start < heal_end)
+			{
 #ifdef ARXAN_DEBUG
-					OutputDebugStringA(utils::string::va("Blocked code healing at: %llX for size: %X\n", game::derelocate(heal_start), patch_length));
+				OutputDebugStringA(utils::string::va("Blocked code healing at: %llX for size: %X\n", game::derelocate(heal_start), patch_length));
 #endif
-					return false;
-				}
+				return false;
 			}
 
 			return true;
@@ -401,6 +450,7 @@ namespace arxan::code_healing
 	public:
 		void post_thread_setup() override
 		{
+			get_protected_ranges();
 			patch_code_healing();
 		}
 
