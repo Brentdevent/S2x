@@ -3,6 +3,7 @@
 #include "file_updater.hpp"
 #include "updater.hpp"
 #include "update_source.hpp"
+#include "component/console/console.hpp"
 #include "game/player_profile.hpp"
 
 #include <utils/concurrency.hpp>
@@ -169,17 +170,33 @@ namespace updater
 			return files;
 		}
 
-		std::vector<file_info> get_file_infos()
+		std::optional<std::vector<file_info>> get_file_infos()
 		{
 			std::vector<file_info> files{};
+			std::exception_ptr validation_error{};
 			const auto json = utils::http::get_data(std::string{update_source::manifest} + get_cache_buster(),
-				{}, {}, 2, update_source::fallback_connect_to, [&files](const std::string& body)
+				{}, {}, 2, update_source::fallback_connect_to, [&files, &validation_error](const std::string& body)
 				{
-					files = parse_file_infos(body);
+					try
+					{
+						files = parse_file_infos(body);
+					}
+					catch (const std::runtime_error&)
+					{
+						validation_error = std::current_exception();
+						throw;
+					}
 				});
+
 			if (!json)
 			{
-				throw std::runtime_error("Unable to download the update manifest.");
+				// A failed fallback request must not hide an invalid primary response.
+				if (validation_error)
+				{
+					std::rethrow_exception(validation_error);
+				}
+
+				return std::nullopt;
 			}
 
 			return files;
@@ -258,11 +275,19 @@ namespace updater
 
 	void file_updater::run() const
 	{
+		console::info("[Updater] Checking for updates...\n");
+
 		const auto files = get_file_infos();
-		this->run(files);
+		if (!files)
+		{
+			console::warn("[Updater] Unable to check for updates. Continuing with installed files.\n");
+			return;
+		}
+
+		this->run(*files);
 		// AppData/data is updater-owned. Only the complete client manifest may
 		// prune it, after every download succeeds (including no-download runs).
-		this->remove_obsolete_data(files);
+		this->remove_obsolete_data(*files);
 	}
 
 	void file_updater::run(const std::vector<file_info>& files) const
