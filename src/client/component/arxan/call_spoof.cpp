@@ -21,7 +21,12 @@ namespace arxan::call_spoof
 {
 	namespace
 	{
-		thread_local std::stack<uint64_t> address_stack{};
+		std::stack<uint64_t>& get_address_stack()
+		{
+			// Only initialize the stack on threads that actually use call spoofing.
+			thread_local std::stack<uint64_t> address_stack{};
+			return address_stack;
+		}
 
 		const void* get_address_to_call()
 		{
@@ -30,11 +35,12 @@ namespace arxan::call_spoof
 
 		void store_address(const uint64_t address)
 		{
-			address_stack.push(address);
+			get_address_stack().push(address);
 		}
 
 		uint64_t get_stored_address()
 		{
+			auto& address_stack = get_address_stack();
 			const auto res = address_stack.top();
 			address_stack.pop();
 

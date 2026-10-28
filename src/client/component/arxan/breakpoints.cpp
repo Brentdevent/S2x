@@ -61,7 +61,8 @@ namespace arxan::breakpoints
 				a.jmp(jump_target);
 			});
 
-			utils::hook::nop(game_address, 7);
+			// The stub jumps to the original target, so the trailing two bytes are never executed.
+			// Avoid leaving a NOP-only window before installing the jump.
 			utils::hook::jump(game_address, stub, false);
 		}
 
@@ -94,18 +95,15 @@ namespace arxan::breakpoints
 
 		void patch_breakpoints()
 		{
-			static bool once = false;
-			if (once)
+			static std::once_flag once;
+			std::call_once(once, []
 			{
-				return;
-			}
-			once = true;
-
 #ifdef PRECOMPUTED
-			patch_breakpoints_precomputed();
+				patch_breakpoints_precomputed();
 #else
-			search_and_patch_breakpoints();
+				search_and_patch_breakpoints();
 #endif
+			});
 		}
 
 		PVOID WINAPI add_vectored_exception_handler_stub(ULONG first, PVECTORED_EXCEPTION_HANDLER handler)
