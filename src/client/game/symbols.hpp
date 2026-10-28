@@ -241,6 +241,7 @@ namespace game
 	WEAK symbol<const float*(const float* v)> Scr_AllocVector{ 0x68BDB0, 0x492590 };
 	WEAK symbol<const char*(unsigned int index)> Scr_GetString{ 0x690C00, 0x497470 };
 	WEAK symbol<void(const char* value)> Scr_AddString{ 0x68FC30, 0x496360 };
+	WEAK symbol<void(void* ent)> Scr_AddEntity{ 0x5B8290 };
 	WEAK symbol<void(int value)> Scr_AddInt{ 0x68FB50, 0x496280 };
 	WEAK symbol<scr_string_t(unsigned int index)> Scr_GetConstString{ 0x690640, 0x496E40 };
 	WEAK symbol<int(unsigned int index)> Scr_GetInt{ 0x690970, 0x4971E0 };
@@ -279,12 +280,14 @@ namespace game
 	WEAK symbol<unsigned int(unsigned int)> GetObjectType{ 0x68B080, 0x4917F0 };
 	WEAK symbol<unsigned int(unsigned int, unsigned int)> GetVariable{ 0x68B180, 0x4918F0 };
 	WEAK symbol<void(unsigned int id)> RemoveRefToObject{ 0x68B3C0, 0x491B30 };
+	WEAK symbol<void(int type, VariableUnion value)> RemoveRefToValue{ 0x68B4A0 };
 	WEAK symbol<void(uint64_t markPos)> LargeLocalResetToMark{ 0x287590, 0xEBD70 };
 	WEAK symbol<void(const char* filename)> ProcessScript{ 0x68F1B0, 0x4958D0 };
 
 	WEAK symbol<unsigned int(unsigned int localId, const char* pos, unsigned int paramcount)> VM_Execute{ 0x6922A0, 0x498B50 };
 	
 	WEAK symbol<const char*(scr_string_t stringValue)> SL_ConvertToString{ 0x688C90, 0x48F3D0 };
+	WEAK symbol<unsigned int(const char* str, unsigned int user)> SL_GetString{ 0x6891F0 };
 	WEAK symbol<unsigned int(char const* str)> SL_GetCanonicalString{ 0x685510, 0x48BD60 };
 
 	WEAK symbol<void(errorParm_t code, const char* message, ...)> Com_Error{ 0x90750, 0x46F7C0 };
@@ -399,6 +402,8 @@ namespace game
 		WEAK symbol<int> svs_time{ 0xC5FBA44 };
 		WEAK symbol<mp::client_t*> svs_clients{ 0xC5FBA58 };
 		WEAK symbol<mp::gentity_s> g_entities{ 0x9ED4430 };
+		// Level object ID used by Scr_NotifyLevel (0x691560).
+		WEAK symbol<unsigned int> levelEntityId{ 0xB12A030 };
 	}
 
 	WEAK symbol<void(bool frontend, bool cg)> LUI_CoD_Init{ 0x318A00, 0x19CA30 };
