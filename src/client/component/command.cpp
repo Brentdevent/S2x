@@ -6,6 +6,7 @@
 
 #include <game/game.hpp>
 
+#include <utils/finally.hpp>
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
 #include <utils/memory.hpp>
@@ -632,6 +633,68 @@ namespace command
 			game::CL_ForwardCommandToServer(local_client_num, text.data());
 		}
 
+		bool handle_chat_command(const int client_num, const params_sv& params)
+		{
+			const auto event_name = utils::string::to_lower(params[0]);
+			if ((event_name != "say" && event_name != "say_team") || params.size() < 2)
+			{
+				return false;
+			}
+
+			if (!game::SV_Loaded() || game::virtual_lobby_loaded() ||
+				client_num < 0 || client_num >= *game::sv_maxclients || !*game::mp::levelEntityId)
+			{
+				return false;
+			}
+
+			auto* player = &game::mp::g_entities[client_num];
+			if (!player->client)
+			{
+				return false;
+			}
+
+			const auto player_id = game::FindEntityId(client_num, 0);
+			if (!player_id)
+			{
+				return false;
+			}
+
+			auto message = params.join(1);
+			// The chat prompt adds this marker; console commands do not.
+			if (!message.empty() && message.front() == '\x1F')
+			{
+				message.erase(0, 1);
+			}
+
+			const auto hidden = !message.empty() && message.front() == '/';
+			if (hidden)
+			{
+				message.erase(0, 1);
+			}
+
+			if (!message.empty())
+			{
+				// Notify in the server context, like Cmd_MenuResponse_f (0x54E800).
+				const auto event = game::SL_GetString(event_name.c_str(), 0);
+				const auto release_event = utils::finally([event]
+				{
+					game::VariableUnion value{};
+					value.stringValue = event;
+					game::RemoveRefToValue(game::VAR_STRING, value);
+				});
+
+				// Push in reverse order: level gets (player, message).
+				game::Scr_AddString(message.c_str());
+				game::Scr_AddEntity(player);
+				game::Scr_NotifyId(*game::mp::levelEntityId, event, 2);
+
+				game::Scr_AddString(message.c_str());
+				game::Scr_NotifyId(player_id, event, 1);
+			}
+
+			return hidden;
+		}
+
 		void client_command_mp_stub(const int client_num)
 		{
 			const params_sv params{};
@@ -642,7 +705,7 @@ namespace command
 			}
 
 			const auto handled = execute_custom_sv_command_internal(client_num, params);
-			if (!handled)
+			if (!handled && !handle_chat_command(client_num, params))
 			{
 				client_command_mp_hook.invoke<void>(client_num);
 			}
