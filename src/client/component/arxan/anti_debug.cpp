@@ -35,15 +35,13 @@ namespace arxan::anti_debug
 		utils::hook::detour nt_query_information_thread_hook;
 		utils::hook::detour create_mutex_ex_a_hook;
 		utils::hook::detour get_thread_context_hook;
+		utils::hook::detour resume_thread_hook;
 		utils::hook::detour virtual_alloc_hook;
 		utils::hook::detour check_remote_debugger_present_hook;
 		utils::hook::detour enum_windows_hook;
 
 		std::uint8_t* ntdll_code_address{};
 		size_t ntdll_code_size{};
-
-		std::atomic_uint32_t arxan_worker_process_query_count{};
-		HANDLE arxan_worker_park_event{};
 
 		PIMAGE_TLS_CALLBACK original_first_tls_callback = nullptr;
 		decltype(&_beginthread) original_begin_thread = nullptr;
@@ -97,61 +95,6 @@ namespace arxan::anti_debug
 			return original_begin_thread(start_address, stack_size, parameter);
 		}
 
-		bool disable_debug_function_checks()
-		{
-			// MP bootstrap checks expect the removed debugger hooks. Preserve the success path.
-			constexpr uint8_t esi_original[] =
-			{
-				0x80, 0x3F, 0xFF, // cmp byte ptr [rdi], 0xFF
-				0x40, 0x0F, 0x95, 0xC6, // setne sil
-				0xB9, 0x01, 0x00, 0x00, 0x00, // mov ecx, 1
-				0x80, 0x7F, 0x01, 0x25, // cmp byte ptr [rdi+1], 0x25
-			};
-			constexpr uint8_t ebx_original[] =
-			{
-				0x80, 0x3F, 0xFF, // cmp byte ptr [rdi], 0xFF
-				0x0F, 0x95, 0xC3, // setne bl
-				0xB9, 0x01, 0x00, 0x00, 0x00, // mov ecx, 1
-				0x80, 0x7F, 0x01, 0x25, // cmp byte ptr [rdi+1], 0x25
-				0x0F, 0x84, 0xE7, 0xAC, 0x7A, 0xEE, // je original target
-			};
-			uint8_t replacement[] =
-			{
-				0x31, 0xF6, // xor esi, esi (or ebx, ebx)
-				0xB9, 0x01, 0x00, 0x00, 0x00, // mov ecx, 1
-				0x48, 0x8B, 0x45, 0xA0, // mov rax, [rbp-0x60]
-				0xE9, 0x00, 0x00, 0x00, 0x00, // jmp success
-				0x90, 0x90, 0x90, 0x90, 0x90, // nop padding
-			};
-
-			for (const auto& site : mp::debug_function_checks)
-			{
-				const auto* code = reinterpret_cast<const void*>(game::relocate(site.rva));
-				const auto* original = site.uses_ebx ? ebx_original : esi_original;
-				const auto size = site.uses_ebx ? sizeof(ebx_original) : sizeof(esi_original);
-
-				if (std::memcmp(code, original, size) != 0)
-				{
-					return false;
-				}
-			}
-
-			constexpr size_t result_register_offset = 1;
-			constexpr size_t jump_displacement_offset = 12;
-			constexpr size_t jump_end_offset = jump_displacement_offset + sizeof(int32_t);
-
-			for (const auto& site : mp::debug_function_checks)
-			{
-				replacement[result_register_offset] = site.uses_ebx ? 0xDB : 0xF6;
-				const auto displacement = static_cast<int32_t>(site.resume - (site.rva + jump_end_offset));
-				std::memcpy(replacement + jump_displacement_offset, &displacement, sizeof(displacement));
-				const auto size = site.uses_ebx ? sizeof(ebx_original) : sizeof(esi_original);
-				utils::hook::copy(game::relocate(site.rva), replacement, size);
-			}
-
-			return true;
-		}
-
 		bool disable_debug_function_patches()
 		{
 			// Fail VirtualProtect so the game skips installing each debugger hook.
@@ -187,29 +130,71 @@ namespace arxan::anti_debug
 			return true;
 		}
 
-		void disable_worker_suspend_check()
+		void disable_worker()
 		{
-			// Allow debugger suspension without resuming the worker.
-			auto* const code = reinterpret_cast<uint8_t*>(
-				game::select(mp::worker_resume_offsets[0], sp::worker_resume_offsets[0]));
-			const auto dispatch = reinterpret_cast<void*>(
-				game::select(mp::guard_dispatch_icall, sp::guard_dispatch_icall));
-			constexpr uint8_t branch[] = {0x85, 0xC0, 0x0F, 0x84};
-
-			if (code[0] != 0xFF || code[1] != 0x15 ||
-				utils::hook::extract<void*>(code + 2) != dispatch ||
-				std::memcmp(code + 6, branch, sizeof(branch)) != 0)
+			static bool disabled{};
+			if (disabled)
 			{
-				throw std::runtime_error("Unable to locate the Arxan worker suspend check");
+				return;
 			}
 
-			constexpr uint8_t success[] =
-			{
-				0x31, 0xC0, // xor eax, eax
-				0x90, 0x90, 0x90, 0x90, // nop padding
-			};
+			const auto mp_binary = game::environment::uses_multiplayer_binary();
+			const auto& calls = mp_binary
+				? mp::worker_thread_calls : sp::worker_thread_calls;
+			const auto dispatch = reinterpret_cast<void*>(
+				game::select(mp::guard_dispatch_icall, sp::guard_dispatch_icall));
+			auto* frame_check = reinterpret_cast<uint8_t*>(
+				game::select(mp::worker_frame_check_offsets[0], sp::worker_frame_check_offsets[0]));
+			const auto frame_loop = game::select(mp::worker_frame_loop, sp::worker_frame_loop);
+			auto* status = reinterpret_cast<uint64_t*>(
+				game::select(mp::worker_debug_status, sp::worker_debug_status));
 
-			utils::hook::copy(code, success, sizeof(success));
+			for (const auto rva : calls)
+			{
+				auto* code = reinterpret_cast<uint8_t*>(game::relocate(rva));
+				if (code[0] != 0xFF || code[1] != 0x15 || utils::hook::extract<void*>(code + 2) != dispatch)
+				{
+					throw std::runtime_error("Unable to locate the Arxan worker startup calls");
+				}
+			}
+
+			constexpr uint8_t frame_load[] = {0x48, 0x8B, 0x05};
+			constexpr uint8_t frame_store[] = {0x48, 0x89, 0x44, 0x24, 0x30};
+			if (std::memcmp(frame_check, frame_load, sizeof(frame_load)) != 0 ||
+				std::memcmp(frame_check + 7, frame_store, sizeof(frame_store)) != 0 ||
+				*status != 0xCEF43C2772A84800ull)
+			{
+				throw std::runtime_error("Unable to locate the Arxan worker state");
+			}
+
+			// Preserve the worker's bootstrap state without creating a thread.
+			const auto imported_atoi = *reinterpret_cast<uintptr_t*>(
+				game::select(mp::worker_atoi_import, sp::worker_atoi_import));
+			utils::hook::set<uint64_t>(game::select(mp::worker_cookie, sp::worker_cookie),
+				imported_atoi ^ 0xD092C15A145FC679ull);
+			utils::hook::set(status, mp_binary ? 0x39FCB72AB77AEFFDull : 0x39FCB72AB77AEFFFull);
+
+			constexpr uint8_t no_thread[] = {0x31, 0xC0, 0x90, 0x90, 0x90, 0x90}; // xor eax, eax
+			for (const auto rva : calls)
+			{
+				utils::hook::copy(game::relocate(rva), no_thread, sizeof(no_thread));
+			}
+
+			// Continue the frame loop without querying or resuming the absent worker.
+			utils::hook::jump(frame_check, reinterpret_cast<void*>(frame_loop));
+			disabled = true;
+		}
+
+		DWORD WINAPI resume_thread_stub(const HANDLE thread)
+		{
+			const auto return_address = game::select(mp::worker_load_resume_return, sp::worker_load_resume_return);
+			if (!thread && reinterpret_cast<uintptr_t>(_ReturnAddress()) == return_address)
+			{
+				// The encrypted map loader still probes the removed worker.
+				return 0;
+			}
+
+			return resume_thread_hook.invoke<DWORD>(thread);
 		}
 
 		template <size_t SiteCount>
@@ -516,32 +501,6 @@ namespace arxan::anti_debug
 			const ULONG system_information_length,
 			const PULONG return_length)
 		{
-			const auto process_query_return = game::environment::uses_multiplayer_binary()
-				? mp::arxan_worker_process_query_return
-				: sp::arxan_worker_process_query_return;
-			const auto bootstrap_query_count = game::environment::uses_multiplayer_binary()
-				? mp::arxan_worker_bootstrap_query_count
-				: sp::arxan_worker_bootstrap_query_count;
-
-			if (arxan_worker_park_event
-				&& system_information_class == SystemProcessInformation
-				&& system_information == nullptr
-				&& system_information_length == 0
-				&& game::derelocate(_ReturnAddress()) == process_query_return)
-			{
-				// Park after bootstrap, once the previous process-list allocation is freed.
-				const auto query_count = arxan_worker_process_query_count.fetch_add(1, std::memory_order_relaxed);
-				if (query_count == 0 && game::environment::uses_multiplayer_binary() && !disable_debug_function_checks())
-				{
-					fail_startup("The Arxan worker's debugger checks do not match the expected game code.");
-				}
-
-				if (query_count >= bootstrap_query_count)
-				{
-					WaitForSingleObject(arxan_worker_park_event, INFINITE);
-				}
-			}
-
 			const auto status = nt_query_system_information_hook.invoke<NTSTATUS>(
 				system_information_class, system_information, system_information_length, return_length);
 
@@ -797,6 +756,10 @@ namespace arxan::anti_debug
 				try
 				{
 					disable_peb_debugger_checks();
+					if (site.patches_debug_functions)
+					{
+						disable_worker();
+					}
 				}
 				catch (const std::exception& e)
 				{
@@ -817,6 +780,8 @@ namespace arxan::anti_debug
 
 		void install_thread_information_hooks(const utils::nt::library& ntdll)
 		{
+			resume_thread_hook.create(ResumeThread, resume_thread_stub);
+
 			auto* get_thread_context_func = utils::nt::library("kernelbase.dll").get_proc<void*>("GetThreadContext");
 			get_thread_context_hook.create(get_thread_context_func, get_thread_context_stub);
 
@@ -838,9 +803,6 @@ namespace arxan::anti_debug
 		void post_load() override
 		{
 			const utils::nt::library ntdll("ntdll.dll");
-
-			// Keep the worker parked for the lifetime of the process.
-			arxan_worker_park_event = CreateEventA(nullptr, TRUE, FALSE, nullptr);
 
 			auto* dll_characteristics = &utils::nt::library().get_optional_header()->DllCharacteristics;
 			utils::hook::set<WORD>(dll_characteristics, *dll_characteristics | IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE);
@@ -893,7 +855,6 @@ namespace arxan::anti_debug
 
 		void post_unpack() override
 		{
-			disable_worker_suspend_check();
 			disable_peb_debugger_checks();
 		}
 

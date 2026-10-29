@@ -4,13 +4,6 @@
 
 namespace arxan::anti_debug
 {
-	struct debug_function_check_site
-	{
-		uint64_t rva;
-		uint64_t resume;
-		bool uses_ebx{};
-	};
-
 	struct ntdll_copy_site
 	{
 		uint64_t return_rva;
@@ -47,30 +40,24 @@ namespace arxan::anti_debug
 
 namespace mp
 {
-	inline constexpr uint64_t arxan_worker_process_query_return = 0x1CDF7F;
-	inline constexpr uint32_t arxan_worker_bootstrap_query_count = 4;
 	inline constexpr uint64_t guard_dispatch_icall = 0xB1C688;
 
-	// Offsets = match + 0x8.
-	// 8B C8 49 8B CD 49 8B C1 FF 15 ? ? ? ? 85 C0 0F 84 ? ? ? ?
-	inline constexpr uint64_t worker_resume_offsets[] = {0x78ED03};
+	// CreateThread: 45 33 C9 49 8B C2 33 D2 33 C9 FF 15 ? ? ? ? (match + 0xA).
+	// SetThreadPriority: BA FE FF FF FF 49 8B CD 49 8B C0 FF 15 ? ? ? ? (match + 0xB).
+	inline constexpr uint64_t worker_thread_calls[] = {0x7994D1, 0x79F518};
 
-	inline constexpr arxan::anti_debug::debug_function_check_site debug_function_checks[] = {
-		{0x11A65390, 0x114FC22A}, // DbgBreakPoint
-		{0x11F0E030, 0x117C2A1D}, // DbgPrintReturnControlC
-		{0x11F2AC30, 0x470697}, // DbgPrompt
-		{0x1181238F, 0x20E287}, // DbgUiConnectToDbg
-		{0x11D070C7, 0x49E387}, // DbgUiContinue
-		{0x117F6635, 0x46F6E7}, // DbgUiConvertStateChangeStructure
-		{0x119B4AD1, 0x508CA6}, // DbgUiDebugActiveProcess
-		{0x11C21A17, 0xA48777}, // DbgUiGetThreadDebugObject
-		{0x1196386F, 0x1FEC27}, // DbgUiIssueRemoteBreakin
-		{0x11D0888F, 0x4680A7}, // DbgUiRemoteBreakin
-		{0x11CD6176, 0x1BB404}, // DbgUiSetThreadDebugObject
-		{0x1DF8FC, 0x471197}, // DbgUiStopDebugging
-		{0x1154540F, 0x11A2873C}, // DbgUiWaitStateChange
-		{0x11A2CB11, 0x11D4ED2B, true}, // DbgUserBreakPoint (ebx)
-	};
+	// 48 8B 05 ? ? ? ? 48 89 44 24 30 48 8B 44 24 30 48 85 C0 0F 84
+	inline constexpr uint64_t worker_frame_check_offsets[] = {0x78BD53};
+	inline constexpr uint64_t worker_frame_loop = 0x78BCF8;
+
+	// Decrypted map loader; return address = match + 0xE.
+	// 48 8B 4C 24 ? 48 8B C2 FF 15 ? ? ? ? 85 C0 0F 85
+	inline constexpr uint64_t worker_load_resume_return = 0x41C095;
+
+	// Cookie writer: 48 B9 79 C6 5F 14 5A C1 92 D0 48 8B 05 ? ? ? ? 48 33 C1 48 89 05
+	inline constexpr uint64_t worker_cookie = 0x6E7B3F0;
+	inline constexpr uint64_t worker_atoi_import = 0x1126CA20;
+	inline constexpr uint64_t worker_debug_status = 0xE051C0;
 
 	// Each copy loop is decrypted just before its corresponding VirtualAlloc call.
 	inline constexpr arxan::anti_debug::ntdll_copy_site ntdll_copy_sites[] = {
@@ -504,13 +491,24 @@ namespace mp
 
 namespace sp
 {
-	inline constexpr uint64_t arxan_worker_process_query_return = 0x6238F;
-	inline constexpr uint32_t arxan_worker_bootstrap_query_count = 0;
 	inline constexpr uint64_t guard_dispatch_icall = 0x84D518;
 
-	// Offsets = match + 0x8.
-	// 8B C8 49 8B CD 49 8B C1 FF 15 ? ? ? ? 85 C0 0F 84 ? ? ? ?
-	inline constexpr uint64_t worker_resume_offsets[] = {0x4EE083};
+	// CreateThread: 45 33 C9 49 8B C2 33 D2 33 C9 FF 15 ? ? ? ? (match + 0xA).
+	// SetThreadPriority: BA FE FF FF FF 49 8B CD 49 8B C0 FF 15 ? ? ? ? (match + 0xB).
+	inline constexpr uint64_t worker_thread_calls[] = {0x4F8851, 0x4FE898};
+
+	// 48 8B 05 ? ? ? ? 48 89 44 24 30 48 8B 44 24 30 48 85 C0 0F 84
+	inline constexpr uint64_t worker_frame_check_offsets[] = {0x4EB0D2};
+	inline constexpr uint64_t worker_frame_loop = 0x4EB038;
+
+	// Decrypted map loader; return address = match + 0xE.
+	// 48 8B 4C 24 ? 48 8B C2 FF 15 ? ? ? ? 85 C0 0F 85
+	inline constexpr uint64_t worker_load_resume_return = 0x211966;
+
+	// Cookie writer: 48 B9 79 C6 5F 14 5A C1 92 D0 48 8B 05 ? ? ? ? 48 33 C1 48 89 05
+	inline constexpr uint64_t worker_cookie = 0x120AB00;
+	inline constexpr uint64_t worker_atoi_import = 0xEC3F3A0;
+	inline constexpr uint64_t worker_debug_status = 0xABDCD0;
 
 	// Each copy loop is decrypted just before its corresponding VirtualAlloc call.
 	inline constexpr arxan::anti_debug::ntdll_copy_site ntdll_copy_sites[] = {

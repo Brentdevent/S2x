@@ -95,7 +95,7 @@ namespace arxan::code_healing
 				patch_region{mp::heap_force_flags_read_offsets, 0x4},
 				patch_region{mp::heap_tail_read_offsets, 0x7},
 				patch_region{empty_offsets, 0x6},
-				patch_region{mp::worker_resume_offsets, 0x6},
+				patch_region{mp::worker_frame_check_offsets, 0x5},
 			};
 
 			static const std::array<patch_region, 16> sp_regions
@@ -115,7 +115,7 @@ namespace arxan::code_healing
 				patch_region{sp::heap_force_flags_read_offsets, 0x4},
 				patch_region{sp::heap_tail_read_offsets, 0x7},
 				patch_region{sp::heap_flags_split_read_offsets, 0x6},
-				patch_region{sp::worker_resume_offsets, 0x6},
+				patch_region{sp::worker_frame_check_offsets, 0x5},
 			};
 
 			return game::environment::uses_multiplayer_binary() ? mp_regions : sp_regions;
