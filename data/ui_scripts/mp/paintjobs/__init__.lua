@@ -14,6 +14,7 @@ local function start_loading( popup, event )
 	local is_zombies = Engine.IsZombiesMode()
 	local elapsed = 0
 	local finished = false
+
 	local timer = LUI.UITimer.new( 250, {
 		name = "s2x_check_paintjobs",
 		dispatchChildren = false
@@ -23,6 +24,7 @@ local function start_loading( popup, event )
 		if finished then
 			return
 		end
+
 		finished = true
 		timer:Stop()
 		timer:close()
@@ -30,13 +32,16 @@ local function start_loading( popup, event )
 
 	popup.alwaysSendMenuClose = true
 	popup:addEventHandler( "menu_close", stop_loading )
+
 	timer.timerEventTarget = timer
 	timer:registerEventHandler( "s2x_check_paintjobs", function ( element, tick )
 		if finished then
 			return
 		end
+
 		if Engine.GetXUIDByController( controller ) ~= owner
-			or Engine.InFrontend() ~= in_frontend or Engine.IsZombiesMode() ~= is_zombies then
+			or Engine.InFrontend() ~= in_frontend
+			or Engine.IsZombiesMode() ~= is_zombies then
 			stop_loading()
 			LUI.FlowManager.RequestLeaveMenu( popup )
 			return
@@ -45,12 +50,14 @@ local function start_loading( popup, event )
 		-- The native online pump fetches the private cache.
 		local ready = UGC_Editor.AreUGCItemsFetchedForController( controller, paintshop )
 		elapsed = elapsed + tick.timeElapsed
+
 		if not ready and elapsed < 10000 then
 			return
 		end
 
 		stop_loading()
 		LUI.FlowManager.RequestLeaveMenu( popup )
+
 		if ready then
 			ACTIONS.OpenMenu( personal_menu, true, controller )
 		else
@@ -58,6 +65,7 @@ local function start_loading( popup, event )
 				UGCUtils.Strings.LoadingFailed[paintshop], nil )
 		end
 	end )
+
 	popup:addElement( timer )
 end
 
@@ -78,9 +86,11 @@ UGCUtils.OpenMenuWhenPaintjobsReady = function ( menu, controller, menu_name, ca
 	if menu_name ~= personal_menu or category ~= paintshop then
 		return stock_open_menu( menu, controller, menu_name, category )
 	end
+
 	if LUI.FlowManager.IsMenuInStack( menu:getRootParent(), loading_menu ) then
 		return
 	end
+
 	if UGC_Editor.AreUGCItemsFetchedForController( controller, paintshop ) then
 		ACTIONS.OpenMenu( menu_name, true, controller )
 	else

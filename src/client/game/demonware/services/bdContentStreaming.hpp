@@ -6,6 +6,7 @@ namespace demonware
 	{
 	public:
 		bdContentStreaming();
+
 		void exec_task(service_server* server, const std::string& data) override;
 
 	private:

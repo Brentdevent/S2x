@@ -76,7 +76,7 @@ namespace demonware
 		}
 		catch (const std::exception& error)
 		{
-			console::error("[DW]: Paint job storage failed: %s\n", error.what());
+			console::error("[DW]: Content storage failed: %s\n", error.what());
 			server->create_reply(this->task_id(), game::demonware::BD_LOBBY_INTERNAL_FAILURE).send();
 		}
 	}
@@ -87,8 +87,11 @@ namespace demonware
 		unsigned int since{};
 		unsigned short maximum{}, offset{}, category{};
 		std::string name;
-		if (!buffer->read_uint64(&owner) || !buffer->read_uint32(&since)
-			|| !buffer->read_uint16(&maximum) || !buffer->read_uint16(&offset)
+
+		if (!buffer->read_uint64(&owner)
+			|| !buffer->read_uint32(&since)
+			|| !buffer->read_uint16(&maximum)
+			|| !buffer->read_uint16(&offset)
 			|| !buffer->read_uint16(&category)
 			|| (!buffer->has_only_zero_padding() && !buffer->read_string(&name, 127))
 			|| !buffer->has_only_zero_padding())
@@ -98,28 +101,33 @@ namespace demonware
 		}
 
 		auto reply = server->create_reply(this->task_id());
-		if (category == content_store::paintjob_category)
+		auto records = content_store::list_files(owner, category);
+
+		std::erase_if(records, [&](const auto& record)
 		{
-			auto records = content_store::list_files(owner);
-			std::erase_if(records, [&](const auto& record)
-			{
-				return record.modified < since || (!name.empty() && record.name != name);
-			});
-			std::sort(records.begin(), records.end(), [](const auto& left, const auto& right)
-			{
-				return left.modified != right.modified ? left.modified > right.modified : left.slot < right.slot;
-			});
-			const auto identity = runtime_context::get_snapshot();
-			const auto end = std::min(records.size(), static_cast<size_t>(offset) + maximum);
-			for (size_t i = offset; i < end; ++i)
-			{
-				// An empty URL makes the native client perform preDownload.
-				auto result = std::make_unique<file_metadata_result>();
-				result->record = std::move(records[i]);
-				result->owner_name = identity ? identity->persona_name.substr(0, 63) : "";
-				reply.add(result);
-			}
+			return record.modified < since || (!name.empty() && record.name != name);
+		});
+
+		std::sort(records.begin(), records.end(), [](const auto& left, const auto& right)
+		{
+			return left.modified != right.modified
+				? left.modified > right.modified
+				: left.slot < right.slot;
+		});
+
+		const auto identity = runtime_context::get_snapshot();
+		const auto end = std::min(records.size(), static_cast<size_t>(offset) + maximum);
+
+		for (size_t i = offset; i < end; ++i)
+		{
+			// An empty URL makes the native client perform preDownload.
+			auto result = std::make_unique<file_metadata_result>();
+			result->record = std::move(records[i]);
+			result->owner_name = identity ? identity->persona_name.substr(0, 63) : "";
+
+			reply.add(result);
 		}
+
 		reply.send();
 	}
 
@@ -128,28 +136,36 @@ namespace demonware
 		content_store::file_record record;
 		unsigned int size{};
 		std::string locale;
-		if (!buffer->read_string(&record.name, 127) || !buffer->read_uint16(&record.slot)
-			|| !buffer->read_uint32(&size) || !buffer->read_uint16(&record.category)
-			|| !buffer->read_blob(&record.metadata, 512) || !buffer->read_string(&locale, 31)
+
+		if (!buffer->read_string(&record.name, 127)
+			|| !buffer->read_uint16(&record.slot)
+			|| !buffer->read_uint32(&size)
+			|| !buffer->read_uint16(&record.category)
+			|| !buffer->read_blob(&record.metadata, 512)
+			|| !buffer->read_string(&locale, 31)
 			|| !buffer->has_only_zero_padding())
 		{
 			server->create_reply(this->task_id(), game::demonware::BD_PARAM_PARSE_ERROR).send();
 			return;
 		}
-		if (record.category != content_store::paintjob_category || !content_store::valid_slot(record.slot)
-			|| size != content_store::paintjob_size)
+
+		if (!content_store::valid_file(record.category, record.slot, size))
 		{
 			server->create_reply(this->task_id(), game::demonware::BD_CONTENTSTREAMING_SERVER_NOT_CONFIGURED).send();
 			return;
 		}
+
 		record.owner = runtime_context::get_local_user_id();
+
 		auto result = std::make_unique<upload_destination>();
 		result->token = content_store::begin_upload(std::move(record));
+
 		if (result->token.empty())
 		{
 			server->create_reply(this->task_id(), game::demonware::BD_PERMISSION_DENIED).send();
 			return;
 		}
+
 		auto reply = server->create_reply(this->task_id());
 		reply.add(result);
 		reply.send();
@@ -161,25 +177,36 @@ namespace demonware
 		unsigned short storage_id{};
 		unsigned int size{};
 		std::string token, locale;
-		if (!buffer->read_string(&record.name, 127) || !buffer->read_uint16(&record.slot)
-			|| !buffer->read_uint16(&storage_id) || !buffer->read_string(&token, 127)
-			|| !buffer->read_uint32(&size) || !buffer->read_uint16(&record.category)
-			|| !buffer->read_blob(&record.metadata, 512) || !content_store::read_tags(*buffer, record.tags)
-			|| !buffer->read_string(&locale, 31) || !buffer->has_only_zero_padding()
-			|| storage_id != content_store::storage_server_id || size != content_store::paintjob_size)
+
+		if (!buffer->read_string(&record.name, 127)
+			|| !buffer->read_uint16(&record.slot)
+			|| !buffer->read_uint16(&storage_id)
+			|| !buffer->read_string(&token, 127)
+			|| !buffer->read_uint32(&size)
+			|| !buffer->read_uint16(&record.category)
+			|| !buffer->read_blob(&record.metadata, 512)
+			|| !content_store::read_tags(*buffer, record.tags)
+			|| !buffer->read_string(&locale, 31)
+			|| !buffer->has_only_zero_padding()
+			|| storage_id != content_store::storage_server_id
+			|| !content_store::valid_file(record.category, record.slot, size))
 		{
 			server->create_reply(this->task_id(), game::demonware::BD_PARAM_PARSE_ERROR).send();
 			return;
 		}
+
 		record.owner = runtime_context::get_local_user_id();
 		const auto id = content_store::finish_upload(token, record);
+
 		if (!id)
 		{
 			server->create_reply(this->task_id(), game::demonware::BD_CONTENTSTREAMING_FILE_NOT_AVAILABLE).send();
 			return;
 		}
+
 		auto result = std::make_unique<file_id_result>();
 		result->id = *id;
+
 		auto reply = server->create_reply(this->task_id());
 		reply.add(result);
 		reply.send();
@@ -188,11 +215,15 @@ namespace demonware
 	void bdContentStreaming::removeFile(service_server* server, byte_buffer* buffer) const
 	{
 		unsigned short slot{};
-		if (!buffer->read_uint16(&slot) || !buffer->has_only_zero_padding() || !content_store::valid_slot(slot))
+
+		if (!buffer->read_uint16(&slot)
+			|| !buffer->has_only_zero_padding()
+			|| !content_store::valid_slot(slot))
 		{
 			server->create_reply(this->task_id(), game::demonware::BD_PARAM_PARSE_ERROR).send();
 			return;
 		}
+
 		content_store::delete_file(slot);
 		server->create_reply(this->task_id()).send();
 	}
@@ -201,22 +232,30 @@ namespace demonware
 	{
 		std::uint64_t id{};
 		unsigned int size{};
-		if (!buffer->read_uint64(&id) || !buffer->read_uint32(&size) || !buffer->has_only_zero_padding())
+
+		if (!buffer->read_uint64(&id)
+			|| !buffer->read_uint32(&size)
+			|| !buffer->has_only_zero_padding())
 		{
 			server->create_reply(this->task_id(), game::demonware::BD_PARAM_PARSE_ERROR).send();
 			return;
 		}
+
 		auto record = content_store::find_file(id);
+
 		if (!record)
 		{
 			server->create_reply(this->task_id(), game::demonware::BD_CONTENTSTREAMING_FILE_NOT_AVAILABLE).send();
 			return;
 		}
+
 		auto result = std::make_unique<file_metadata_result>();
 		result->record = std::move(*record);
 		result->url = content_store::download_url(id);
+
 		const auto identity = runtime_context::get_snapshot();
 		result->owner_name = identity ? identity->persona_name.substr(0, 63) : "";
+
 		auto reply = server->create_reply(this->task_id());
 		reply.add(result);
 		reply.send();

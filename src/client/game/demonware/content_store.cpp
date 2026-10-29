@@ -1,6 +1,7 @@
 #include <std_include.hpp>
 #include "content_store.hpp"
 #include "runtime_context.hpp"
+#include "component/console/console.hpp"
 #include "game/player_profile.hpp"
 
 #include <utils/cryptography.hpp>
@@ -9,6 +10,34 @@ namespace demonware::content_store
 {
 	namespace
 	{
+		struct content_format
+		{
+			unsigned short category;
+			unsigned short first_slot;
+			unsigned short slot_count;
+			unsigned int size;
+			const char* directory;
+		};
+
+		constexpr content_format formats[] =
+		{
+			{emblem_category, first_emblem_slot, emblem_slots, emblem_size, "emblems"},
+			{paintjob_category, first_paintjob_slot, paintjob_slots, paintjob_size, "paintjobs"},
+		};
+
+		const content_format* format_for_slot(const unsigned short slot)
+		{
+			for (const auto& format : formats)
+			{
+				if (slot >= format.first_slot && slot < format.first_slot + format.slot_count)
+				{
+					return &format;
+				}
+			}
+
+			return nullptr;
+		}
+
 		struct pending_upload
 		{
 			file_record record{};
@@ -20,18 +49,27 @@ namespace demonware::content_store
 
 		std::filesystem::path file_path(const std::uint64_t owner, const unsigned short slot)
 		{
-			return player_profile::user_directory() / "paintjobs" / std::to_string(owner)
+			const auto* format = format_for_slot(slot);
+
+			if (!format)
+			{
+				throw std::runtime_error("Invalid content slot");
+			}
+
+			return player_profile::user_directory() / format->directory / std::to_string(owner)
 				/ (std::to_string(slot) + ".ugc");
 		}
 
 		std::uint64_t random_id()
 		{
 			std::uint64_t value{};
+
 			do
 			{
 				utils::cryptography::random::get_data(&value, sizeof(value));
 				value &= INT64_MAX;
 			} while (!value);
+
 			return value;
 		}
 
@@ -39,15 +77,45 @@ namespace demonware::content_store
 		{
 			const auto now = std::chrono::steady_clock::now();
 			const auto owner = runtime_context::get_local_user_id();
+
 			std::erase_if(uploads, [&](const auto& entry)
 			{
 				return entry.second.expires <= now || entry.second.record.owner != owner;
 			});
 		}
 
+		void quarantine_file(const std::filesystem::path& path)
+		{
+			for (size_t index = 0;; ++index)
+			{
+				auto backup = path;
+				backup += ".corrupt";
+
+				if (index)
+				{
+					backup += "." + std::to_string(index);
+				}
+
+				if (MoveFileExW(path.c_str(), backup.c_str(), MOVEFILE_WRITE_THROUGH))
+				{
+					console::warn("[DW]: Invalid content file moved to %s\n", backup.string().c_str());
+					return;
+				}
+
+				const auto error = GetLastError();
+
+				if (error != ERROR_FILE_EXISTS && error != ERROR_ALREADY_EXISTS)
+				{
+					throw std::system_error(static_cast<int>(error), std::system_category(),
+						"Unable to preserve invalid content file");
+				}
+			}
+		}
+
 		std::optional<file_record> load_file(const std::uint64_t owner, const unsigned short slot)
 		{
 			const auto path = file_path(owner, slot);
+
 			if (!std::filesystem::exists(path))
 			{
 				return {};
@@ -55,32 +123,51 @@ namespace demonware::content_store
 
 			std::ifstream stream(path, std::ios::binary | std::ios::ate);
 			const auto size = stream.tellg();
-			if (size < 0 || size > 32768)
+
+			if (size < 0)
 			{
-				throw std::runtime_error("Unable to read paint job file");
+				throw std::runtime_error("Unable to read content file");
 			}
+
+			if (size > 32768)
+			{
+				stream.close();
+				quarantine_file(path);
+				return {};
+			}
+
 			std::string data(static_cast<size_t>(size), '\0');
 			stream.seekg(0);
+
 			if (!stream.read(data.data(), size))
 			{
-				throw std::runtime_error("Unable to read paint job file");
+				throw std::runtime_error("Unable to read content file");
 			}
+
+			stream.close();
 
 			byte_buffer buffer(std::move(data));
 			unsigned int version{};
 			file_record record;
+
 			if (!buffer.read_uint32(&version) || version != 1
 				|| !buffer.read_uint64(&record.id) || !record.id
 				|| !buffer.read_uint64(&record.owner) || record.owner != owner
 				|| !buffer.read_uint16(&record.slot) || record.slot != slot
-				|| !buffer.read_uint16(&record.category) || record.category != paintjob_category
-				|| !buffer.read_uint32(&record.created) || !buffer.read_uint32(&record.modified)
-				|| !buffer.read_string(&record.name, 127) || !buffer.read_blob(&record.metadata, 512)
-				|| !read_tags(buffer, record.tags) || !buffer.read_blob(&record.data, paintjob_size)
-				|| record.data.size() != paintjob_size || buffer.remaining_size())
+				|| !buffer.read_uint16(&record.category)
+				|| !buffer.read_uint32(&record.created)
+				|| !buffer.read_uint32(&record.modified)
+				|| !buffer.read_string(&record.name, 127)
+				|| !buffer.read_blob(&record.metadata, 512)
+				|| !read_tags(buffer, record.tags)
+				|| !buffer.read_blob(&record.data, paintjob_size)
+				|| !valid_file(record.category, record.slot, record.data.size())
+				|| buffer.remaining_size())
 			{
-				throw std::runtime_error("Invalid paint job file");
+				quarantine_file(path);
+				return {};
 			}
+
 			return record;
 		}
 
@@ -102,12 +189,15 @@ namespace demonware::content_store
 			const auto path = file_path(record.owner, record.slot);
 			auto temporary = path;
 			temporary += ".tmp";
+
 			std::filesystem::create_directories(path.parent_path());
+
 			const auto handle = CreateFileW(temporary.c_str(), GENERIC_WRITE, 0, nullptr,
 				CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+
 			if (handle == INVALID_HANDLE_VALUE)
 			{
-				throw std::runtime_error("Unable to create paint job file");
+				throw std::runtime_error("Unable to create content file");
 			}
 
 			const auto& data = buffer.get_buffer();
@@ -115,37 +205,51 @@ namespace demonware::content_store
 			const auto saved = WriteFile(handle, data.data(), static_cast<DWORD>(data.size()), &written, nullptr)
 				&& written == data.size() && FlushFileBuffers(handle);
 			const auto closed = CloseHandle(handle);
+
 			if (!saved || !closed || !MoveFileExW(temporary.c_str(), path.c_str(),
 				MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
 			{
 				DeleteFileW(temporary.c_str());
-				throw std::runtime_error("Unable to save paint job file");
+				throw std::runtime_error("Unable to save content file");
 			}
 		}
 	}
 
 	bool valid_slot(const unsigned short slot)
 	{
-		return slot >= first_paintjob_slot && slot < first_paintjob_slot + paintjob_slots;
+		return format_for_slot(slot) != nullptr;
+	}
+
+	bool valid_file(const unsigned short category, const unsigned short slot, const size_t size)
+	{
+		const auto* format = format_for_slot(slot);
+		return format && format->category == category && format->size == size;
 	}
 
 	bool read_tags(byte_buffer& buffer, file_tags& tags)
 	{
 		unsigned int count{}, size{};
-		if (!buffer.read_array_header(10, &count, &size) || count > 120 || count % 2 || (count && size != 8))
+
+		if (!buffer.read_array_header(10, &count, &size)
+			|| count > 120 || count % 2 || (count && size != 8))
 		{
 			return false;
 		}
+
 		tags.clear();
 		buffer.set_use_data_types(false);
+
 		bool valid = true;
+
 		for (unsigned int i = 0; i < count / 2 && valid; ++i)
 		{
 			std::uint64_t key{}, value{};
 			valid = buffer.read_uint64(&key) && buffer.read_uint64(&value);
 			tags.emplace_back(key, value);
 		}
+
 		buffer.set_use_data_types(true);
+
 		return valid;
 	}
 
@@ -153,11 +257,13 @@ namespace demonware::content_store
 	{
 		buffer.write_array_header(10, static_cast<unsigned int>(tags.size() * 2), 8);
 		buffer.set_use_data_types(false);
+
 		for (const auto& [key, value] : tags)
 		{
 			buffer.write_uint64(key);
 			buffer.write_uint64(value);
 		}
+
 		buffer.set_use_data_types(true);
 	}
 
@@ -166,33 +272,55 @@ namespace demonware::content_store
 		return "http://" + std::string(hostname) + "/files/" + std::to_string(id);
 	}
 
-	std::vector<file_record> list_files(const std::uint64_t owner)
+	std::vector<file_record> list_files(const std::uint64_t owner, const unsigned short category)
 	{
 		std::lock_guard lock(store_mutex);
 		std::vector<file_record> result;
+
 		if (!owner || owner != runtime_context::get_local_user_id())
 		{
 			return result;
 		}
-		for (unsigned short slot = first_paintjob_slot; slot < first_paintjob_slot + paintjob_slots; ++slot)
+
+		for (const auto& format : formats)
 		{
-			if (auto record = load_file(owner, slot))
+			if (format.category != category)
 			{
-				result.push_back(std::move(*record));
+				continue;
+			}
+
+			for (unsigned short slot = format.first_slot; slot < format.first_slot + format.slot_count; ++slot)
+			{
+				try
+				{
+					if (auto record = load_file(owner, slot))
+					{
+						result.push_back(std::move(*record));
+					}
+				}
+				catch (const std::exception& error)
+				{
+					console::warn("[DW]: Unable to load content slot %hu: %s\n", slot, error.what());
+				}
 			}
 		}
+
 		return result;
 	}
 
 	std::optional<file_record> find_file(const std::uint64_t id)
 	{
-		for (auto& record : list_files(runtime_context::get_local_user_id()))
+		for (const auto& format : formats)
 		{
-			if (record.id == id)
+			for (auto& record : list_files(runtime_context::get_local_user_id(), format.category))
 			{
-				return std::move(record);
+				if (record.id == id)
+				{
+					return std::move(record);
+				}
 			}
 		}
+
 		return {};
 	}
 
@@ -200,9 +328,14 @@ namespace demonware::content_store
 	{
 		std::lock_guard lock(store_mutex);
 		expire_uploads();
-		if (!record.owner || record.owner != runtime_context::get_local_user_id()
-			|| !valid_slot(record.slot) || record.category != paintjob_category
-			|| record.name.size() > 127 || record.metadata.size() > 512)
+
+		const auto* format = format_for_slot(record.slot);
+
+		if (!record.owner
+			|| record.owner != runtime_context::get_local_user_id()
+			|| !format || record.category != format->category
+			|| record.name.size() > 127
+			|| record.metadata.size() > 512)
 		{
 			return {};
 		}
@@ -210,13 +343,21 @@ namespace demonware::content_store
 		const auto existing = load_file(record.owner, record.slot);
 		record.id = existing ? existing->id : random_id();
 		record.created = existing ? existing->created : static_cast<unsigned int>(std::time(nullptr));
-		std::erase_if(uploads, [&](const auto& entry) { return entry.second.record.slot == record.slot; });
+
+		std::erase_if(uploads, [&](const auto& entry)
+		{
+			return entry.second.record.slot == record.slot;
+		});
+
 		std::string token;
+
 		do
 		{
 			token = std::to_string(random_id());
 		} while (uploads.contains(token));
+
 		uploads.emplace(token, pending_upload{std::move(record), std::chrono::steady_clock::now() + 5min});
+
 		return token;
 	}
 
@@ -224,12 +365,17 @@ namespace demonware::content_store
 	{
 		std::lock_guard lock(store_mutex);
 		expire_uploads();
+
 		const auto found = uploads.find(token);
-		if (found == uploads.end() || data.size() != paintjob_size)
+
+		if (found == uploads.end()
+			|| !valid_file(found->second.record.category, found->second.record.slot, data.size()))
 		{
 			return false;
 		}
+
 		found->second.record.data = data;
+
 		return true;
 	}
 
@@ -237,23 +383,34 @@ namespace demonware::content_store
 	{
 		std::lock_guard lock(store_mutex);
 		expire_uploads();
+
 		const auto found = uploads.find(token);
+
 		if (found == uploads.end())
 		{
 			return {};
 		}
+
 		auto& pending = found->second.record;
-		if (pending.owner != record.owner || pending.slot != record.slot || pending.category != record.category
-			|| pending.name != record.name || pending.metadata != record.metadata
-			|| pending.data.size() != paintjob_size || record.tags.size() > 60)
+
+		if (pending.owner != record.owner
+			|| pending.slot != record.slot
+			|| pending.category != record.category
+			|| pending.name != record.name
+			|| pending.metadata != record.metadata
+			|| !valid_file(pending.category, pending.slot, pending.data.size())
+			|| record.tags.size() > 60)
 		{
 			return {};
 		}
+
 		pending.tags = record.tags;
 		pending.modified = static_cast<unsigned int>(std::time(nullptr));
 		save_file(pending);
+
 		const auto id = pending.id;
 		uploads.erase(found);
+
 		return id;
 	}
 
@@ -261,12 +418,18 @@ namespace demonware::content_store
 	{
 		std::lock_guard lock(store_mutex);
 		const auto owner = runtime_context::get_local_user_id();
+
 		if (!owner || !valid_slot(slot))
 		{
-			throw std::runtime_error("Invalid paint job slot");
+			throw std::runtime_error("Invalid content slot");
 		}
+
 		std::filesystem::remove(file_path(owner, slot));
-		std::erase_if(uploads, [&](const auto& entry) { return entry.second.record.slot == slot; });
+
+		std::erase_if(uploads, [&](const auto& entry)
+		{
+			return entry.second.record.slot == slot;
+		});
 	}
 
 	void reset_uploads()

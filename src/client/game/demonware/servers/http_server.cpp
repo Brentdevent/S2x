@@ -100,6 +100,7 @@ namespace demonware
 		std::lock_guard lock{request_buffer_mutex_};
 		auto& request_buffer = request_buffers_[socket];
 		const auto maximum_size = maximum_request_size();
+
 		if (packet.size() > maximum_size - request_buffer.size())
 		{
 			request_buffer.clear();
@@ -107,6 +108,7 @@ namespace demonware
 			close_connection();
 			return;
 		}
+
 		request_buffer.append(packet);
 
 		while (!request_buffer.empty())
@@ -168,6 +170,7 @@ namespace demonware
 			}
 
 			const auto body_start = header_end + 4;
+
 			if (content_length > maximum_size - body_start)
 			{
 				request_buffer.clear();
@@ -175,6 +178,7 @@ namespace demonware
 				close_connection();
 				return;
 			}
+
 			if (content_length > request_buffer.size() - body_start)
 			{
 				return;
