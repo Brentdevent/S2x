@@ -22,6 +22,7 @@ namespace demonware
 
 	protected:
 		virtual void handle_request(const http_request& request) = 0;
+		virtual size_t maximum_request_size() const;
 		void send_json(const rapidjson::Document& document);
 
 	private:
