@@ -92,19 +92,6 @@ namespace
 		}
 	}
 
-	PIMAGE_TLS_CALLBACK* get_tls_callbacks()
-	{
-		const utils::nt::library game{};
-		const auto& entry = game.get_optional_header()->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS];
-		if (!entry.VirtualAddress || !entry.Size)
-		{
-			return nullptr;
-		}
-
-		const auto* tls_dir = reinterpret_cast<IMAGE_TLS_DIRECTORY*>(game.get_ptr() + entry.VirtualAddress);
-		return reinterpret_cast<PIMAGE_TLS_CALLBACK*>(tls_dir->AddressOfCallBacks);
-	}
-
 	void run_tls_callbacks(const DWORD reason)
 	{
 		if (!g_call_tls_callbacks)
@@ -112,7 +99,7 @@ namespace
 			return;
 		}
 
-		auto* callback = get_tls_callbacks();
+		auto* callback = utils::nt::library{}.get_tls_callbacks();
 		while (callback && *callback)
 		{
 			(*callback)(GetModuleHandleA(nullptr), reason, nullptr);

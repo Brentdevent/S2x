@@ -1,11 +1,12 @@
 #include <std_include.hpp>
 #include "loader/component_loader.hpp"
 
-#include "component/scheduler.hpp"
 #include "game/game.hpp"
+#include "anti_debug_locations.hpp"
 
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
+#include <mutex>
 
 #include <process.h>
 
@@ -27,51 +28,44 @@ namespace arxan::anti_debug
 			ThreadHideFromDebugger = 17,
 		} THREADINFOCLASS;
 
-		utils::hook::detour nt_create_section_hook;
 		utils::hook::detour nt_close_hook;
 		utils::hook::detour nt_query_system_information_hook;
 		utils::hook::detour nt_query_information_process_hook;
 		utils::hook::detour nt_set_information_thread_hook;
 		utils::hook::detour nt_query_information_thread_hook;
-		utils::hook::detour nt_create_thread_ex_hook;
 		utils::hook::detour create_mutex_ex_a_hook;
 		utils::hook::detour get_thread_context_hook;
+		utils::hook::detour resume_thread_hook;
 		utils::hook::detour virtual_alloc_hook;
 		utils::hook::detour check_remote_debugger_present_hook;
 		utils::hook::detour enum_windows_hook;
-		utils::hook::detour dbg_ui_remote_breakin_hook;
 
 		std::uint8_t* ntdll_code_address{};
 		size_t ntdll_code_size{};
 
-		constexpr size_t arxan_worker_process_query_return_mp = 0x1CDF7F;
-		constexpr size_t arxan_worker_process_query_return_sp = 0x6238F;
-		constexpr std::uint32_t arxan_worker_bootstrap_query_count_mp = 4;
-		constexpr std::uint32_t arxan_worker_bootstrap_query_count_sp = 0;
-
-		std::atomic_uint32_t arxan_worker_process_query_count{};
-		HANDLE arxan_worker_park_event{};
-
-		void* original_first_tls_callback = nullptr;
+		PIMAGE_TLS_CALLBACK original_first_tls_callback = nullptr;
 		decltype(&_beginthread) original_begin_thread = nullptr;
 		void** begin_thread_import = nullptr;
 
-		void** get_tls_callbacks()
+		[[noreturn]] void fail_startup(const char* reason)
 		{
-			const utils::nt::library game{};
-			const auto& entry = game.get_optional_header()->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS];
-			if (!entry.VirtualAddress || !entry.Size)
+			char message[1024]{};
+			std::snprintf(message, sizeof(message), "S2x startup failed (%s).\r\n\r\n%s\r\n",
+				game::environment::uses_multiplayer_binary() ? "MP" : "SP", reason);
+
+			const auto error_output = GetStdHandle(STD_ERROR_HANDLE);
+			if (error_output && error_output != INVALID_HANDLE_VALUE)
 			{
-				return nullptr;
+				DWORD written{};
+				WriteFile(error_output, message, static_cast<DWORD>(std::strlen(message)), &written, nullptr);
 			}
 
-			const auto* tls_dir = reinterpret_cast<IMAGE_TLS_DIRECTORY*>(game.get_ptr() + entry.VirtualAddress);
-			return reinterpret_cast<void**>(tls_dir->AddressOfCallBacks);
+			utils::nt::terminate_with_error(message, !game::environment::is_dedicated());
 		}
 
 		void disable_tls_callbacks()
 		{
-			auto* tls_callbacks = get_tls_callbacks();
+			auto* tls_callbacks = utils::nt::library{}.get_tls_callbacks();
 			if (!tls_callbacks)
 			{
 				return;
@@ -83,7 +77,7 @@ namespace arxan::anti_debug
 
 		void restore_tls_callbacks()
 		{
-			auto* tls_callbacks = get_tls_callbacks();
+			auto* tls_callbacks = utils::nt::library{}.get_tls_callbacks();
 			if (!tls_callbacks)
 			{
 				return;
@@ -92,99 +86,284 @@ namespace arxan::anti_debug
 			utils::hook::set(&tls_callbacks[0], original_first_tls_callback);
 		}
 
-		bool is_valid_thread_handle(HANDLE h)
+		uintptr_t __cdecl begin_thread_stub(void(__cdecl* start_address)(void*), const unsigned stack_size,
+			void* const parameter)
 		{
-			if (h == reinterpret_cast<HANDLE>(-2)) // NtCurrentThread
+			// Restore TLS before the first game thread starts.
+			restore_tls_callbacks();
+			utils::hook::set(begin_thread_import, original_begin_thread);
+			return original_begin_thread(start_address, stack_size, parameter);
+		}
+
+		bool disable_debug_function_patches()
+		{
+			// Fail VirtualProtect so the game skips installing each debugger hook.
+			constexpr uint8_t failure[] =
 			{
-				return true;
+				0x31, 0xC0, // xor eax, eax
+				0x90, 0x90, 0x90, 0x90, // nop padding
+			};
+			constexpr uint8_t branch[] = {0x85, 0xC0, 0x0F, 0x84}; // test eax, eax; jz rel32
+			const auto mp_binary = game::environment::uses_multiplayer_binary();
+			const auto dispatch = reinterpret_cast<void*>(
+				game::select(mp::guard_dispatch_icall, sp::guard_dispatch_icall));
+
+			// Validate all sites before patching the decrypted initializer.
+			for (const auto& site : debug_function_patch_sites)
+			{
+				auto* const code = reinterpret_cast<uint8_t*>(game::relocate(mp_binary ? site.mp : site.sp));
+				const auto patched = std::memcmp(code, failure, sizeof(failure)) == 0;
+
+				if (std::memcmp(code + sizeof(failure), branch, sizeof(branch)) != 0 ||
+					(!patched && (code[0] != 0xFF || code[1] != 0x15 ||
+						utils::hook::extract<void*>(code + 2) != dispatch)))
+				{
+					return false;
+				}
 			}
 
-
-			DWORD tid = GetThreadId(h);
-			if (tid == 0)
+			for (const auto& site : debug_function_patch_sites)
 			{
-				return false;
+				utils::hook::copy(game::relocate(mp_binary ? site.mp : site.sp), failure, sizeof(failure));
 			}
 
 			return true;
 		}
 
-		void hide_being_debugged()
+		void disable_worker()
 		{
-			auto* const peb = reinterpret_cast<PPEB>(__readgsqword(0x60));
-			peb->BeingDebugged = false;
-			*reinterpret_cast<PDWORD>(LPSTR(peb) + 0xBC) &= ~0x70;
-
-			auto* const heap = *reinterpret_cast<PVOID*>(LPSTR(peb) + 0x30);
-			if (heap != nullptr)
+			static bool disabled{};
+			if (disabled)
 			{
-				*reinterpret_cast<PDWORD>(LPSTR(heap) + 0x70) = 2;   // Force to HEAP_GROWABLE only
-				*reinterpret_cast<PDWORD>(LPSTR(heap) + 0x74) = 0;   // ForceFlags = 0
+				return;
+			}
+
+			const auto mp_binary = game::environment::uses_multiplayer_binary();
+			const auto& calls = mp_binary
+				? mp::worker_thread_calls : sp::worker_thread_calls;
+			const auto dispatch = reinterpret_cast<void*>(
+				game::select(mp::guard_dispatch_icall, sp::guard_dispatch_icall));
+			auto* frame_check = reinterpret_cast<uint8_t*>(
+				game::select(mp::worker_frame_check_offsets[0], sp::worker_frame_check_offsets[0]));
+			const auto frame_loop = game::select(mp::worker_frame_loop, sp::worker_frame_loop);
+			auto* status = reinterpret_cast<uint64_t*>(
+				game::select(mp::worker_debug_status, sp::worker_debug_status));
+
+			for (const auto rva : calls)
+			{
+				auto* code = reinterpret_cast<uint8_t*>(game::relocate(rva));
+				if (code[0] != 0xFF || code[1] != 0x15 || utils::hook::extract<void*>(code + 2) != dispatch)
+				{
+					throw std::runtime_error("Unable to locate the Arxan worker startup calls");
+				}
+			}
+
+			constexpr uint8_t frame_load[] = {0x48, 0x8B, 0x05};
+			constexpr uint8_t frame_store[] = {0x48, 0x89, 0x44, 0x24, 0x30};
+			if (std::memcmp(frame_check, frame_load, sizeof(frame_load)) != 0 ||
+				std::memcmp(frame_check + 7, frame_store, sizeof(frame_store)) != 0 ||
+				*status != 0xCEF43C2772A84800ull)
+			{
+				throw std::runtime_error("Unable to locate the Arxan worker state");
+			}
+
+			// Preserve the worker's bootstrap state without creating a thread.
+			const auto imported_atoi = *reinterpret_cast<uintptr_t*>(
+				game::select(mp::worker_atoi_import, sp::worker_atoi_import));
+			utils::hook::set<uint64_t>(game::select(mp::worker_cookie, sp::worker_cookie),
+				imported_atoi ^ 0xD092C15A145FC679ull);
+			utils::hook::set(status, mp_binary ? 0x39FCB72AB77AEFFDull : 0x39FCB72AB77AEFFFull);
+
+			constexpr uint8_t no_thread[] = {0x31, 0xC0, 0x90, 0x90, 0x90, 0x90}; // xor eax, eax
+			for (const auto rva : calls)
+			{
+				utils::hook::copy(game::relocate(rva), no_thread, sizeof(no_thread));
+			}
+
+			// Continue the frame loop without querying or resuming the absent worker.
+			utils::hook::jump(frame_check, reinterpret_cast<void*>(frame_loop));
+			disabled = true;
+		}
+
+		DWORD WINAPI resume_thread_stub(const HANDLE thread)
+		{
+			const auto return_address = game::select(mp::worker_load_resume_return, sp::worker_load_resume_return);
+			if (!thread && reinterpret_cast<uintptr_t>(_ReturnAddress()) == return_address)
+			{
+				// The encrypted map loader still probes the removed worker.
+				return 0;
+			}
+
+			return resume_thread_hook.invoke<DWORD>(thread);
+		}
+
+		template <size_t SiteCount>
+		void disable_being_debugged_checks(const uint64_t (&offsets)[SiteCount])
+		{
+			// Patch the read to avoid racing debugger attachment.
+			constexpr uint8_t original[] =
+			{
+				0x65, 0x48, 0x8B, 0x04, 0x25, 0x60, 0x00, 0x00, 0x00, // mov rax, gs:[0x60]
+				0x0F, 0xB6, 0x40, 0x02, // movzx eax, byte ptr [rax+2]
+				0x85, 0xC0, // test eax, eax
+			};
+
+			for (const auto offset : offsets)
+			{
+				const auto* code = reinterpret_cast<const void*>(game::relocate(offset - 9));
+
+				if (std::memcmp(code, original, sizeof(original)) != 0)
+				{
+					throw std::runtime_error(utils::string::va("Unable to locate BeingDebugged check: %llX", offset));
+				}
+			}
+
+			// Keep the existing test and register restoration.
+			constexpr uint8_t replacement[] =
+			{
+				0x31, 0xC0, // xor eax, eax
+				0x90, 0x90, // nop padding
+			};
+
+			for (const auto offset : offsets)
+			{
+				utils::hook::copy(game::relocate(offset), replacement, sizeof(replacement));
 			}
 		}
 
-		void NTAPI dbg_ui_remote_breakin_stub(void* context)
+		template <size_t SiteCount>
+		void disable_nt_global_flag_checks(const uint64_t (&offsets)[SiteCount])
 		{
-			// BeingDebugged is deliberately cleared, so the clean NTDLL routine skips
-			// its breakpoint. Supply it on the debugger-created break-in thread instead.
-			__debugbreak();
-			dbg_ui_remote_breakin_hook.invoke<void>(context);
-		}
-
-		void restore_debug_functions()
-		{
-			static const char* functions[] = {
-				"DbgBreakPoint",
-				"DbgUserBreakPoint",
-				"DbgUiConnectToDbg",
-				"DbgUiContinue",
-				"DbgUiConvertStateChangeStructure",
-				"DbgUiDebugActiveProcess",
-				"DbgUiGetThreadDebugObject",
-				"DbgUiIssueRemoteBreakin",
-				"DbgUiRemoteBreakin",
-				"DbgUiSetThreadDebugObject",
-				"DbgUiStopDebugging",
-				"DbgUiWaitStateChange",
-				"DbgPrintReturnControlC",
-				"DbgPrompt",
+			constexpr uint8_t original[] =
+			{
+				0x65, 0x48, 0x8B, 0x04, 0x25, 0x60, 0x00, 0x00, 0x00, // mov rax, gs:[0x60]
+				0x8A, 0x80, 0xBC, 0x00, 0x00, 0x00, // mov al, [rax+0xBC]
+				0x24, 0x70, // and al, 0x70
+				0x3C, 0x70, // cmp al, 0x70
 			};
 
-			using buffer = uint8_t[15];
-			static buffer buffers[ARRAYSIZE(functions)] = {};
-			static bool loaded = false;
-
-			const utils::nt::library ntdll("ntdll.dll");
-
-			for (auto i = 0u; i < ARRAYSIZE(functions); ++i)
+			for (const auto offset : offsets)
 			{
-				const auto func = ntdll.get_proc<void*>(functions[i]);
-				if (!func)
+				const auto* code = reinterpret_cast<const void*>(game::relocate(offset - 9));
+				if (std::memcmp(code, original, sizeof(original)) != 0)
 				{
-					continue;
+					throw std::runtime_error(utils::string::va("Unable to locate NtGlobalFlag check: %llX", offset));
 				}
+			}
 
-				if (!loaded)
+			// Preserve upper RAX bits and let the existing comparison set flags.
+			constexpr uint8_t replacement[] =
+			{
+				0xB0, 0x00, // mov al, 0
+				0x90, 0x90, 0x90, 0x90, // nop padding
+			};
+
+			for (const auto offset : offsets)
+			{
+				utils::hook::copy(game::relocate(offset), replacement, sizeof(replacement));
+			}
+		}
+
+		template <size_t SiteCount, size_t PatchSize>
+		void patch_heap_checks(const uint64_t (&offsets)[SiteCount], const uint8_t (&original)[PatchSize],
+			const uint8_t (&replacement)[PatchSize])
+		{
+			for (const auto offset : offsets)
+			{
+				const auto* code = reinterpret_cast<const void*>(game::relocate(offset));
+				if (std::memcmp(code, original, PatchSize) != 0)
 				{
-					memcpy(buffers[i], func, sizeof(buffer));
+					throw std::runtime_error(utils::string::va("Unable to locate heap debugger check: %llX", offset));
+				}
+			}
+
+			for (const auto offset : offsets)
+			{
+				utils::hook::copy(game::relocate(offset), replacement, PatchSize);
+			}
+		}
+
+		void disable_heap_debugger_checks()
+		{
+			// Keep EAX = HEAP_GROWABLE and the original success flags.
+			constexpr uint8_t flags_original[] =
+			{
+				0x8B, 0x00, // mov eax, [rax]
+				0xA9, 0xFD, 0xFF, 0xFF, 0xFF, // test eax, ~HEAP_GROWABLE
+			};
+			constexpr uint8_t flags_replacement[] =
+			{
+				0xB8, 0x02, 0x00, 0x00, 0x00, // mov eax, HEAP_GROWABLE
+				0x39, 0xC0, // cmp eax, eax
+			};
+
+			constexpr uint8_t force_flags_original[] =
+			{
+				0x8B, 0x00, // mov eax, [rax]
+				0x85, 0xC0, // test eax, eax
+			};
+			constexpr uint8_t force_flags_replacement[] =
+			{
+				0x31, 0xC0, // xor eax, eax
+				0x90, 0x90, // nop padding
+			};
+
+			// Hide the debug heap tail marker.
+			constexpr uint8_t tail_original[] =
+			{
+				0x8B, 0x00, // mov eax, [rax]
+				0x3D, 0xAB, 0xAB, 0xAB, 0xAB, // cmp eax, 0xABABABAB
+			};
+			constexpr uint8_t tail_replacement[] =
+			{
+				0x31, 0xC0, // xor eax, eax
+				0x3D, 0xAB, 0xAB, 0xAB, 0xAB, // cmp eax, 0xABABABAB
+			};
+
+			if (game::environment::uses_multiplayer_binary())
+			{
+				patch_heap_checks(mp::heap_flags_read_offsets, flags_original, flags_replacement);
+				patch_heap_checks(mp::heap_force_flags_read_offsets, force_flags_original, force_flags_replacement);
+				patch_heap_checks(mp::heap_tail_read_offsets, tail_original, tail_replacement);
+			}
+			else
+			{
+				patch_heap_checks(sp::heap_flags_read_offsets, flags_original, flags_replacement);
+				patch_heap_checks(sp::heap_force_flags_read_offsets, force_flags_original, force_flags_replacement);
+				patch_heap_checks(sp::heap_tail_read_offsets, tail_original, tail_replacement);
+
+				// The SP Flags read and test are separated by an obfuscated jump.
+				constexpr uint8_t split_original[] =
+				{
+					0x48, 0x8B, 0x45, 0x08, // mov rax, [rbp+8]
+					0x8B, 0x00, // mov eax, [rax]
+				};
+				constexpr uint8_t split_replacement[] =
+				{
+					0xB8, 0x02, 0x00, 0x00, 0x00, // mov eax, HEAP_GROWABLE
+					0x90, // nop
+				};
+				patch_heap_checks(sp::heap_flags_split_read_offsets, split_original, split_replacement);
+			}
+		}
+
+		void disable_peb_debugger_checks()
+		{
+			static std::once_flag once;
+			std::call_once(once, []
+			{
+				disable_heap_debugger_checks();
+				if (game::environment::uses_multiplayer_binary())
+				{
+					disable_being_debugged_checks(mp::being_debugged_read_offsets);
+					disable_nt_global_flag_checks(mp::nt_global_flag_read_offsets);
 				}
 				else
 				{
-					utils::hook::copy(func, buffers[i], sizeof(buffer));
+					disable_being_debugged_checks(sp::being_debugged_read_offsets);
+					disable_nt_global_flag_checks(sp::nt_global_flag_read_offsets);
 				}
-			}
-
-			loaded = true;
-		}
-
-
-		uintptr_t __cdecl begin_thread_stub(void(__cdecl* start_address)(void*), const unsigned stack_size,
-			void* const parameter)
-		{
-			// Restore before the first game thread can start and create any further threads.
-			restore_tls_callbacks();
-			utils::hook::set(begin_thread_import, original_begin_thread);
-			return original_begin_thread(start_address, stack_size, parameter);
+			});
 		}
 
 		HANDLE create_mutex_ex_a_stub(const LPSECURITY_ATTRIBUTES attributes, const LPCSTR name, const DWORD flags,
@@ -254,7 +433,7 @@ namespace arxan::anti_debug
 			{
 				return false;
 			}
-				
+
 			if (length > (std::numeric_limits<uint16_t>::max() / sizeof(wchar_t)))
 			{
 				return false;
@@ -268,20 +447,25 @@ namespace arxan::anti_debug
 			return remove_evil_keywords_from_string(unicode_string);
 		}
 
-		bool remove_evil_keywords_from_string(char* str, const size_t length)
+		BOOL CALLBACK enum_windows_callback_nullsub(HWND hwnd, LPARAM)
 		{
-			std::string_view str_view(str, length);
-			std::wstring wstr(str_view.begin(), str_view.end());
+			return TRUE;
+		}
 
-			if (!remove_evil_keywords_from_string(&wstr[0], wstr.size()))
+		BOOL WINAPI enum_windows_stub(WNDENUMPROC callback, LPARAM lparam)
+		{
+			const auto ret = _ReturnAddress();
+
+			const auto game = utils::nt::library{};
+			const auto source_module = utils::nt::library::get_by_address(ret);
+
+			if (source_module == game)
 			{
-				return false;
+				// Skip the game's window-title scan.
+				return enum_windows_hook.invoke<BOOL>(enum_windows_callback_nullsub, lparam);
 			}
 
-			const std::string regular_str(wstr.begin(), wstr.end());
-			memcpy(str, regular_str.data(), length);
-
-			return true;
+			return enum_windows_hook.invoke<BOOL>(callback, lparam);
 		}
 
 		int WINAPI get_window_text_a_stub(const HWND wnd, const LPSTR str, const int max_count)
@@ -302,39 +486,21 @@ namespace arxan::anti_debug
 			return res;
 		}
 
+		int WINAPI get_system_metrics_stub(const int index)
+		{
+			if (SM_REMOTESESSION == index)
+			{
+				return 0;
+			}
+
+			return GetSystemMetrics(index);
+		}
+
 		NTSTATUS NTAPI nt_query_system_information_stub(const SYSTEM_INFORMATION_CLASS system_information_class,
 			const PVOID system_information,
 			const ULONG system_information_length,
 			const PULONG return_length)
 		{
-			const auto process_query_return = game::environment::uses_multiplayer_binary()
-				? arxan_worker_process_query_return_mp
-				: arxan_worker_process_query_return_sp;
-			const auto bootstrap_query_count = game::environment::uses_multiplayer_binary()
-				? arxan_worker_bootstrap_query_count_mp
-				: arxan_worker_bootstrap_query_count_sp;
-
-			if (arxan_worker_park_event
-				&& system_information_class == SystemProcessInformation
-				&& system_information == nullptr
-				&& system_information_length == 0
-				&& game::derelocate(_ReturnAddress()) == process_query_return)
-			{
-				// This size-query call is the loop boundary reached after the previous
-				// process-information allocation has been freed. Let bootstrap cycles complete.
-				const auto query_count = arxan_worker_process_query_count.fetch_add(1, std::memory_order_relaxed);
-				if (query_count >= bootstrap_query_count)
-				{
-					restore_debug_functions();
-
-					const utils::nt::library ntdll("ntdll.dll");
-					const auto dbg_ui_remote_breakin = ntdll.get_proc<void*>("DbgUiRemoteBreakin");
-					dbg_ui_remote_breakin_hook.create(dbg_ui_remote_breakin, dbg_ui_remote_breakin_stub);
-
-					WaitForSingleObject(arxan_worker_park_event, INFINITE);
-				}
-			}
-
 			const auto status = nt_query_system_information_hook.invoke<NTSTATUS>(
 				system_information_class, system_information, system_information_length, return_length);
 
@@ -394,6 +560,23 @@ namespace arxan::anti_debug
 			return status;
 		}
 
+		BOOL WINAPI check_remote_debugger_present_stub(HANDLE process, PBOOL debugger_present)
+		{
+			const auto result = check_remote_debugger_present_hook.invoke<BOOL>(process, debugger_present);
+
+			if (debugger_present)
+			{
+				*debugger_present = FALSE;
+			}
+
+			return result;
+		}
+
+		BOOL WINAPI is_debugger_present_stub()
+		{
+			return FALSE;
+		}
+
 		NTSTATUS NTAPI nt_close_stub(const HANDLE handle)
 		{
 			char info[16];
@@ -416,14 +599,14 @@ namespace arxan::anti_debug
 			return EXCEPTION_CONTINUE_SEARCH;
 		}
 
-		int WINAPI get_system_metrics_stub(const int index)
+		bool is_valid_thread_handle(const HANDLE handle)
 		{
-			if (SM_REMOTESESSION == index)
+			if (handle == reinterpret_cast<HANDLE>(-2)) // NtCurrentThread
 			{
-				return 0;
+				return true;
 			}
 
-			return GetSystemMetrics(index);
+			return GetThreadId(handle) != 0;
 		}
 
 		BOOL WINAPI get_thread_context_stub(const HANDLE thread_handle, const LPCONTEXT context)
@@ -439,7 +622,7 @@ namespace arxan::anti_debug
 				const auto game = utils::nt::library{};
 				const auto source_module = utils::nt::library::get_by_address(source);
 
-				// If the game is requesting debug registers, modify the context to hide them from the game
+				// Hide debug registers from game callers.
 				if (source_module == game && (requested & debug_flags))
 				{
 					context->Dr0 = 0;
@@ -459,25 +642,22 @@ namespace arxan::anti_debug
 			PVOID thread_information,
 			ULONG thread_information_length)
 		{
-			// The game uses ThreadHideFromDebugger to hide threads from the debugger
 			if (thread_information_class == ThreadHideFromDebugger)
 			{
 				component_loader::post_thread_setup();
 
-				// The game verifies NtSetInformationThread integrity before actually hiding the thread.
-				// It provides an invalid handle to NtSetInformationThread and expects STATUS_INVALID_HANDLE in return.
+				// Preserve the error results used by the game's integrity checks.
 				if (!is_valid_thread_handle(thread_handle))
 				{
 					return STATUS_INVALID_HANDLE;
 				}
 
-				// Same for length, it must be 0
 				if (thread_information_length != 0)
 				{
 					return STATUS_INFO_LENGTH_MISMATCH;
 				}
 
-				// If the parameters are correct, we can just return success without actually hiding the thread.
+				// Report success without hiding the thread.
 				return STATUS_SUCCESS;
 			}
 
@@ -497,11 +677,9 @@ namespace arxan::anti_debug
 			PULONG return_length
 		)
 		{
-			// The game uses NtQueryInformationThread with ThreadHideFromDebugger to check if a thread is hidden from the debugger
 			if (thread_information_class == ThreadHideFromDebugger)
 			{
-				// Same thing here, the game provides an invalid length and expects STATUS_INFO_LENGTH_MISMATCH in return
-				// Native behavior: length must be 1
+				// ThreadHideFromDebugger returns one byte.
 				if (thread_information_length != 1)
 				{
 					return STATUS_INFO_LENGTH_MISMATCH;
@@ -529,41 +707,26 @@ namespace arxan::anti_debug
 			);
 		}
 
-		BOOL WINAPI check_remote_debugger_present_stub(HANDLE process, PBOOL debugger_present)
+		void initialize_ntdll_code_section(const utils::nt::library& ntdll, const void* nt_set_information_thread)
 		{
-			const auto result = check_remote_debugger_present_hook.invoke<BOOL>(process, debugger_present);
-
-			if (debugger_present)
+			const auto* section = ntdll.get_section_header(nt_set_information_thread);
+			if (!section || !(section->Characteristics & IMAGE_SCN_MEM_EXECUTE) || section->VirtualAddress == 0 ||
+				section->SizeOfRawData == 0 || section->SizeOfRawData > ntdll.get_optional_header()->SizeOfImage - section->VirtualAddress)
 			{
-				*debugger_present = FALSE;
+				throw std::runtime_error("Unable to locate the NTDLL executable section for game startup");
 			}
 
-			return result;
+			ntdll_code_address = ntdll.get_ptr() + section->VirtualAddress;
+			// Match the game's use of SizeOfRawData.
+			ntdll_code_size = section->SizeOfRawData;
 		}
-
-		struct ntdll_copy_site
-		{
-			size_t return_rva;
-			size_t loop_rva;
-			size_t resume_rva;
-			std::uint8_t original[8];
-		};
-
-		// Each copy loop is decrypted just before its corresponding VirtualAlloc call.
-		constexpr ntdll_copy_site ntdll_copy_sites_mp[] = {
-			{0x1B4C56, 0x113B7253, 0x1B9607, {0x41, 0x0F, 0xB6, 0x41, 0xFF, 0x4D, 0x8D, 0x49}},
-			{0x794244, 0x794E70, 0x794EA7, {0x76, 0x16, 0x41, 0x0F, 0xB6, 0x00, 0x4D, 0x8D}},
-		};
-		constexpr ntdll_copy_site ntdll_copy_sites_sp[] = {
-			{0x49066, 0xF29B68C, 0xF29B6A7, {0x41, 0x0F, 0xB6, 0x41, 0xFF, 0x4D, 0x8D, 0x49}},
-			{0x4F35C4, 0x4F4210, 0x4F4227, {0x41, 0x0F, 0xB6, 0x41, 0xFF, 0x4D, 0x8D, 0x49}},
-		};
 
 		LPVOID WINAPI virtual_alloc_stub(LPVOID address, SIZE_T size, DWORD allocation_type, DWORD protect)
 		{
 			const auto return_rva = game::derelocate(_ReturnAddress());
 			const auto& sites = game::environment::uses_multiplayer_binary()
-				? ntdll_copy_sites_mp : ntdll_copy_sites_sp;
+				? mp::ntdll_copy_sites : sp::ntdll_copy_sites;
+
 			for (const auto& site : sites)
 			{
 				if (site.return_rva != return_rva)
@@ -580,15 +743,30 @@ namespace arxan::anti_debug
 				if (!valid_request || size != ntdll_code_size ||
 					(!patched && std::memcmp(loop, site.original, sizeof(site.original)) != 0))
 				{
-					// Never return live RX code unless the matching copy loop can be
-					// skipped. This can run in a TLS callback with the loader lock
-					// held, so terminate without dispatching UI work to another thread.
-					TerminateProcess(GetCurrentProcess(), 1);
-					return nullptr;
+					// Do not expose live code to an unmatched copy loop.
+					fail_startup("The game's NTDLL copy routine or allocation does not match the expected startup layout.");
 				}
 
-				// Only this loop is guaranteed to be decrypted here. In particular,
-				// patching the second loop during the first allocation is too early.
+				if (site.patches_debug_functions && !disable_debug_function_patches())
+				{
+					fail_startup("The game's debugger-function patch sites do not match the expected code.");
+				}
+
+				// Patch after decryption, before startup probes the debugger.
+				try
+				{
+					disable_peb_debugger_checks();
+					if (site.patches_debug_functions)
+					{
+						disable_worker();
+					}
+				}
+				catch (const std::exception& e)
+				{
+					fail_startup(e.what());
+				}
+
+				// Each copy loop must be patched at its own allocation.
 				if (!patched)
 				{
 					utils::hook::jump(loop, resume);
@@ -600,34 +778,22 @@ namespace arxan::anti_debug
 			return virtual_alloc_hook.invoke<LPVOID>(address, size, allocation_type, protect);
 		}
 
-		BOOL CALLBACK enum_windows_callback_nullsub(HWND hwnd, LPARAM)
+		void install_thread_information_hooks(const utils::nt::library& ntdll)
 		{
-			return TRUE;
-		}
+			resume_thread_hook.create(ResumeThread, resume_thread_stub);
 
-		BOOL WINAPI enum_windows_stub(WNDENUMPROC callback, LPARAM lparam)
-		{
-			const auto ret = _ReturnAddress();
+			auto* get_thread_context_func = utils::nt::library("kernelbase.dll").get_proc<void*>("GetThreadContext");
+			get_thread_context_hook.create(get_thread_context_func, get_thread_context_stub);
 
-			const auto game = utils::nt::library{};
-			const auto source_module = utils::nt::library::get_by_address(ret);
+			const auto nt_set_information_thread = ntdll.get_proc<void*>("NtSetInformationThread");
+			initialize_ntdll_code_section(ntdll, nt_set_information_thread);
 
-			if (source_module == game)
-			{
-				// The game uses EnumWindows to iterate over all top-level windows
-				// and inspect their titles for blacklisted/debugging-related strings.
-				//
-				// Instead of letting it enumerate every window and call several WinAPI
-				// functions per window, pass a callback that does nothing. This keeps
-				// the EnumWindows call itself successful while preventing the original
-				// callback logic from running.
-				//
-				// So far it does not appear to validate whether the original callback
-				// was called or whether any windows were actually processed.
-				return enum_windows_hook.invoke<BOOL>(enum_windows_callback_nullsub, lparam);
-			}
+			nt_set_information_thread_hook.create(nt_set_information_thread, nt_set_information_thread_stub);
+			nt_set_information_thread_hook.move();
 
-			return enum_windows_hook.invoke<BOOL>(callback, lparam);
+			const auto nt_query_information_thread = ntdll.get_proc<void*>("NtQueryInformationThread");
+			nt_query_information_thread_hook.create(nt_query_information_thread, nt_query_information_thread_stub);
+			nt_query_information_thread_hook.move();
 		}
 	}
 
@@ -636,23 +802,17 @@ namespace arxan::anti_debug
 	public:
 		void post_load() override
 		{
-			// Process-lifetime event: it intentionally remains unsignaled so the initialized
-			// Arxan worker stays alive while consuming no CPU.
-			arxan_worker_park_event = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+			const utils::nt::library ntdll("ntdll.dll");
 
 			auto* dll_characteristics = &utils::nt::library().get_optional_header()->DllCharacteristics;
 			utils::hook::set<WORD>(dll_characteristics, *dll_characteristics | IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE);
 
 			disable_tls_callbacks();
-			restore_debug_functions();
-
-			hide_being_debugged();
-			scheduler::loop(hide_being_debugged, scheduler::pipeline::async);
 
 			AddVectoredExceptionHandler(1, exception_filter);
+
 			create_mutex_ex_a_hook.create(CreateMutexExA, create_mutex_ex_a_stub);
 
-			// Both game binaries start their first threads through this CRT import during
 			const auto begin_thread_hook = utils::hook::iat(utils::nt::library{},
 				"api-ms-win-crt-runtime-l1-1-0.dll", "_beginthread", begin_thread_stub);
 
@@ -666,8 +826,11 @@ namespace arxan::anti_debug
 
 			enum_windows_hook.create(EnumWindows, enum_windows_stub);
 
-			const utils::nt::library ntdll("ntdll.dll");
 			nt_close_hook.create(ntdll.get_proc<void*>("NtClose"), nt_close_stub);
+
+			// Hide debugger presence from the game without changing the PEB.
+			auto* debugger_import = utils::nt::library{}.get_iat_entry("kernel32.dll", "IsDebuggerPresent");
+			if (debugger_import) utils::hook::set(debugger_import, is_debugger_present_stub);
 
 			const auto nt_query_system_information = ntdll.get_proc<void*>("NtQuerySystemInformation");
 			nt_query_system_information_hook.create(nt_query_system_information, nt_query_system_information_stub);
@@ -675,53 +838,13 @@ namespace arxan::anti_debug
 
 			nt_query_information_process_hook.create(ntdll.get_proc<void*>("NtQueryInformationProcess"), nt_query_information_process_stub);
 
-			utils::hook::copy(this->window_text_buffer_, GetWindowTextA, sizeof(this->window_text_buffer_));
 			utils::hook::jump(GetWindowTextA, get_window_text_a_stub, true, true);
 			utils::hook::move_hook(GetWindowTextA);
 
 			auto* sys_met_import = utils::nt::library{}.get_iat_entry("user32.dll", "GetSystemMetrics");
 			if (sys_met_import) utils::hook::set(sys_met_import, get_system_metrics_stub);
 
-			auto* get_thread_context_func = utils::nt::library("kernelbase.dll").get_proc<void*>("GetThreadContext");
-			get_thread_context_hook.create(get_thread_context_func, get_thread_context_stub);
-
-			const auto nt_set_information_thread = ntdll.get_proc<void*>("NtSetInformationThread");
-			const auto function_rva = reinterpret_cast<size_t>(nt_set_information_thread) -
-				reinterpret_cast<size_t>(ntdll.get_ptr());
-			const auto image_size = ntdll.get_optional_header()->SizeOfImage;
-
-			// The game copies SizeOfRawData. Discover and validate the loaded code
-			// section once, since Wine's size and layout can differ from Windows'.
-			for (const auto* section : ntdll.get_section_headers())
-			{
-				if ((section->Characteristics & IMAGE_SCN_MEM_EXECUTE) &&
-					function_rva >= section->VirtualAddress &&
-					function_rva - section->VirtualAddress < section->Misc.VirtualSize)
-				{
-					if (section->VirtualAddress == 0 || section->VirtualAddress >= image_size ||
-						section->Misc.VirtualSize > image_size - section->VirtualAddress ||
-						section->SizeOfRawData == 0 || section->SizeOfRawData > image_size - section->VirtualAddress)
-					{
-						break;
-					}
-
-					ntdll_code_address = ntdll.get_ptr() + section->VirtualAddress;
-					ntdll_code_size = section->SizeOfRawData;
-					break;
-				}
-			}
-
-			if (!ntdll_code_address)
-			{
-				throw std::runtime_error("Unable to locate the NTDLL executable section for game startup");
-			}
-
-			nt_set_information_thread_hook.create(nt_set_information_thread, nt_set_information_thread_stub);
-			nt_set_information_thread_hook.move();
-
-			const auto nt_query_information_thread = ntdll.get_proc<void*>("NtQueryInformationThread");
-			nt_query_information_thread_hook.create(nt_query_information_thread, nt_query_information_thread_stub);
-			nt_query_information_thread_hook.move();
+			install_thread_information_hooks(ntdll);
 
 			auto* virtual_alloc_func = utils::nt::library("kernel32.dll").get_proc<void*>("VirtualAlloc");
 			virtual_alloc_hook.create(virtual_alloc_func, virtual_alloc_stub);
@@ -730,13 +853,15 @@ namespace arxan::anti_debug
 			check_remote_debugger_present_hook.create(check_remote_debugger_present_func, check_remote_debugger_present_stub);
 		}
 
+		void post_unpack() override
+		{
+			disable_peb_debugger_checks();
+		}
+
 		component_priority priority() const override
 		{
 			return component_priority::arxan;
 		}
-
-	private:
-		uint8_t window_text_buffer_[15]{};
 	};
 }
 
