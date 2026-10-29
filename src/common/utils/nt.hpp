@@ -98,10 +98,12 @@ namespace utils::nt
 		}
 
 		[[nodiscard]] std::vector<PIMAGE_SECTION_HEADER> get_section_headers() const;
+		[[nodiscard]] const IMAGE_SECTION_HEADER* get_section_header(const void* address) const;
 
 		[[nodiscard]] PIMAGE_NT_HEADERS get_nt_headers() const;
 		[[nodiscard]] PIMAGE_DOS_HEADER get_dos_header() const;
 		[[nodiscard]] PIMAGE_OPTIONAL_HEADER get_optional_header() const;
+		[[nodiscard]] PIMAGE_TLS_CALLBACK* get_tls_callbacks() const;
 
 		[[nodiscard]] void** get_iat_entry(const std::string& module_name, std::string proc_name) const;
 		[[nodiscard]] void** get_iat_entry(const std::string& module_name, const char* proc_name) const;
@@ -253,6 +255,7 @@ namespace utils::nt
 
 	bool relaunch_self(const std::string& extra_args = {});
 	__declspec(noreturn) void terminate(uint32_t code = 0);
+	__declspec(noreturn) void terminate_with_error(const char* message, bool show_dialog = true);
 
 	std::string get_user_name();
 }

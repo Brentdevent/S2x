@@ -1,11 +1,20 @@
 #include "nt.hpp"
 
 #include <lmcons.h>
+#include <winternl.h>
 
 #include "string.hpp"
 
 namespace utils::nt
 {
+	namespace
+	{
+		using raise_hard_error_function = NTSTATUS(NTAPI*)(NTSTATUS, ULONG, ULONG, PULONG_PTR, ULONG, PULONG);
+		// Resolve before error handling can run under the loader lock.
+		const auto raise_hard_error = reinterpret_cast<raise_hard_error_function>(
+			GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtRaiseHardError"));
+	}
+
 	library library::load(const char* name)
 	{
 		return library(LoadLibraryA(name));
@@ -76,6 +85,24 @@ namespace utils::nt
 		return &this->get_nt_headers()->OptionalHeader;
 	}
 
+	PIMAGE_TLS_CALLBACK* library::get_tls_callbacks() const
+	{
+		const auto* header = this->get_optional_header();
+		if (!header)
+		{
+			return nullptr;
+		}
+
+		const auto& entry = header->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS];
+		if (!entry.VirtualAddress || !entry.Size)
+		{
+			return nullptr;
+		}
+
+		const auto* tls_dir = reinterpret_cast<const IMAGE_TLS_DIRECTORY*>(this->get_ptr() + entry.VirtualAddress);
+		return reinterpret_cast<PIMAGE_TLS_CALLBACK*>(tls_dir->AddressOfCallBacks);
+	}
+
 	void** library::get_iat_entry(const std::string& module_name, std::string proc_name) const
 	{
 		return this->get_iat_entry(module_name, proc_name.data());
@@ -95,6 +122,36 @@ namespace utils::nt
 		}
 
 		return headers;
+	}
+
+	const IMAGE_SECTION_HEADER* library::get_section_header(const void* address) const
+	{
+		const auto* header = this->get_optional_header();
+		if (!header || !address)
+		{
+			return nullptr;
+		}
+
+		const auto rva = reinterpret_cast<size_t>(address) - reinterpret_cast<size_t>(this->get_ptr());
+		if (rva >= header->SizeOfImage)
+		{
+			return nullptr;
+		}
+
+		for (const auto* section : this->get_section_headers())
+		{
+			if (rva >= section->VirtualAddress && rva - section->VirtualAddress < section->Misc.VirtualSize)
+			{
+				if (section->Misc.VirtualSize > header->SizeOfImage - section->VirtualAddress)
+				{
+					return nullptr;
+				}
+
+				return section;
+			}
+		}
+
+		return nullptr;
 	}
 
 	std::uint8_t* library::get_ptr() const
@@ -413,6 +470,28 @@ namespace utils::nt
 	{
 		TerminateProcess(GetCurrentProcess(), code);
 		_Exit(code);
+	}
+
+	void terminate_with_error(const char* message, const bool show_dialog)
+	{
+		if (show_dialog && raise_hard_error)
+		{
+			wchar_t wide_message[1024]{};
+			const auto chars = MultiByteToWideChar(CP_UTF8, 0, message, -1, wide_message, ARRAYSIZE(wide_message));
+			if (chars > 0)
+			{
+				UNICODE_STRING text{static_cast<USHORT>((chars - 1) * sizeof(wchar_t)), sizeof(wide_message), wide_message};
+				ULONG_PTR parameters[]{reinterpret_cast<ULONG_PTR>(&text)};
+				ULONG response{};
+				constexpr NTSTATUS fatal_app_exit = 0x40000015;
+				constexpr NTSTATUS override_error_mode = 0x10000000;
+				constexpr ULONG option_ok = 1;
+				// Show the system dialog without UI calls or exit handlers under the loader lock.
+				raise_hard_error(fatal_app_exit | override_error_mode, 1, 1, parameters, option_ok, &response);
+			}
+		}
+
+		terminate(1);
 	}
 
 	std::string get_user_name()
