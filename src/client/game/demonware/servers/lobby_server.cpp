@@ -2,6 +2,7 @@
 #include "../dw_include.hpp"
 
 #include "lobby_server.hpp"
+#include "../content_store.hpp"
 
 #include "component/console/console.hpp"
 
@@ -78,6 +79,7 @@ namespace demonware
 					// A reconnect (including an abandoned handshake) starts a new transcript.
 					demonware::reset_key_derivation();
 					encrypted_reply::reset_sequence();
+					content_store::reset_uploads();
 					demonware::queue_packet_to_hash(packet_1);
 
 					const std::string packet_2(

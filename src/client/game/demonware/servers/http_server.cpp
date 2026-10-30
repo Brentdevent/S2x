@@ -99,6 +99,16 @@ namespace demonware
 	{
 		std::lock_guard lock{request_buffer_mutex_};
 		auto& request_buffer = request_buffers_[socket];
+		const auto maximum_size = maximum_request_size();
+
+		if (packet.size() > maximum_size - request_buffer.size())
+		{
+			request_buffer.clear();
+			send("HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+			close_connection();
+			return;
+		}
+
 		request_buffer.append(packet);
 
 		while (!request_buffer.empty())
@@ -160,6 +170,15 @@ namespace demonware
 			}
 
 			const auto body_start = header_end + 4;
+
+			if (content_length > maximum_size - body_start)
+			{
+				request_buffer.clear();
+				send("HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+				close_connection();
+				return;
+			}
+
 			if (content_length > request_buffer.size() - body_start)
 			{
 				return;
@@ -169,6 +188,11 @@ namespace demonware
 			request_buffer.erase(0, body_start + content_length);
 			handle_request(request);
 		}
+	}
+
+	size_t http_server::maximum_request_size() const
+	{
+		return SIZE_MAX;
 	}
 
 	void http_server::on_disconnect(const SOCKET socket)

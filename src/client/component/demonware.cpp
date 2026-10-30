@@ -13,6 +13,7 @@
 #include "game/demonware/servers/umbrella_server.hpp"
 #include "game/demonware/servers/uno_server.hpp"
 #include "game/demonware/servers/glutton_server.hpp"
+#include "game/demonware/servers/content_server.hpp"
 #include "game/demonware/server_registry.hpp"
 #include "game/demonware/marketplace/catalog.hpp"
 
@@ -517,6 +518,7 @@ namespace demonware
 			tcp_servers.create<umbrella_server>("prod.umbrella.demonware.net");
 			tcp_servers.create<uno_server>("prod.uno.demonware.net");
 			tcp_servers.create<glutton_server>("pipes-prod-glutton.public.aws.demonware.net");
+			tcp_servers.create<content_server>("s2x-content.demonware.net");
 		}
 
 		void post_load() override
