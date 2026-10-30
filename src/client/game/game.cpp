@@ -4,8 +4,8 @@
 #include "game.hpp"
 
 #include <utils/finally.hpp>
-#include <utils/flags.hpp>
 #include <utils/hook.hpp>
+#include <utils/io.hpp>
 
 namespace game
 {
@@ -132,6 +132,36 @@ namespace game
 		bool uses_multiplayer_binary()
 		{
 			return is_multiplayer() || is_zombies();
+		}
+
+		std::string get_binary_name(const mode target)
+		{
+			if (target == mode::singleplayer)
+			{
+				return is_microsoft_store() ? "s2x_sp64_ship.exe" : "s2_sp64_ship.exe";
+			}
+
+			return is_microsoft_store() ? "s2x_mp64_ship.exe" : "s2_mp64_ship.exe";
+		}
+
+		std::filesystem::path get_binary_path(const mode target)
+		{
+			const auto name = get_binary_name(target);
+			const auto directory = utils::nt::library::get_by_address(get_binary_path).get_folder();
+			const auto path = directory / name;
+			return !is_microsoft_store() && !utils::io::file_exists(path.wstring())
+				? std::filesystem::current_path() / name : path;
+		}
+
+		bool is_mode_installed(const mode target)
+		{
+			if (is_microsoft_store())
+			{
+				// Both modes are bundled; startup downloads their runtimes as needed.
+				return true;
+			}
+
+			return utils::io::file_exists(get_binary_path(target).wstring());
 		}
 
 		const online_mode_info& get_online_mode_info()

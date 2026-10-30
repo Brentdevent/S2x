@@ -1,8 +1,25 @@
 #include <std_include.hpp>
 #include "../steam.hpp"
+#include "game/game.hpp"
 
 namespace steam
 {
+	namespace
+	{
+		std::optional<game::environment::mode> get_app_mode(const unsigned int app_id)
+		{
+			switch (app_id)
+			{
+			case 476600:
+				return game::environment::mode::singleplayer;
+			case 476620:
+				return game::environment::mode::multiplayer;
+			default:
+				return std::nullopt;
+			}
+		}
+	}
+
 	bool apps::BIsSubscribed()
 	{
 		return true;
@@ -94,12 +111,27 @@ namespace steam
 
 	unsigned int apps::GetAppInstallDir(unsigned int appID, char* pchFolder, unsigned int cchFolderBufferSize)
 	{
-		return 0;
+		if (!pchFolder || !cchFolderBufferSize)
+		{
+			return 0;
+		}
+
+		pchFolder[0] = '\0';
+		const auto mode = get_app_mode(appID);
+		if (!mode)
+		{
+			return 0;
+		}
+
+		const auto directory = game::environment::get_binary_path(*mode).parent_path().string();
+		strncpy_s(pchFolder, cchFolderBufferSize, directory.c_str(), _TRUNCATE);
+		return static_cast<unsigned int>(std::strlen(pchFolder));
 	}
 
 	bool apps::BIsAppInstalled(unsigned int appID)
 	{
-		return false;
+		const auto mode = get_app_mode(appID);
+		return mode && game::environment::is_mode_installed(*mode);
 	}
 
 	steam_id apps::GetAppOwner()

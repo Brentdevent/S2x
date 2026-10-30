@@ -16,6 +16,7 @@
 #include "game/pause/process.hpp"
 #include "component/console/console.hpp"
 #include "component/updater.hpp"
+#include "component/mode_switch.hpp"
 
 namespace
 {
@@ -153,8 +154,15 @@ namespace
 
 	bool has_zombies_argument()
 	{
-		const auto value = utils::flags::get_value("+zombiesMode");
-		return value.has_value() && value.value() == "1";
+		for (const auto* option : {"+zombiesMode", "+enterlocalZombies"})
+		{
+			const auto value = utils::flags::get_value(option);
+			if (value.has_value() && value.value() == "1")
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	bool has_dedicated_argument()
@@ -226,6 +234,8 @@ int main()
 
 		try
 		{
+			mode_switch::wait_for_previous_process();
+
 			const auto application_directory = utils::nt::library{}.get_folder();
 			const auto is_microsoft_store_install = utils::io::file_exists(
 				(application_directory / "MicrosoftGame.config").wstring());
@@ -282,22 +292,9 @@ int main()
 				return 0;
 			}
 
-			const auto mp_binary = game::environment::is_microsoft_store()
-				? "s2x_mp64_ship.exe"s
-				: "s2_mp64_ship.exe"s;
-			const auto sp_binary = game::environment::is_microsoft_store()
-				? "s2x_sp64_ship.exe"s
-				: "s2_sp64_ship.exe"s;
-
-			const auto& binary_to_load = game::environment::uses_multiplayer_binary() ? mp_binary : sp_binary;
-			auto game_directory = application_directory;
-			if (!game::environment::is_microsoft_store()
-				&& !utils::io::file_exists((game_directory / binary_to_load).wstring()))
-			{
-				game_directory = std::filesystem::current_path();
-			}
-
-			const auto binary_path = game_directory / binary_to_load;
+			const auto binary_to_load = game::environment::get_binary_name(game::environment::get_mode());
+			const auto binary_path = game::environment::get_binary_path(game::environment::get_mode());
+			const auto game_directory = binary_path.parent_path();
 			const auto updates_disabled = utils::flags::has_flag("-noupdate");
 			std::optional<std::string> store_runtime_update_warning{};
 
