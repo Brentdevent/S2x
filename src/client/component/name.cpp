@@ -13,6 +13,8 @@ namespace name
 {
 	namespace
 	{
+		constexpr std::size_t max_player_name_length = 35;
+
 		game::dvar_t* name_dvar{};
 		
 		utils::hook::detour com_init_dvars_hook;
@@ -37,12 +39,61 @@ namespace name
 			com_init_dvars_hook.invoke<void>();
 		}
 
-		char* cl_get_username_for_local_client_stub(const int /*controller_index*/)
+		std::size_t copy_player_name(char* buffer, const std::size_t buffer_size,
+			const std::string_view player_name)
 		{
-			return const_cast<char*>(get_player_name());
+			if (!buffer_size)
+			{
+				return 0;
+			}
+
+			auto length = std::min(player_name.size(), buffer_size - 1);
+
+			// If the cut falls inside a UTF-8 character, omit that entire character.
+			while (length && length < player_name.size()
+				&& (static_cast<unsigned char>(player_name[length]) & 0xC0) == 0x80)
+			{
+				--length;
+			}
+
+			std::memcpy(buffer, player_name.data(), length);
+			buffer[length] = '\0';
+
+			return length;
 		}
 
-		bool live_get_local_client_name_stub(const int /*controller_index*/, char* buffer,
+		const char* get_local_player_name(const int controller_index)
+		{
+			const auto* player_name = get_player_name();
+			if (controller_index != 1)
+			{
+				return player_name;
+			}
+
+			constexpr char guest_suffix[] = "(2)";
+			thread_local char guest_name[max_player_name_length + 1];
+
+			auto prefix_length = copy_player_name(guest_name,
+				sizeof(guest_name) - (sizeof(guest_suffix) - 1), player_name);
+
+			std::memcpy(guest_name + prefix_length, guest_suffix, sizeof(guest_suffix));
+
+			// A full-length primary name may already end in the guest suffix.
+			if (std::strcmp(guest_name, player_name) == 0)
+			{
+				prefix_length = copy_player_name(guest_name, prefix_length, player_name);
+				std::memcpy(guest_name + prefix_length, guest_suffix, sizeof(guest_suffix));
+			}
+
+			return guest_name;
+		}
+
+		char* cl_get_username_for_local_client_stub(const int controller_index)
+		{
+			return const_cast<char*>(get_local_player_name(controller_index));
+		}
+
+		bool live_get_local_client_name_stub(const int controller_index, char* buffer,
 			const std::size_t buffer_size)
 		{
 			if (!buffer || buffer_size <= 1)
@@ -55,19 +106,21 @@ namespace name
 				return false;
 			}
 
-			strncpy_s(buffer, buffer_size, get_player_name(), _TRUNCATE);
+			copy_player_name(buffer, buffer_size, get_local_player_name(controller_index));
 			return true;
 		}
 	}
 
 	const char* get_player_name()
 	{
-		if (name_dvar && name_dvar->current.string)
-		{
-			return name_dvar->current.string;
-		}
+		const auto* player_name = name_dvar && name_dvar->current.string
+			? name_dvar->current.string : get_default_player_name();
 
-		return get_default_player_name();
+		// Keep every primary-name path within the stock name buffer capacity.
+		thread_local char bounded_name[max_player_name_length + 1];
+		copy_player_name(bounded_name, sizeof(bounded_name), player_name);
+
+		return bounded_name;
 	}
 
 	class component final : public multiplayer_component
