@@ -54,6 +54,9 @@ namespace game
 		bool is_multiplayer();
 		bool is_zombies();
 		bool uses_multiplayer_binary();
+		std::string get_binary_name(mode target);
+		std::filesystem::path get_binary_path(mode target);
+		bool is_mode_installed(mode target);
 
 		const online_mode_info& get_online_mode_info();
 
