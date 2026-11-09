@@ -9,6 +9,7 @@
 #include "game/game.hpp"
 #include "game/types/demonware.hpp"
 #include "game/demonware/achievement/order_progress.hpp"
+#include "game/demonware/achievement/progress_writer.hpp"
 #include "game/demonware/reward/json.hpp"
 #include "game/demonware/reward/push.hpp"
 #include "steam/steam.hpp"
@@ -26,7 +27,8 @@ namespace order_progress
 		namespace progress = demonware::order_progress;
 		namespace wire = demonware::reward_event_relay;
 
-		using mutation_result = demonware::achievement_store::mutation_result;
+		progress::progress_writer saves;
+		bool save_failure_reported{};
 
 		constexpr unsigned native_queue_capacity = 40;
 		constexpr int native_controller_count = 2;
@@ -120,7 +122,7 @@ namespace order_progress
 		std::atomic_bool accepting{};
 		std::mutex pending_mutex;
 
-		// Admission order matters when a failed save spans a contract deadline
+		// Transfer admitted occurrences to the writer in order, before native slots can be reused.
 		std::deque<std::pair<native_entry*, pending_occurrence>> pending;
 		std::deque<remote_occurrence> remote_pending;
 		std::unordered_map<native_entry*, relayed_occurrence> relayed;
@@ -258,9 +260,12 @@ namespace order_progress
 				return targets;
 			}
 
-			for (const auto& record : demonware::achievement_store::get_all())
+			const auto records = demonware::achievement_store::get_progress_snapshot();
+			const auto timestamp = static_cast<std::uint64_t>(time(nullptr));
+			for (const auto& record : *records)
 			{
 				if (!progress::eligible(record) ||
+					demonware::achievement_store::is_expired(record, timestamp) ||
 					!demonware::achievement_kind::in_mode(record.kind, game::environment::is_zombies(), record.name))
 				{
 					continue;
@@ -345,43 +350,62 @@ namespace order_progress
 			apply_elapsed_seconds(seconds);
 		}
 
-		bool flush_occurrences()
+		void collect_saved()
+		{
+			auto completed = saves.take_completed();
+			if (!accepting)
+			{
+				return;
+			}
+
+			for (auto& notification : completed.notifications)
+			{
+				if (!remote_stream || notification.stream != remote_stream)
+				{
+					continue;
+				}
+
+				for (auto& record : notification.records)
+				{
+					auto name = record.name;
+					notifications.insert_or_assign(std::move(name), progress_notification{std::move(record)});
+				}
+			}
+
+			if (completed.full_refresh)
+			{
+				achievement_sync::request_refresh();
+			}
+			else if (!completed.progress_names.empty())
+			{
+				achievement_sync::request_progress_refresh(std::move(completed.progress_names));
+			}
+
+			const auto failed = saves.failed();
+			if (failed && !save_failure_reported)
+			{
+				console::error("Order progress save failed; retaining queued progress and retrying.\n");
+			}
+
+			save_failure_reported = failed;
+		}
+
+		void flush_occurrences()
 		{
 			while (!pending.empty())
 			{
 				const auto& [entry, occurrence] = pending.front();
-
 				const auto owned = !entry || occurrence.remote || occurrence.queue->user == occurrence.user;
-				if (!owned || (entry && !entry->state))
+				if (owned && (!entry || entry->state))
 				{
-					pending.pop_front();
-					continue;
+					// The writer owns the observation through retries, resets and disconnects.
+					// Native acknowledgement may now retire/reuse its entry independently.
+					saves.enqueue({{occurrence.targets, occurrence.time, occurrence.usage},
+						occurrence.remote ? occurrence.stream : 0, true});
 				}
 
-				const auto notify = occurrence.remote && remote_stream && occurrence.stream == remote_stream;
-				std::vector<demonware::achievement_record> progressed;
-				const auto saved = progress::settle(occurrence.targets, occurrence.time, occurrence.usage,
-					notify ? &progressed : nullptr);
-				if (saved == mutation_result::save_failed)
-				{
-					return false;
-				}
-
-				// Forget before a post-commit refresh can throw
 				pending.pop_front();
-
-				if (saved == mutation_result::updated && accepting)
-				{
-					for (auto& record : progressed)
-					{
-						notifications.insert_or_assign(record.name, progress_notification{record});
-					}
-
-					achievement_sync::request_refresh();
-				}
 			}
-
-			return true;
 		}
 
 		void settle_timer()
@@ -405,28 +429,26 @@ namespace order_progress
 			}
 
 			// Absolute remaining values make retries after stop or reconnect safe
-			const auto saved = progress::settle({}, static_cast<std::uint64_t>(time(nullptr)), timer.pending);
-			if (saved == mutation_result::save_failed)
-			{
-				return;
-			}
-
+			saves.enqueue({{{}, static_cast<std::uint64_t>(time(nullptr)), timer.pending},
+				0, any_expired || !timer.running});
 			timer.checkpoint_seconds = timer.seconds;
-
-			if (saved == mutation_result::updated && any_expired && accepting)
-			{
-				achievement_sync::request_refresh();
-			}
 
 			if (!timer.running)
 			{
 				timer.pending.clear();
 			}
 
-			const auto active = demonware::achievement_store::get_all();
+			const auto active = demonware::achievement_store::get_progress_snapshot();
+			const auto elapsed = timer.pending;
 			const auto is_settled = [&](const auto& value)
 			{
-				return std::ranges::none_of(active, [&](const auto& record)
+				const auto expired = std::ranges::any_of(elapsed, [&](const auto& observed)
+				{
+					return observed.achievement.name == value.achievement.name &&
+						observed.achievement.activation == value.achievement.activation && !observed.remaining;
+				});
+
+				return expired || std::ranges::none_of(*active, [&](const auto& record)
 				{
 					return record.name == value.achievement.name && progress::eligible(record) &&
 						record.activation_timestamp == value.achievement.activation;
@@ -439,15 +461,13 @@ namespace order_progress
 
 		void flush()
 		{
+			collect_saved();
 			if (pending.empty() && timer.pending.empty())
 			{
 				return;
 			}
 
-			if (!flush_occurrences())
-			{
-				return;
-			}
+			flush_occurrences();
 
 			// Preserve event and deadline ordering while the native queue is full
 			if (!remote_pending.empty())
@@ -611,31 +631,30 @@ namespace order_progress
 
 				++it;
 			}
-
-			// Native success clears state 2 and retains state 1, so keep every unsaved entry
-			for (const auto& [entry, occurrence] : pending)
-			{
-				if (entry && entry->state == 2 && (occurrence.remote || occurrence.queue->user == occurrence.user))
-				{
-					entry->state = 1;
-				}
-			}
 		}
 
 		void begin_timer()
 		{
-			// Carry an unsaved previous match's absolute balance into the next match
+			// Read queued usage before the committed snapshot: publication precedes retirement
+			// in the writer, so a save racing a new match cannot restore spent contract time.
+			auto carried = saves.pending_usage();
+			carried.insert(carried.end(), timer.pending.begin(), timer.pending.end());
+
+			// Carry an unsaved previous match's absolute balance into the next match.
 			std::vector<progress::usage> baseline;
-			for (const auto& record : demonware::achievement_store::get_all())
+			const auto records = demonware::achievement_store::get_progress_snapshot();
+			const auto timestamp = static_cast<std::uint64_t>(time(nullptr));
+			for (const auto& record : *records)
 			{
 				if (!progress::timed(record) || !progress::eligible(record) ||
+					demonware::achievement_store::is_expired(record, timestamp) ||
 					!demonware::achievement_kind::in_mode(record.kind, game::environment::is_zombies(), record.name))
 				{
 					continue;
 				}
 
 				auto remaining = *record.usage_time_remaining;
-				for (const auto& value : timer.pending)
+				for (const auto& value : carried)
 				{
 					if (value.achievement.name == record.name && value.achievement.activation == record.activation_timestamp)
 					{
@@ -728,7 +747,6 @@ namespace order_progress
 				sample_timer();
 				timer.running = false;
 				flush();
-				achievement_sync::request_refresh();
 			}
 			catch (const std::exception& error)
 			{
@@ -805,6 +823,11 @@ namespace order_progress
 			{
 				console::error("Order shutdown save failed: %s\n", error.what());
 			}
+
+			if (!saves.finish())
+			{
+				console::error("Unable to save %zu queued Order observations before shutdown.\n", saves.pending_count());
+			}
 		}
 
 		void save_registers(utils::hook::assembler& a)
@@ -880,7 +903,8 @@ namespace order_progress
 					return;
 				}
 
-				const auto current = demonware::achievement_store::get_all();
+				const auto current = demonware::achievement_store::get_progress_snapshot();
+				const auto timestamp = static_cast<std::uint64_t>(time(nullptr));
 				for (auto it = notifications.begin(); it != notifications.end();)
 				{
 					if (!it->second.ready)
@@ -890,8 +914,10 @@ namespace order_progress
 					}
 
 					const auto& expected = it->second.record;
-					const auto saved = std::ranges::find(current, expected.name, &demonware::achievement_record::name);
-					if (saved == current.end() || !progress::eligible(*saved) || saved->kind != expected.kind ||
+					const auto saved = std::ranges::find(*current, expected.name, &demonware::achievement_record::name);
+					if (saved == current->end() || !progress::eligible(*saved) ||
+						demonware::achievement_store::is_expired(*saved, timestamp) ||
+						saved->kind != expected.kind ||
 						saved->activation_timestamp != expected.activation_timestamp)
 					{
 						// A claim, cancellation or expiry can race the completed fetch.
@@ -974,7 +1000,8 @@ namespace order_progress
 
 		bool apply_remote_record(const wire::batch& batch, const wire::record& value)
 		{
-			if (value.type == wire::operation::event && pending.size() + remote_pending.size() >= wire::pending_limit)
+			if (value.type == wire::operation::event &&
+				pending.size() + remote_pending.size() + saves.pending_count() >= wire::pending_limit)
 			{
 				return false;
 			}
@@ -1044,10 +1071,11 @@ namespace order_progress
 	}
 
 	void send_notifications(demonware::service_server* server, const std::uint64_t user,
-		const std::string& response)
+		const std::string& response, const bool named_refresh)
 	{
 		std::lock_guard lock{pending_mutex};
-		if (!accepting || !remote_stream || !user || user != local_user || notifications.empty())
+		if (!accepting || !user || user != local_user ||
+			(!named_refresh && (!remote_stream || notifications.empty())))
 		{
 			return;
 		}
@@ -1060,11 +1088,32 @@ namespace order_progress
 			return;
 		}
 
+		const auto push_record = [&](const rapidjson::Value& record, const char* reason)
+		{
+			rapidjson::Document push;
+			auto& allocator = push.GetAllocator();
+			push.CopyFrom(record, allocator);
+			push.AddMember("reason", rapidjson::StringRef(reason), allocator);
+			push.AddMember("type", "CHALLENGE", allocator);
+			push.AddMember("triggers", rapidjson::Value{rapidjson::kArrayType}, allocator);
+			demonware::send_reward_push(server, game::demonware::BD_REWARD_ACHIEVEMENT_MESSAGE,
+				user, demonware::reward_json::encode(push));
+		};
+
 		for (const auto& record : page["Achievements"].GetArray())
 		{
-			if (!record.IsObject() || !record.HasMember("name") || !record["name"].IsString())
+			if (!record.IsObject() || !record.HasMember("name") || !record["name"].IsString() ||
+				!record.HasMember("status") || !record["status"].IsString())
 			{
 				continue;
+			}
+
+			const auto status = demonware::parse_achievement_status(record["status"].GetString());
+			if (named_refresh && status == demonware::achievement_status::in_progress)
+			{
+				// Native task 133 only updates contract usage time (0x13F190). Its companion
+				// push updates the counter and emits ProgressionUpdate through 0x13C480.
+				push_record(record, "inProgress");
 			}
 
 			const auto found = notifications.find(record["name"].GetString());
@@ -1076,14 +1125,12 @@ namespace order_progress
 			const auto& expected = found->second.record;
 			if (!record.HasMember("activationTimestamp") || !record["activationTimestamp"].IsUint64() ||
 				record["activationTimestamp"].GetUint64() != expected.activation_timestamp ||
-				!record.HasMember("kind") || !record["kind"].IsInt() || record["kind"].GetInt() != expected.kind ||
-				!record.HasMember("status") || !record["status"].IsString())
+				!record.HasMember("kind") || !record["kind"].IsInt() || record["kind"].GetInt() != expected.kind)
 			{
 				// An older page can belong to a previous activation; wait for the new one.
 				continue;
 			}
 
-			const auto status = demonware::parse_achievement_status(record["status"].GetString());
 			if (status != demonware::achievement_status::in_progress &&
 				status != demonware::achievement_status::claimable)
 			{
@@ -1100,21 +1147,24 @@ namespace order_progress
 
 			if (status == demonware::achievement_status::in_progress)
 			{
-				found->second.ready = true;
+				if (named_refresh && !found->second.ready)
+				{
+					// The push emits this update; do not emit a second one after the response.
+					notifications.erase(found);
+				}
+				else
+				{
+					// A full page may have updated the cache first. Its notification still
+					// needs the main-thread fallback because the push suppresses equal counters.
+					found->second.ready = true;
+				}
 				continue;
 			}
 
 			// AE_HandleAchievementPush (0x13C480) updates the native record and emits
 			// achievementEngine AchievementClaimable (6).
 			// Use this exact page's state so its subsequent fetch response cannot roll it back.
-			rapidjson::Document push;
-			auto& allocator = push.GetAllocator();
-			push.CopyFrom(record, allocator);
-			push.AddMember("reason", "claimable", allocator);
-			push.AddMember("type", "CHALLENGE", allocator);
-			push.AddMember("triggers", rapidjson::Value{rapidjson::kArrayType}, allocator);
-			demonware::send_reward_push(server, game::demonware::BD_REWARD_ACHIEVEMENT_MESSAGE,
-				user, demonware::reward_json::encode(push));
+			push_record(record, "claimable");
 			notifications.erase(found);
 		}
 	}
@@ -1177,6 +1227,11 @@ namespace order_progress
 	public:
 		void post_unpack() override
 		{
+			if (!game::environment::is_dedicated())
+			{
+				saves.start();
+			}
+
 			accepting = true;
 
 			if (!game::environment::is_dedicated())

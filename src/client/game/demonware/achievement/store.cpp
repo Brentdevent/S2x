@@ -9,6 +9,7 @@
 #include <utils/finally.hpp>
 
 #include <ranges>
+#include <atomic>
 
 namespace demonware
 {
@@ -111,6 +112,22 @@ namespace demonware::achievement_store
 		std::map<receipt_key, activation_receipt> activation_receipts{};
 		bool achievements_loaded{};
 		bool achievements_valid{};
+		std::atomic<progress_snapshot> progress_records{};
+
+		// Build before committing: allocation failure must not turn a durable save into a retry.
+		progress_snapshot make_progress_snapshot()
+		{
+			auto records = std::make_shared<std::vector<achievement_record>>();
+			for (const auto& record : achievements | std::views::values)
+			{
+				if (achievement_kind::periodic(record.kind))
+				{
+					records->push_back(record);
+				}
+			}
+
+			return records;
+		}
 
 		std::uint64_t now()
 		{
@@ -315,6 +332,8 @@ namespace demonware::achievement_store
 
 			achievements_loaded = true;
 			achievements_valid = state.status == marketplace_store::store_status::ready && read_state(state.json);
+			progress_records.store(achievements_valid ? make_progress_snapshot() :
+				std::make_shared<const std::vector<achievement_record>>());
 		}
 
 		rapidjson::Value serialize_receipt(const receipt_key& key, const activation_receipt& receipt,
@@ -369,7 +388,14 @@ namespace demonware::achievement_store
 		bool save_achievements()
 		{
 			const auto json = serialize_state();
-			return json && marketplace_store::save_achievement_state(*json);
+			const auto snapshot = make_progress_snapshot();
+			if (!json || !marketplace_store::save_achievement_state(*json))
+			{
+				return false;
+			}
+
+			progress_records.store(snapshot);
+			return true;
 		}
 
 		void restore(const std::string& name, const std::optional<achievement_record>& original)
@@ -595,6 +621,7 @@ namespace demonware::achievement_store
 			const std::uint32_t prerequisite_item_id)
 		{
 			const auto json = serialize_state();
+			const auto snapshot = make_progress_snapshot();
 			auto failure = activation_result::save_failed;
 
 			const auto settled = marketplace_store::transact_profile("contract:" + transaction, user_id,
@@ -635,6 +662,7 @@ namespace demonware::achievement_store
 			switch (settled.status)
 			{
 			case marketplace_store::transaction_status::committed:
+				progress_records.store(snapshot);
 				return activation_result::success;
 			case marketplace_store::transaction_status::client_tx_conflict:
 				return activation_result::transaction_conflict;
@@ -768,7 +796,7 @@ namespace demonware::achievement_store
 		if (activating)
 		{
 			auto activation_time = timestamp;
-			if (original && achievement_kind::moonraven(name, kind))
+			if (original)
 			{
 				// Pending events must not match a replacement accepted in the same second.
 				activation_time = std::max(timestamp, original->activation_timestamp.value_or(0) + 1);
@@ -825,6 +853,7 @@ namespace demonware::achievement_store
 			}
 		});
 
+		progress_snapshot snapshot;
 		auto result = marketplace_store::transact_profile("order_abandon:" + transaction, user_id,
 			"abandon_order:", ":" + name,
 			[&](marketplace_store::transaction& economy, std::string& response)
@@ -839,10 +868,16 @@ namespace demonware::achievement_store
 			record.progress = 0;
 			const auto json = serialize_state();
 			response = "{}";
+			snapshot = make_progress_snapshot();
 			return json && economy.set_achievement_state(*json);
 		});
 
 		committed = result.status == transaction_status::committed;
+		if (committed && snapshot)
+		{
+			progress_records.store(std::move(snapshot));
+		}
+
 		return result;
 	}
 
@@ -874,6 +909,7 @@ namespace demonware::achievement_store
 			}
 		});
 
+		progress_snapshot snapshot;
 		auto result = marketplace_store::transact_profile("order_claim:" + transaction, user_id,
 			"claim_order:", ":" + name,
 			[&](marketplace_store::transaction& economy, std::string& response)
@@ -899,10 +935,16 @@ namespace demonware::achievement_store
 			}
 
 			const auto json = serialize_state();
+			snapshot = make_progress_snapshot();
 			return json && economy.set_achievement_state(*json);
 		});
 
 		committed = result.status == transaction_status::committed;
+		if (committed && snapshot)
+		{
+			progress_records.store(std::move(snapshot));
+		}
+
 		return result;
 	}
 
@@ -982,6 +1024,20 @@ namespace demonware::achievement_store
 		std::lock_guard lock{achievement_mutex};
 		load_achievements();
 		return achievements_valid;
+	}
+
+	progress_snapshot get_progress_snapshot()
+	{
+		if (const auto snapshot = progress_records.load())
+		{
+			return snapshot;
+		}
+
+		// Normally initialized by the frontend achievement fetch before a match.
+		std::lock_guard lock{achievement_mutex};
+		load_achievements();
+		const auto snapshot = progress_records.load();
+		return snapshot ? snapshot : std::make_shared<const std::vector<achievement_record>>();
 	}
 
 	std::vector<achievement_record> get_all()
@@ -1078,7 +1134,12 @@ namespace demonware::achievement_store
 		});
 
 		const auto json = serialize_state();
+		const auto snapshot = make_progress_snapshot();
 		committed = json && marketplace_store::save_achievement_state(*json, reward);
+		if (committed)
+		{
+			progress_records.store(snapshot);
+		}
 
 		return committed ? mutation_result::updated : mutation_result::save_failed;
 	}
@@ -1168,7 +1229,13 @@ namespace demonware::achievement_store
 		});
 
 		const auto json = serialize_state();
+		const auto snapshot = make_progress_snapshot();
 		committed = json && marketplace_store::save_achievement_state(*json, reward);
+		if (committed)
+		{
+			progress_records.store(snapshot);
+		}
+
 		return committed ? mutation_result::updated : mutation_result::save_failed;
 	}
 }

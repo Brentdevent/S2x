@@ -55,15 +55,24 @@ namespace demonware::order_progress
 		std::int32_t remaining{};
 	};
 
+	struct occurrence
+	{
+		std::vector<target> targets;
+		std::uint64_t time{};
+		std::vector<usage> elapsed;
+	};
+
 	bool timed(const achievement_record& record);
 	bool eligible(const achievement_record& record);
+
 	// Reject definitions the stock fixed-size parser would truncate or ignore.
 	bool supported(std::string_view definition, const predicate& native);
 	std::optional<server_predicate> server_rule(std::string_view name, int kind, int event_id,
 		std::string_view unit = {});
 	bool matches(const predicate& rule, const event& occurrence);
 	bool matches(const server_predicate& rule, const event& occurrence);
-	achievement_store::mutation_result settle(const std::vector<target>& targets,
-		std::uint64_t completion_time, const std::vector<usage>& usage = {},
-		std::vector<achievement_record>* progressed = nullptr);
+
+	// One atomic commit, applying each record's observations in admission order.
+	achievement_store::mutation_result settle_many(const std::vector<occurrence>& occurrences,
+		std::vector<std::vector<achievement_record>>& progressed, bool& terminal_changed);
 }
