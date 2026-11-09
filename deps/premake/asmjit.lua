@@ -37,6 +37,8 @@ function asmjit.project()
 		}
 		
 		removefiles {
+			-- Upstream keeps internal tests alongside library sources.
+			path.join(asmjit.source, "asmjit/**_test.cpp"),
 			path.join(asmjit.source, "asmjit-testing/**"),
 			path.join(asmjit.source, "tools/**"),
 			path.join(asmjit.source, "db/**"),
