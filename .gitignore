@@ -2,3 +2,7 @@
 .vscode
 build/
 usergenerate.bat
+
+# Local-only tests and documentation
+/tests/
+/docs/

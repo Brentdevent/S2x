@@ -15,5 +15,5 @@ namespace order_progress
 
 	// DW worker: prepare committed progress and publish completion with its cache-refresh page.
 	void send_notifications(demonware::service_server* server, std::uint64_t user,
-		const std::string& response);
+		const std::string& response, bool named_refresh);
 }

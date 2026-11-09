@@ -130,9 +130,13 @@ namespace demonware::reward_task4
 
 		if (request->action == achievement_response::get_user_achievements_action)
 		{
+			achievement_response::user_achievements_request query;
+			const auto named_refresh = achievement_response::parse_get_user_achievements_request(request->json, query) &&
+				!query.names.empty();
+
 			// Associate committed notifications with this page before the native cache
 			// consumes it. Progress is displayed on the main thread once that cache is ready.
-			::order_progress::send_notifications(server, context.user_id, result.response_json);
+			::order_progress::send_notifications(server, context.user_id, result.response_json, named_refresh);
 		}
 
 		server->create_reply(4).send();

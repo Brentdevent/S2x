@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/demonware/marketplace/store.hpp"
+#include <memory>
 
 namespace demonware
 {
@@ -134,6 +135,10 @@ namespace demonware
 		bool is_expired(const achievement_record& record, std::uint64_t timestamp);
 		bool is_available();
 		std::vector<achievement_record> get_all();
+
+		// Committed periodic records for gameplay readers; never wait for an in-flight save.
+		using progress_snapshot = std::shared_ptr<const std::vector<achievement_record>>;
+		progress_snapshot get_progress_snapshot();
 
 		mutation_result merge_completion_bits(const std::vector<achievement_record>& records,
 			const std::function<bool(marketplace_store::transaction&)>& reward = {});

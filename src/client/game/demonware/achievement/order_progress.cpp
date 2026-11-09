@@ -202,23 +202,20 @@ namespace demonware::order_progress
 		return false;
 	}
 
-	achievement_store::mutation_result settle(const std::vector<target>& targets,
-		const std::uint64_t completion_time, const std::vector<usage>& elapsed,
-		std::vector<achievement_record>* progressed)
+	namespace
 	{
-		if (progressed)
+		bool apply(achievement_record& record, const occurrence& value,
+			std::vector<achievement_record>& progressed)
 		{
-			progressed->clear();
-		}
+			const auto& targets = value.targets;
+			const auto& elapsed = value.elapsed;
+			const auto completion_time = value.time;
 
-		if (targets.empty() && elapsed.empty())
-		{
-			return achievement_store::mutation_result::unchanged;
-		}
+			if (targets.empty() && elapsed.empty())
+			{
+				return false;
+			}
 
-		std::vector<achievement_record> staged;
-		const auto result = achievement_store::mutate_all([&](achievement_record& record)
-		{
 			if (!eligible(record))
 			{
 				return false;
@@ -280,18 +277,43 @@ namespace demonware::order_progress
 				record.fulfilled_times = 1;
 			}
 
-			if (progressed)
+			progressed.push_back(record);
+			return true;
+		}
+	}
+
+	achievement_store::mutation_result settle_many(const std::vector<occurrence>& occurrences,
+		std::vector<std::vector<achievement_record>>& progressed, bool& terminal_changed)
+	{
+		progressed.clear();
+		terminal_changed = false;
+		if (occurrences.empty())
+		{
+			return achievement_store::mutation_result::unchanged;
+		}
+
+		std::vector<std::vector<achievement_record>> staged(occurrences.size());
+		bool staged_terminal{};
+		const auto result = achievement_store::mutate_all([&](achievement_record& record)
+		{
+			bool changed{};
+			for (std::size_t i = 0; i < occurrences.size(); ++i)
 			{
-				staged.push_back(record);
+				if (apply(record, occurrences[i], staged[i]))
+				{
+					changed = true;
+					staged_terminal |= record.status != achievement_status::in_progress;
+				}
 			}
 
-			return true;
+			return changed;
 		});
 
-		// A failed atomic save must never produce a progress or completion notification.
-		if (progressed && result == achievement_store::mutation_result::updated)
+		// A failed batch rolls back every increment and produces no notifications.
+		if (result == achievement_store::mutation_result::updated)
 		{
-			*progressed = std::move(staged);
+			progressed = std::move(staged);
+			terminal_changed = staged_terminal;
 		}
 
 		return result;
