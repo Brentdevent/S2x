@@ -9,6 +9,7 @@
 #include "party.hpp"
 #include "network.hpp"
 #include "scheduler.hpp"
+#include "upnp.hpp"
 
 #include "console/console.hpp"
 
@@ -1178,10 +1179,12 @@ namespace party_client
 					&& game::Party_AreWeHost(private_party))
 				{
 					// Stop the social party with native endparty reason 1 (disband).
+					// Send it before UPnP removes the endpoint, including on mode switches.
 					utils::hook::invoke<void>(0x4843C0_g, private_party, 1);
 				}
 			}
 
+			upnp::shutdown();
 			quit_hook.invoke<void>();
 		}
 
