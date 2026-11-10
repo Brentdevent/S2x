@@ -2,12 +2,18 @@
 #include "../steam.hpp"
 
 #include "component/auth.hpp"
+#include "component/scheduler.hpp"
 
 namespace steam
 {
 	namespace
 	{
 		std::string auth_ticket;
+		bool auth_callbacks_active{};
+		unsigned int next_auth_ticket{};
+		uint64_t next_auth_request{};
+		std::unordered_map<unsigned int, uint64_t> pending_auth_tickets;
+		std::unordered_map<uint64_t, uint64_t> pending_auth_sessions;
 
 		steam_id generate_steam_id()
 		{
@@ -87,32 +93,107 @@ namespace steam
 
 	unsigned int user::GetAuthSessionTicket(void* pTicket, int cbMaxTicket, unsigned int* pcbTicket)
 	{
+		if (pcbTicket)
+		{
+			*pcbTicket = 0;
+		}
 
-		static uint32_t ticket = 0;
+		if (!pTicket || cbMaxTicket < 1 || !pcbTicket)
+		{
+			return 0;
+		}
+
+		std::lock_guard lock{callbacks::mutex_};
+		if (!auth_callbacks_active)
+		{
+			return 0;
+		}
+
+		if (++next_auth_ticket == 0)
+		{
+			++next_auth_ticket;
+		}
+
+		const auto ticket = next_auth_ticket;
+		const auto request = ++next_auth_request;
+		pending_auth_tickets[ticket] = request;
+		*static_cast<unsigned char*>(pTicket) = 0;
 		*pcbTicket = 1;
 
-		const auto result = callbacks::register_call();
-		auto* response = static_cast<get_auth_session_ticket_response*>(calloc(
-			1, sizeof(get_auth_session_ticket_response)));
-		response->m_h_auth_ticket = ++ticket;
-		response->m_e_result = 1; // k_EResultOK;
+		scheduler::once([ticket, request]
+		{
+			std::lock_guard lock{callbacks::mutex_};
+			const auto pending = pending_auth_tickets.find(ticket);
+			if (!auth_callbacks_active || pending == pending_auth_tickets.end() || pending->second != request)
+			{
+				return;
+			}
 
-		callbacks::return_call(response, sizeof(get_auth_session_ticket_response),
-		                       get_auth_session_ticket_response::callback_id, result);
-		return response->m_h_auth_ticket;
+			pending_auth_tickets.erase(pending);
+			get_auth_session_ticket_response response{ticket, 1}; // k_EResultOK
+			callbacks::dispatch_callback(&response, sizeof(response), response.callback_id);
+		}, scheduler::main);
+
+		return ticket;
 	}
 
 	int user::BeginAuthSession(const void* pAuthTicket, int cbAuthTicket, steam_id steamID)
 	{
+		std::lock_guard lock{callbacks::mutex_};
+		if (!auth_callbacks_active || !pAuthTicket || cbAuthTicket < 1 || !steamID.bits)
+		{
+			return 1; // k_EBeginAuthSessionResultInvalidTicket
+		}
+
+		const auto request = ++next_auth_request;
+		pending_auth_sessions[steamID.bits] = request;
+		scheduler::once([steamID, request]
+		{
+			// Serialize completion with EndAuthSession and shutdown, including calls
+			// made by a callback itself. Use the dispatcher's lock to avoid lock inversion.
+			std::lock_guard lock{callbacks::mutex_};
+			const auto pending = pending_auth_sessions.find(steamID.bits);
+			if (!auth_callbacks_active || pending == pending_auth_sessions.end() || pending->second != request)
+			{
+				return;
+			}
+
+			pending_auth_sessions.erase(pending);
+			// S2x emulates tickets and player IDs. Complete that handshake through
+			// the native callback; this is not validation against Steam's backend.
+			validate_auth_ticket_response response{steamID.bits, 0, steamID.bits};
+			callbacks::dispatch_callback(&response, sizeof(response), response.callback_id);
+		}, scheduler::main);
+
 		return 0;
 	}
 
 	void user::EndAuthSession(steam_id steamID)
 	{
+		std::lock_guard lock{callbacks::mutex_};
+		pending_auth_sessions.erase(steamID.bits);
 	}
 
 	void user::CancelAuthTicket(unsigned int hAuthTicket)
 	{
+		std::lock_guard lock{callbacks::mutex_};
+		pending_auth_tickets.erase(hAuthTicket);
+	}
+
+	void user::initialize()
+	{
+		std::lock_guard lock{callbacks::mutex_};
+		pending_auth_tickets.clear();
+		pending_auth_sessions.clear();
+		auth_callbacks_active = true;
+	}
+
+	void user::shutdown()
+	{
+		std::lock_guard lock{callbacks::mutex_};
+		auth_callbacks_active = false;
+		pending_auth_tickets.clear();
+		pending_auth_sessions.clear();
 	}
 
 	unsigned int user::UserHasLicenseForApp(steam_id steamID, unsigned int appID)

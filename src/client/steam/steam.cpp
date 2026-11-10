@@ -106,6 +106,22 @@ namespace steam
 		results_.emplace_back(result);
 	}
 
+	void callbacks::dispatch_callback(void* data, const int size, const int type)
+	{
+		std::lock_guard<std::recursive_mutex> _{mutex_};
+		const auto handlers = callback_list_;
+
+		for (auto* handler : handlers)
+		{
+			// A callback can unregister itself or another callback while being dispatched.
+			if (handler && std::find(callback_list_.begin(), callback_list_.end(), handler) != callback_list_.end()
+				&& handler->get_i_callback() == type && handler->get_callback_size_bytes() == size)
+			{
+				handler->run(data);
+			}
+		}
+	}
+
 	void callbacks::run_callbacks()
 	{
 		std::lock_guard<std::recursive_mutex> _(mutex_);
@@ -145,6 +161,7 @@ namespace steam
 	{
 		++global_counter;
 
+		user::initialize();
 		steam_proxy::initialize();
 		return true;
 	}
@@ -161,11 +178,14 @@ namespace steam
 
 	void SteamAPI_RunCallbacks()
 	{
+		steam_proxy::run_callbacks();
 		callbacks::run_callbacks();
 	}
 
 	void SteamAPI_Shutdown()
 	{
+		user::shutdown();
+		steam_proxy::shutdown();
 		++global_counter;
 	}
 

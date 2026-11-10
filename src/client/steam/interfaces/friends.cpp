@@ -1,8 +1,7 @@
 #include <std_include.hpp>
 #include "../steam.hpp"
 #include "component/name.hpp"
-
-//#include <game/game.hpp>
+#include "component/steam_proxy.hpp"
 
 namespace steam
 {
@@ -18,47 +17,133 @@ namespace steam
 
 	int friends::GetPersonaState()
 	{
-		return 1;
+		const auto client = steam_proxy::access_client();
+		return client.friends ? client.friends->GetPersonaState() : 1;
 	}
 
 	int friends::GetFriendCount(int eFriendFlags)
 	{
-		return 0;
+		const auto client = steam_proxy::access_client();
+		return client.friends ? std::max(0, client.friends->GetFriendCount(eFriendFlags)) : 0;
 	}
 
-	steam_id friends::GetFriendByIndex(int iFriend, int iFriendFlags)
+	steam_id* friends::GetFriendByIndex(steam_id* result, int iFriend, int iFriendFlags)
 	{
-		return steam_id();
+		const auto client = steam_proxy::access_client();
+		*result = {};
+
+		if (client.friends && iFriend >= 0)
+		{
+			client.friends->GetFriendByIndex(result, iFriend, iFriendFlags);
+			steam_proxy::remember_friend(result->bits);
+		}
+
+		return result;
 	}
 
 	int friends::GetFriendRelationship(steam_id steamIDFriend)
 	{
-		return 0;
+		const auto client = steam_proxy::access_client();
+		return client.friends ? client.friends->GetFriendRelationship(steamIDFriend) : 0;
 	}
 
 	int friends::GetFriendPersonaState(steam_id steamIDFriend)
 	{
-		return 0;
+		const auto client = steam_proxy::access_client();
+		return client.friends ? client.friends->GetFriendPersonaState(steamIDFriend) : 0;
 	}
 
 	const char* friends::GetFriendPersonaName(steam_id steamIDFriend)
 	{
-		return "";
+		const auto client = steam_proxy::access_client();
+		static thread_local std::string name;
+		name = client.friends ? client.friends->GetFriendPersonaName(steamIDFriend) : "";
+		return name.c_str();
 	}
 
-	bool friends::GetFriendGamePlayed(steam_id steamIDFriend, void* pFriendGameInfo)
+	bool friends::GetFriendGamePlayed(steam_id steamIDFriend, friend_game_info* pFriendGameInfo)
 	{
-		return false;
+		if (!pFriendGameInfo)
+		{
+			return false;
+		}
+
+		const auto client = steam_proxy::access_client();
+		*pFriendGameInfo = {};
+		friend_game_info info{};
+
+		if (!client.friends || !client.friends->GetFriendGamePlayed(steamIDFriend, &info))
+		{
+			return false;
+		}
+
+		// Show the game being played without offering to join a retail Steam lobby.
+		pFriendGameInfo->game_id = info.game_id;
+		return true;
 	}
 
 	const char* friends::GetFriendPersonaNameHistory(steam_id steamIDFriend, int iPersonaName)
 	{
-		return "";
+		const auto client = steam_proxy::access_client();
+		static thread_local std::string name;
+		name = client.friends ? client.friends->GetFriendPersonaNameHistory(steamIDFriend, iPersonaName) : "";
+		return name.c_str();
+	}
+
+	int friends::GetFriendSteamLevel(steam_id steamIDFriend)
+	{
+		const auto client = steam_proxy::access_client();
+		return client.friends ? client.friends->GetFriendSteamLevel(steamIDFriend) : 0;
+	}
+
+	const char* friends::GetPlayerNickname(steam_id steamIDPlayer)
+	{
+		const auto client = steam_proxy::access_client();
+		const auto* nickname = client.friends ? client.friends->GetPlayerNickname(steamIDPlayer) : nullptr;
+		static thread_local std::string name;
+		name = nickname ? nickname : "";
+		return name.empty() ? nullptr : name.c_str();
+	}
+
+	int friends::GetFriendsGroupCount()
+	{
+		return 0;
+	}
+
+	int16_t friends::GetFriendsGroupIDByIndex(int iFG)
+	{
+		return -1;
+	}
+
+	const char* friends::GetFriendsGroupName(int16_t friendsGroupID)
+	{
+		return nullptr;
+	}
+
+	int friends::GetFriendsGroupMembersCount(int16_t friendsGroupID)
+	{
+		return 0;
+	}
+
+	void friends::GetFriendsGroupMembersList(int16_t friendsGroupID, steam_id* pOutSteamIDMembers, int nMembersCount)
+	{
+		if (pOutSteamIDMembers && nMembersCount > 0)
+		{
+			std::fill_n(pOutSteamIDMembers, nMembersCount, steam_id{});
+		}
 	}
 
 	bool friends::HasFriend(steam_id steamIDFriend, int eFriendFlags)
 	{
-		return false;
+		const auto client = steam_proxy::access_client();
+		const auto is_friend = client.friends && client.friends->HasFriend(steamIDFriend, eFriendFlags);
+
+		if (is_friend)
+		{
+			steam_proxy::remember_friend(steamIDFriend.bits);
+		}
+
+		return is_friend;
 	}
 
 	int friends::GetClanCount()
@@ -66,9 +151,10 @@ namespace steam
 		return 0;
 	}
 
-	steam_id friends::GetClanByIndex(int iClan)
+	steam_id* friends::GetClanByIndex(steam_id* result, int iClan)
 	{
-		return steam_id();
+		*result = {};
+		return result;
 	}
 
 	const char* friends::GetClanName(steam_id steamIDClan)
@@ -96,9 +182,10 @@ namespace steam
 		return 0;
 	}
 
-	steam_id friends::GetFriendFromSourceByIndex(steam_id steamIDSource, int iFriend)
+	steam_id* friends::GetFriendFromSourceByIndex(steam_id* result, steam_id steamIDSource, int iFriend)
 	{
-		return steam_id();
+		*result = {};
+		return result;
 	}
 
 	bool friends::IsUserInSource(steam_id steamIDUser, steam_id steamIDSource)
@@ -136,22 +223,26 @@ namespace steam
 
 	int friends::GetSmallFriendAvatar(steam_id steamIDFriend)
 	{
-		return 0;
+		const auto client = steam_proxy::access_client();
+		return client.friends ? client.friends->GetSmallFriendAvatar(steamIDFriend) : 0;
 	}
 
 	int friends::GetMediumFriendAvatar(steam_id steamIDFriend)
 	{
-		return 0;
+		const auto client = steam_proxy::access_client();
+		return client.friends ? client.friends->GetMediumFriendAvatar(steamIDFriend) : 0;
 	}
 
 	int friends::GetLargeFriendAvatar(steam_id steamIDFriend)
 	{
-		return 0;
+		const auto client = steam_proxy::access_client();
+		return client.friends ? client.friends->GetLargeFriendAvatar(steamIDFriend) : 0;
 	}
 
 	bool friends::RequestUserInformation(steam_id steamIDUser, bool bRequireNameOnly)
 	{
-		return false;
+		const auto client = steam_proxy::access_client();
+		return client.friends && client.friends->RequestUserInformation(steamIDUser, bRequireNameOnly);
 	}
 
 	unsigned long long friends::RequestClanOfficerList(steam_id steamIDClan)
@@ -159,9 +250,10 @@ namespace steam
 		return 0;
 	}
 
-	steam_id friends::GetClanOwner(steam_id steamIDClan)
+	steam_id* friends::GetClanOwner(steam_id* result, steam_id steamIDClan)
 	{
-		return steam_id();
+		*result = {};
+		return result;
 	}
 
 	int friends::GetClanOfficerCount(steam_id steamIDClan)
@@ -169,9 +261,10 @@ namespace steam
 		return 0;
 	}
 
-	steam_id friends::GetClanOfficerByIndex(steam_id steamIDClan, int iOfficer)
+	steam_id* friends::GetClanOfficerByIndex(steam_id* result, steam_id steamIDClan, int iOfficer)
 	{
-		return steam_id();
+		*result = {};
+		return result;
 	}
 
 	int friends::GetUserRestrictions()
@@ -190,21 +283,34 @@ namespace steam
 
 	const char* friends::GetFriendRichPresence(steam_id steamIDFriend, const char* pchKey)
 	{
-		return "";
+		const auto client = steam_proxy::access_client();
+		static thread_local std::string presence;
+		presence = client.friends && pchKey ? client.friends->GetFriendRichPresence(steamIDFriend, pchKey) : "";
+		return presence.c_str();
 	}
 
 	int friends::GetFriendRichPresenceKeyCount(steam_id steamIDFriend)
 	{
-		return 0;
+		const auto client = steam_proxy::access_client();
+		return client.friends ? client.friends->GetFriendRichPresenceKeyCount(steamIDFriend) : 0;
 	}
 
 	const char* friends::GetFriendRichPresenceKeyByIndex(steam_id steamIDFriend, int iKey)
 	{
-		return "a";
+		const auto client = steam_proxy::access_client();
+		static thread_local std::string key;
+		key = client.friends ? client.friends->GetFriendRichPresenceKeyByIndex(steamIDFriend, iKey) : "";
+		return key.c_str();
 	}
 
 	void friends::RequestFriendRichPresence(steam_id steamIDFriend)
 	{
+		const auto client = steam_proxy::access_client();
+
+		if (client.friends)
+		{
+			client.friends->RequestFriendRichPresence(steamIDFriend);
+		}
 	}
 
 	bool friends::InviteUserToGame(steam_id steamIDFriend, const char* pchConnectString)
@@ -217,9 +323,10 @@ namespace steam
 		return 0;
 	}
 
-	steam_id friends::GetCoplayFriend(int iCoplayFriend)
+	steam_id* friends::GetCoplayFriend(steam_id* result, int iCoplayFriend)
 	{
-		return steam_id();
+		*result = {};
+		return result;
 	}
 
 	int friends::GetFriendCoplayTime(steam_id steamIDFriend)
@@ -247,9 +354,10 @@ namespace steam
 		return 0;
 	}
 
-	steam_id friends::GetChatMemberByIndex(steam_id steamIDClan, int iUser)
+	steam_id* friends::GetChatMemberByIndex(steam_id* result, steam_id steamIDClan, int iUser)
 	{
-		return steam_id();
+		*result = {};
+		return result;
 	}
 
 	bool friends::SendClanChatMessage(steam_id steamIDClanChat, const char* pchText)
