@@ -1,6 +1,7 @@
 #include <std_include.hpp>
 #include "loader/component_loader.hpp"
 #include "steam_proxy.hpp"
+#include "steam_invites.hpp"
 #include "scheduler.hpp"
 
 #include <utils/nt.hpp>
@@ -57,7 +58,7 @@ namespace steam_proxy
 		{
 			int type;
 			int size;
-			alignas(8) std::array<uint8_t, sizeof(steam::avatar_image_loaded)> data{};
+			alignas(8) std::array<uint8_t, sizeof(steam::game_rich_presence_join_requested)> data{};
 		};
 
 		int friend_callback_size(const int type)
@@ -70,6 +71,8 @@ namespace steam_proxy
 				return sizeof(steam::avatar_image_loaded);
 			case steam::friend_rich_presence_update::callback_id:
 				return sizeof(steam::friend_rich_presence_update);
+			case steam::game_rich_presence_join_requested::callback_id:
+				return sizeof(steam::game_rich_presence_join_requested);
 			default:
 				return 0;
 			}
@@ -190,9 +193,20 @@ namespace steam_proxy
 			client_friends = client_engine.invoke<void*>(13, global_user, steam_pipe);
 		}
 
+		void clear_invite_presence()
+		{
+			if (steam_friends && game::environment::uses_multiplayer_binary())
+			{
+				steam_friends->SetRichPresence("connect", nullptr);
+				steam_friends->SetRichPresence("status", nullptr);
+				steam_friends->SetRichPresence("s2x_guid", nullptr);
+			}
+		}
+
 		void do_cleanup()
 		{
 			std::lock_guard _{client_mutex};
+			clear_invite_presence();
 			steam_friends = nullptr;
 			steam_utils = nullptr;
 
@@ -413,16 +427,36 @@ namespace steam_proxy
 
 		// Release the client lock before calling game code, which may query Steam again.
 		auto events = poll_friend_callbacks();
+		std::string join_request;
 
 		for (auto& event : events)
 		{
+			if (event.type == steam::game_rich_presence_join_requested::callback_id)
+			{
+				const auto* request = reinterpret_cast<const steam::game_rich_presence_join_requested*>(event.data.data());
+				const auto length = strnlen_s(request->connect, sizeof(request->connect));
+
+				if (length < sizeof(request->connect))
+				{
+					join_request.assign(request->connect, length);
+				}
+
+				continue; // Never pass these strings to the retail lobby/command parser.
+			}
+
 			steam::callbacks::dispatch_callback(event.data.data(), event.size, event.type);
+		}
+
+		if (!join_request.empty())
+		{
+			steam_invites::accept_invite(join_request);
 		}
 	}
 
 	void shutdown()
 	{
 		std::lock_guard _{client_mutex};
+		clear_invite_presence();
 		callbacks_active = false;
 		steam_friends = nullptr;
 		steam_utils = nullptr;

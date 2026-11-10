@@ -59,6 +59,19 @@ namespace steam
 	static_assert(sizeof(persona_state_change) == 16);
 	static_assert(offsetof(persona_state_change, change_flags) == 8);
 
+#pragma pack(push, 1)
+	struct game_rich_presence_join_requested
+	{
+		static constexpr int callback_id = 337;
+		uint64_t friend_id;
+		char connect[256];
+	};
+#pragma pack(pop)
+
+	static_assert(sizeof(game_rich_presence_join_requested) == 264);
+	static_assert(alignof(game_rich_presence_join_requested) == 1);
+	static_assert(offsetof(game_rich_presence_join_requested, connect) == 8);
+
 	// SteamFriends015. CSteamID returns use an explicit x64 return buffer:
 	// the SDK's CSteamID has a constructor, while our steam_id is a POD union.
 	class friends

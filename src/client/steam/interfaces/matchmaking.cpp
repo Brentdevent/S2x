@@ -1,5 +1,6 @@
 #include <std_include.hpp>
 #include "../steam.hpp"
+#include "component/steam_invites.hpp"
 
 namespace steam
 {
@@ -118,7 +119,7 @@ namespace steam
 
 	bool matchmaking::InviteUserToLobby(steam_id steamIDLobby, steam_id steamIDInvitee)
 	{
-		return true;
+		return steam_invites::invite_friend(steamIDInvitee.bits);
 	}
 
 	int matchmaking::GetNumLobbyMembers(steam_id steamIDLobby)
