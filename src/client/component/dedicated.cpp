@@ -811,22 +811,6 @@ namespace dedicated
 			return 0;
 		}
 
-		void disable_p2p_auth_ticket_validation()
-		{
-			constexpr std::array<std::uint8_t, 5> mark_authenticated{
-				0xC6, 0x44, 0x24, 0x70, 0x01
-			};
-
-			utils::hook::copy(
-				0x486E87_g,
-				mark_authenticated.data(),
-				mark_authenticated.size()
-			);
-
-			utils::hook::jump(0x486E8C_g, 0x486FA8_g);
-			utils::hook::nop(0x486E91_g, 1);
-		}
-
 		void cl_check_for_resend_stub(const unsigned int local_client_num)
 		{
 			if (!headquarters::is_host() && game::virtual_lobby_loaded())
@@ -1307,8 +1291,6 @@ namespace dedicated
 			com_quit_f_hook.create(game::Com_Quit_f, kill_server);
 			command::add("killserver", kill_server);
 			
-			disable_p2p_auth_ticket_validation();
-
 			// HQ retains its native 48-slot allocation for party-indexed clients.
 			if (!headquarters::is_host())
 			{

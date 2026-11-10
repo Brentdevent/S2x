@@ -48,7 +48,8 @@ namespace mode_switch::arguments
 
 			if (option == L"+zombiesmode" || option == L"+coremode" || option == L"+enterhub"
 				|| option == L"+enterlocal" || option == L"+enterlocalzombies" || option == L"-profile"
-				|| option == L"-wait-for-parent" || option == L"+connect" || option == L"+connect_lobby"
+				|| option == L"-wait-for-parent" || option == L"-discord-invite" || option == L"-s2x-invite"
+				|| option == L"+connect" || option == L"+connect_lobby"
 				|| option == L"+map" || option == L"+devmap")
 			{
 				if (i + 1 < values.size() && !is_option(values[i + 1])) ++i;

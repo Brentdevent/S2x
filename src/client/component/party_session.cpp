@@ -3,7 +3,7 @@
 
 #include "party_session.hpp"
 #include "dedicated_party.hpp"
-#include "dedicated_party_client.hpp"
+#include "party_client.hpp"
 #include "headquarters.hpp"
 
 #include <utils/hook.hpp>
@@ -79,7 +79,7 @@ namespace party::session
 			else if (party_data == game::Lobby_GetPartyData(0)
 				&& (game::environment::is_dedicated()
 					? is_dedicated_lobby(party_data)
-					: dedicated_party_client::has_dedicated_session(party_data)))
+					: party_client::has_dedicated_session(party_data)))
 			{
 				// Native lobby updates resize sessions again after map transitions.
 				// Retain the owner's fixed index even when the human limit is smaller.
@@ -118,8 +118,8 @@ namespace party::session
 					|| game::Party_AreWeHost(party_data));
 		}
 
-		return (dedicated_party_client::has_dedicated_session(party_data)
-			|| dedicated_party_client::has_headquarters_session(party_data))
+		return (party_client::has_dedicated_session(party_data)
+			|| party_client::has_headquarters_session(party_data))
 			&& utils::hook::invoke<bool>(0x471200_g, party_data); // Lobby_IsInLobby
 	}
 
@@ -131,11 +131,11 @@ namespace party::session
 		}
 
 		return is_dedicated_lobby(game::Lobby_GetPartyData(0))
-			? dedicated_party_client::get_joined_max_players()
+			? party_client::get_joined_max_players()
 			: -1;
 	}
 
-	// party_session: absent/0 = direct game, 1 = dedicated, 2 = custom, 3 = HQ.
+	// party_session: absent/0 = direct game, 1 = dedicated, 2 = custom, 3 = HQ, 4 = social party.
 	kind classify(const std::string_view value)
 	{
 		if (value.empty() || value == "0")
@@ -154,6 +154,11 @@ namespace party::session
 		{
 			return kind::headquarters;
 		}
+		if (value == "4")
+		{
+			return kind::social;
+		}
+
 		return kind::invalid;
 	}
 

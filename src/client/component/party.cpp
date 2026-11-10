@@ -5,7 +5,7 @@
 #include "arena.hpp"
 #include "custom_match.hpp"
 #include "dedicated_party.hpp"
-#include "dedicated_party_client.hpp"
+#include "party_client.hpp"
 #include "fastfiles.hpp"
 #include "headquarters.hpp"
 #include "command.hpp"
@@ -13,6 +13,7 @@
 #include "network.hpp"
 
 #include "game/dvars.hpp"
+#include "game/party_invite.hpp"
 #include "game/ui_scripting/execution.hpp"
 
 #include "ui_scripting.hpp"
@@ -20,6 +21,7 @@
 #include "console/console.hpp"
 
 #include <utils/hook.hpp>
+#include <utils/finally.hpp>
 #include <utils/io.hpp>
 #include <utils/nt.hpp>
 #include <utils/string.hpp>
@@ -39,6 +41,7 @@ namespace party
 		utils::hook::detour cl_connect_hook;
 		utils::hook::detour disconnect_command_hook;
 		const game::dvar_t* change_team_enabled{};
+		bool client_map_session_active{};
 
 		bool party_join_is_blocked_by_zombies_wave_stub(const void*, const int)
 		{
@@ -47,7 +50,7 @@ namespace party
 
 		bool can_change_assigned_team()
 		{
-			return game::environment::is_dedicated()
+			return (game::environment::is_dedicated() || client_map_session_active)
 				&& change_team_enabled && change_team_enabled->current.enabled;
 		}
 
@@ -76,14 +79,16 @@ namespace party
 		{
 			game::netadr_s host{};
 			std::string challenge{};
+			std::string expected_session_id{};
+			bool friend_join{};
+			bool follow_party{};
+			std::uint32_t discord_token{};
 			bool host_defined{ false };
 			bool query_pending{};
 			std::uint64_t attempt_id{};
 		};
 
 		connect_state_t connect_state{};
-
-		bool client_map_session_active{};
 
 		struct queued_map_start_t
 		{
@@ -98,7 +103,6 @@ namespace party
 		enum class listen_map_transition_phase
 		{
 			none,
-			waiting_for_disconnect,
 			waiting_for_frontend,
 			starting,
 		};
@@ -138,13 +142,22 @@ namespace party
 		{
 			connect_state.query_pending = false;
 			connect_state.challenge.clear();
+			connect_state.expected_session_id.clear();
+			connect_state.friend_join = false;
+			connect_state.follow_party = false;
+			connect_state.discord_token = 0;
 		}
 
 		std::uint64_t invalidate_connection_attempt()
 		{
 			++connect_state.attempt_id;
+
+			// A new connection supersedes pending map changes, including queued UI starts.
+			listen_map_phase = listen_map_transition_phase::none;
+			queued_map_start.reset();
+
 			clear_pending_connect_query();
-			dedicated_party_client::cancel_pending_connection();
+			party_client::cancel_pending_connection();
 			return connect_state.attempt_id;
 		}
 
@@ -252,10 +265,8 @@ namespace party
 
 		void set_party_map_settings(const std::string& map_name, const std::string& gametype)
 		{
-			if (game::environment::is_multiplayer())
-			{
-				game::UI_SetMap(map_name.data(), gametype.data());
-			}
+			// Both MP and Zombies launch through the native selected party.
+			game::UI_SetMap(map_name.data(), gametype.data());
 
 			// This fixes UI elements, scoreboard for example.
 			const auto party = game::Lobby_GetPartyData(0);
@@ -375,14 +386,16 @@ namespace party
 			}
 
 			auto* private_party = game::Party_GetPrivatePartyData();
-			if (!server_running && !is_party_host_ready(private_party))
+			auto* game_lobby = game::Lobby_GetPartyData(0);
+
+			// The social party sleeps while a game lobby is active, including after a match.
+			if (!server_running && !is_party_host_ready(private_party) && !is_party_host_ready(game_lobby))
 			{
 				console::error(
-					"Cannot use map until the online private party is ready and you are its host.\n");
+					"Cannot use map until your online party or game lobby is ready and you are its host.\n");
 				return false;
 			}
 
-			auto* game_lobby = game::Lobby_GetPartyData(0);
 			if (game_lobby && game::Party_IsRunning(game_lobby)
 				&& (!game::Party_AreWeHost(game_lobby)
 					|| (!is_unranked_private_match(game_lobby)
@@ -602,22 +615,26 @@ namespace party
 			auto map_start = std::move(*queued_map_start);
 			queued_map_start.reset();
 
-			// default_xboxlive.cfg and private-party startup can restore the stock
-			// frontend gametype (war). Reapply the requested PartySettings immediately
-			// before UI_StartServer reads them and queues UI_Map.
-			set_party_map_settings(
-				map_start.map_name, map_start.gametype);
-			set_map_dvars(
-				map_start.map_name, map_start.gametype,
-				map_start.map_index, map_start.set_gametype);
-
 			*game::sv_migrate = 0;
-			dedicated_party_client::reset();
+			party_client::reset();
 
 			// HQ disconnect can leave the frontend loaded with no active local client.
 			// CL_MapLoading only connects active clients; without one, CL_InitUI enters
 			// the frontend path and waits for memory already released by map startup.
 			game::CL_SetLocalClientActive(0, true);
+
+			// Match PartyHost_StartMatch: gameplay owns the roster after launch.
+			// Keeping the lobby awake times out followers while they load the map.
+			game::Party_Sleep(get_local_game_lobby());
+
+			// Sleeping the game lobby can switch the native map selector to HQ.
+			// Apply settings afterward so UI_StartServer and its queued UI_Map read
+			// the requested map and gametype, including after returning from a match.
+			set_party_map_settings(map_start.map_name, map_start.gametype);
+			set_map_dvars(
+				map_start.map_name, map_start.gametype,
+				map_start.map_index, map_start.set_gametype);
+
 			game::UI_StartServer(0);
 		}
 
@@ -713,27 +730,26 @@ namespace party
 			const int map_index, const bool set_gametype)
 		{
 			auto* game_lobby = game::Lobby_GetPartyData(0);
-			if (!game_lobby || !is_active_party_host(game_lobby))
+			// The game party sleeps during gameplay but still owns the hosted session.
+			if (!game_lobby || !utils::hook::invoke<bool>(0x471200_g, game_lobby)
+				|| !game::Party_AreWeHost(game_lobby))
 			{
 				console::error("Unable to access the hosted game party for the map change.\n");
 				return;
 			}
 
-			listen_map_phase = listen_map_transition_phase::waiting_for_disconnect;
+			listen_map_phase = listen_map_transition_phase::waiting_for_frontend;
+			const auto attempt_id = connect_state.attempt_id;
 			const auto start_time = std::chrono::steady_clock::now();
 
-			// Stock S1 only host-preloads a match when no server is running, and S1x's
-			// map command leaves a running match before invoking StartServer. S2's direct
-			// UI_Map path passes mapIsPreloaded=false; using it while the server is live
-			// unloads the current UI zones before LUI reloads main.lua. Return to the
-			// online frontend first, then create the replacement private match through
-			// the same initialized path as the initial map command.
-			const auto* args = "Leave";
-			game::UI_RunMenuScript(0, &args);
+			// End the match through the native return-to-lobby path. Leave Game
+			// starts host migration and separates the party before the next map.
+			game::PartyHost_EndMatch();
 
-			scheduler::schedule([map_name, gametype, map_index, set_gametype, start_time]
+			scheduler::schedule([map_name, gametype, map_index, set_gametype, attempt_id, start_time]
 			{
-				if (listen_map_phase == listen_map_transition_phase::none)
+				if (!is_connection_attempt_current(attempt_id)
+					|| listen_map_phase == listen_map_transition_phase::none)
 				{
 					return scheduler::cond_end;
 				}
@@ -743,17 +759,15 @@ namespace party
 				{
 					console::error("Listen map transition to '%s' timed out.\n",
 						map_name.data());
-					if (!game::is_server_running())
-					{
-						client_map_session_active = false;
-					}
+
 					queued_map_start.reset();
 					listen_map_phase = listen_map_transition_phase::none;
 					return scheduler::cond_end;
 				}
 
 				if (listen_map_phase == listen_map_transition_phase::waiting_for_frontend
-					&& !sv_running() && !game::SV_Loaded() && *game::frontend_state != 0)
+					&& game::virtual_lobby_loaded() && game::CL_IsLocalClientInGame(0)
+					&& is_party_host_ready(game::Lobby_GetPartyData(0)))
 				{
 					listen_map_phase = listen_map_transition_phase::starting;
 					start_online_private_map(map_name, gametype, map_index, set_gametype);
@@ -806,7 +820,7 @@ namespace party
 			}
 
 			registration.keep();
-			dedicated_party_client::commit_direct_connection();
+			party_client::commit_direct_connection();
 
 			const auto& mode = game::environment::get_online_mode_info();
 			const auto clamped_max_clients = std::clamp(
@@ -866,9 +880,26 @@ namespace party
 				network::net_adr_to_string(connect_state.host)
 			);
 
-			network::send(connect_state.host, "s2x_getInfo", connect_state.challenge);
+			network::send(connect_state.host, "s2x_getInfo", connect_state.challenge
+				+ (connect_state.expected_session_id.empty() ? "" : " " + connect_state.expected_session_id));
 
 			const auto challenge = connect_state.challenge;
+			if (connect_state.follow_party)
+			{
+				const auto query = challenge + " " + connect_state.expected_session_id;
+				scheduler::schedule([target, challenge, query, attempt_id, retries = 0]() mutable
+				{
+					if (!connect_state.query_pending || connect_state.challenge != challenge
+						|| !party_client::is_party_follow_current(attempt_id) || retries++ == 4)
+					{
+						return scheduler::cond_end;
+					}
+
+					network::send(target, "s2x_getInfo", query);
+					return scheduler::cond_continue;
+				}, scheduler::main, 1s);
+			}
+
 			scheduler::once([target, challenge, attempt_id]()
 			{
 				if (!is_connection_attempt_current(attempt_id)
@@ -879,7 +910,12 @@ namespace party
 				}
 
 				console::error("Connection query timed out.\n");
+				const auto follow_party = connect_state.follow_party;
 				clear_pending_connect_query();
+				if (follow_party)
+				{
+					party_client::cancel_pending_connection();
+				}
 			}, scheduler::pipeline::main, 10s);
 		}
 
@@ -925,27 +961,21 @@ namespace party
 
 			if (argc >= 8)
 			{
-				dedicated_party_client::reset();
+				party_client::reset();
 			}
 
 			cl_connect_hook.invoke<void>();
 		}
 
-		void disconnect_command_stub()
+		void prepare_disconnect()
 		{
-			if (listen_map_phase == listen_map_transition_phase::waiting_for_disconnect)
-			{
-				listen_map_phase = listen_map_transition_phase::waiting_for_frontend;
-			}
-			else if (listen_map_phase != listen_map_transition_phase::none)
-			{
-				// A second disconnect supersedes the command-owned transition.
-				listen_map_phase = listen_map_transition_phase::none;
-			}
-
 			party::cancel_pending_connection();
 			client_map_session_active = false;
-			queued_map_start.reset();
+		}
+
+		void disconnect_command_stub()
+		{
+			prepare_disconnect();
 
 			if (!game::environment::is_dedicated() && game::environment::is_multiplayer()
 				&& game::virtual_lobby_loaded() && get_current_mapname() == headquarters::map_name)
@@ -960,7 +990,7 @@ namespace party
 				disconnect_command_hook.invoke<void>();
 			}
 
-			dedicated_party_client::reset();
+			party_client::reset();
 		}
 
 		void start_map(const command::params& params)
@@ -1119,7 +1149,8 @@ namespace party
 			// Party_IsRunning is cleared during gameplay. The session remains
 			// joinable then too; use in-party plus host ownership, as stock does.
 			if (!lobby || !utils::hook::invoke<bool>(0x471200_g, lobby)
-				|| !game::Party_AreWeHost(lobby) || !is_unranked_private_match(lobby))
+				|| !game::Party_AreWeHost(lobby)
+				|| (!is_unranked_private_match(lobby) && !is_client_map_match(lobby)))
 			{
 				return false;
 			}
@@ -1139,10 +1170,74 @@ namespace party
 				info.player_count += game::Party_IsMemberUIVisible(lobby, member_index) != 0;
 			}
 			info.match_running = game::is_server_running();
+			info.type = session::kind::custom;
 			return party::session::valid_descriptor(info.session)
 				&& !info.map_name.empty() && !info.gametype.empty()
 				&& info.max_players > 0
 				&& info.max_players <= game::environment::get_online_mode_info().max_players;
+		}
+
+		bool start_invite_frontend(bool& signin_requested)
+		{
+			if (!*game::databaseCompletedEvent2 || !*game::hks::lui_lua_state)
+			{
+				return false;
+			}
+
+			game::LUI_EnterCriticalSection();
+			const auto unlock = utils::finally(game::LUI_LeaveCriticalSection);
+
+			try
+			{
+				const auto lua = ui_scripting::get_globals();
+				const auto engine = lua.get("Engine").as<ui_scripting::table>();
+				const auto controller = game::CL_ControllerIndexFromClientNum(0);
+				if (!engine.get("IsProfileSignedIn")(controller)[0].as<bool>())
+				{
+					return false;
+				}
+
+				// mp_main_menu_uc's online Play flow also prepares profile data and
+				// closes the title menus. Starting virtuallobby alone leaves their
+				// loading screen over an otherwise active local client.
+				if (!signin_requested)
+				{
+					signin_requested = true;
+					engine.get("ExecNow")("resetSplitscreenSignIn", controller);
+					engine.get("SetVlobbyToHub")(true);
+					engine.get("ExecNow")("forcenosplitscreencontrol main_XBOXLIVE_1", controller);
+					if (!engine.get("UserCanAccessMPLiveMenu")(controller)[0].as<bool>())
+					{
+						engine.get("Exec")("xrequirelivesignin", controller);
+						lua.get("SetWaitingForNetworkType")(
+							lua.get("WaitingForNetworkType").as<ui_scripting::table>().get("Online"), controller);
+					}
+				}
+
+				const auto access = engine.get("UserCanAccessMPLiveMenu")(controller);
+				if (!access[0].as<bool>())
+				{
+					return false;
+				}
+
+				engine.get("ExecNow")("forcenosplitscreencontrol main_XBOXLIVE_3", controller);
+				engine.get("SetOnlineGame")(true);
+				engine.get("SetSystemLink")(false);
+				engine.get("SetSplitScreen")(false);
+				engine.get("SetGameIsPrivateMatch")(false);
+				engine.get("SetGameIsRankedMatch")(false);
+				lua.get("AAR").as<ui_scripting::table>().get("ClearAAR")();
+				engine.get("CacheUserDataForController")(controller);
+				lua.get("LUI").as<ui_scripting::table>().get("FlowManager")
+					.as<ui_scripting::table>().get("RequestCloseAllMenus")();
+				engine.get("Exec")("virtuallobby");
+				return true;
+			}
+			catch (const std::exception& e)
+			{
+				console::warn("[party] Unable to prepare online play: %s\n", e.what());
+				return false;
+			}
 		}
 
 		void send_info_response(const game::netadr_s& from, std::string_view data, const std::string& response_command)
@@ -1158,6 +1253,18 @@ namespace party
 				return;
 			}
 
+			std::string requested_session;
+			if (const auto separator = data.find(' '); separator != std::string_view::npos)
+			{
+				requested_session = utils::string::to_lower(std::string{data.substr(separator + 1)});
+				if (!invite::valid_session(requested_session))
+				{
+					return;
+				}
+
+				data = data.substr(0, separator);
+			}
+
 			utils::info_string info{};
 
 			auto mapname = get_current_mapname();
@@ -1171,17 +1278,26 @@ namespace party
 			auto match_running = gameplay_running;
 
 			party::session::connect_info party_connect_info{};
-			const auto has_hq_session = headquarters::get_connect_info(party_connect_info);
-			if (headquarters::is_host() && !has_hq_session)
+			const auto has_social_session = !requested_session.empty()
+				&& get_invite_connect_info(party_connect_info)
+				&& party_connect_info.type == session::kind::social
+				&& requested_session == utils::string::to_lower(party_connect_info.session.session_id);
+			const auto has_hq_session = !has_social_session && headquarters::get_connect_info(party_connect_info);
+			if (headquarters::is_host() && !has_hq_session && !has_social_session)
 			{
 				return; // A loading/stopped HQ is not a direct-connect game server.
 			}
 
-			const auto has_dedicated_session = !has_hq_session
+			const auto has_dedicated_session = !has_social_session && !has_hq_session
 				&& dedicated_party::get_connect_info(party_connect_info);
-			const auto has_custom_session = !has_hq_session && !has_dedicated_session
+			const auto has_custom_session = !has_social_session && !has_hq_session && !has_dedicated_session
 				&& get_custom_lobby_connect_info(party_connect_info);
-			const auto has_party_session = has_hq_session || has_dedicated_session || has_custom_session;
+			const auto has_party_session = has_social_session || has_hq_session || has_dedicated_session || has_custom_session;
+			if (!requested_session.empty() && (!has_party_session
+				|| requested_session != utils::string::to_lower(party_connect_info.session.session_id)))
+			{
+				return;
+			}
 			if (has_party_session)
 			{
 				mapname = party_connect_info.map_name;
@@ -1191,7 +1307,7 @@ namespace party
 			}
 
 			client_counts counts{};
-			if (gameplay_running && !has_hq_session)
+			if (gameplay_running && !has_hq_session && !has_social_session)
 			{
 				// Party membership omits match bots. Count both from the gameplay slots.
 				counts = get_match_client_counts(max_clients);
@@ -1221,7 +1337,7 @@ namespace party
 
 			if (has_party_session && response_command == "s2x_infoResponse")
 			{
-				info.set("party_session", has_hq_session ? "3" : has_custom_session ? "2" : "1");
+				info.set("party_session", has_social_session ? "4" : has_hq_session ? "3" : has_custom_session ? "2" : "1");
 				info.set("session_host", party_connect_info.session.host_address);
 				info.set("session_key", party_connect_info.session.key);
 				info.set("session_id", party_connect_info.session.session_id);
@@ -1309,11 +1425,190 @@ namespace party
 		}, scheduler::pipeline::main);
 	}
 
+	std::uint64_t get_connection_attempt_id()
+	{
+		return connect_state.attempt_id;
+	}
+
+	std::string get_current_session_id(const int party_type)
+	{
+		const auto* lobby = game::Lobby_GetPartyData(party_type);
+
+		if (!lobby || !utils::hook::invoke<bool>(0x471200_g, lobby))
+		{
+			return {};
+		}
+
+		const auto* session = utils::hook::invoke<const game::SessionData*>(0x470F50_g, lobby);
+
+		if (!session || !session->sessionId)
+		{
+			return {};
+		}
+
+		std::array<char, 17> id{};
+		game::Session_IdToString(session->sessionId, id.data());
+		return utils::string::to_lower(id.data());
+	}
+
+	bool has_session(const std::string_view session_id)
+	{
+		const auto expected = utils::string::to_lower(std::string{session_id});
+		if (expected.empty())
+		{
+			return false;
+		}
+
+		for (auto* party_data : {game::Lobby_GetPartyData(0), game::Party_GetPrivatePartyData(),
+			game::Lobby_GetPartyData(headquarters::party_type)})
+		{
+			if (party_data && party_data->session && utils::hook::invoke<bool>(0x471200_g, party_data)
+				&& expected == utils::string::to_lower(session::describe(*party_data->session).session_id))
+			{
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	game::PartyData* get_invite_connect_info(session::connect_info& info)
+	{
+		if (!game::environment::uses_multiplayer_binary() || game::environment::is_dedicated()
+			|| game::is_local_play())
+		{
+			return nullptr;
+		}
+
+		if (get_custom_lobby_connect_info(info))
+		{
+			return game::Lobby_GetPartyData(0);
+		}
+
+		// Native Custom Match startup suspends the social party. Its session ID
+		// stays valid for existing members, but it no longer accepts new joins.
+		auto* party_data = game::Party_GetPrivatePartyData();
+		if (!party_data || !party_data->session || !party_data->session->sessionId
+			|| !game::Party_IsRunning(party_data) || !game::Party_AreWeHost(party_data))
+		{
+			return nullptr;
+		}
+
+		info = {};
+		info.type = session::kind::social;
+		info.session = session::describe(*party_data->session);
+		info.max_players = utils::hook::invoke<int>(0x197110_g, party_data);
+		for (auto member = 0; member < static_cast<int>(std::size(party_data->members)); ++member)
+		{
+			info.player_count += game::Party_IsMemberUIVisible(party_data, member) != 0;
+		}
+
+		return session::valid_descriptor(info.session) && info.max_players > 0
+			&& info.max_players <= session::get_player_limit(session::kind::social)
+			? party_data : nullptr;
+	}
+
+	void queue_session_join(std::string address, std::string session_id, const std::uint64_t expires,
+		const bool friend_join, const std::uint32_t discord_token, const bool follow_party)
+	{
+		if (has_session(session_id))
+		{
+			return;
+		}
+
+		const auto in_game = game::CL_IsLocalClientInGame(0);
+		const auto needs_frontend = !game::virtual_lobby_loaded() && !in_game;
+		const auto needs_disconnect = !game::virtual_lobby_loaded() && in_game;
+
+		if (needs_disconnect)
+		{
+			prepare_disconnect();
+			party_client::reset();
+		}
+
+		const auto attempt_id = invalidate_connection_attempt();
+		const auto deadline = std::chrono::steady_clock::now() + 90s;
+
+		scheduler::schedule([address = std::move(address), session_id = std::move(session_id), attempt_id, deadline,
+			expires, friend_join, discord_token, follow_party, start_frontend = needs_frontend, signin_requested = false]() mutable
+		{
+			// A previous native join can finish while this invite is queued.
+			if (!is_connection_attempt_current(attempt_id)
+				|| has_session(session_id)
+				|| (follow_party && !party_client::is_party_follow_current(attempt_id)))
+			{
+				return scheduler::cond_end;
+			}
+
+			const auto now = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+				std::chrono::system_clock::now().time_since_epoch()).count());
+
+			if (std::chrono::steady_clock::now() >= deadline || now >= expires)
+			{
+				console::error("[party] Invite timed out waiting for the frontend.\n");
+				return scheduler::cond_end;
+			}
+
+			if (game::is_local_play())
+			{
+				return scheduler::cond_end;
+			}
+
+			if (!game::virtual_lobby_loaded())
+			{
+				if (start_frontend && start_invite_frontend(signin_requested))
+				{
+					start_frontend = false;
+				}
+
+				return scheduler::cond_continue;
+			}
+
+			// virtualLobby_Loaded is set before the local client reaches CA_ACTIVE.
+			if (!game::CL_IsLocalClientInGame(0))
+			{
+				return scheduler::cond_continue;
+			}
+
+			game::netadr_s target{};
+
+			if (!game::NET_StringToAdr(address.c_str(), &target) || target.type != game::NA_IP)
+			{
+				return scheduler::cond_end;
+			}
+
+			target.localNetID = game::NS_SERVER;
+			target.addrHandleIndex = 0;
+			connect_state.expected_session_id = session_id;
+			connect_state.friend_join = friend_join;
+			connect_state.follow_party = follow_party;
+			connect_state.discord_token = friend_join ? 0 : discord_token;
+			connect(target, attempt_id);
+
+			return scheduler::cond_end;
+		}, scheduler::main, 100ms);
+
+		if (needs_disconnect)
+		{
+			// Native CL_Disconnect_f leaves gameplay through Com_Error/longjmp.
+			// Queue the invite after cancellation but before that non-returning call.
+			disconnect_command_hook.invoke<void>();
+		}
+	}
+
 	void execute_internal_connect(const internal_connect_request& request)
 	{
 		if (!is_connection_attempt_current(request.attempt_id)
-			|| !dedicated_party_client::is_pending_internal_connect(request.session.session_id, request.attempt_id))
+			|| !party_client::is_pending_internal_connect(request.session.session_id, request.attempt_id))
 		{
+			return;
+		}
+
+		// The session may also change while the server's info response is in flight.
+		// Only consume redundant invitations; explicit reconnects still proceed.
+		if (request.custom_invite && has_session(request.session.session_id))
+		{
+			cancel_pending_connection();
 			return;
 		}
 
@@ -1401,15 +1696,12 @@ namespace party
 				change_team_enabled = game::Dvar_RegisterBool(
 					"3193", true, game::DVAR_FLAG_READ);
 
-				if (game::environment::is_dedicated())
-				{
-					// Public lobbies normally lock gclient::sessionTeam to the team
-					// assigned by PartyHost_PreMatch. Permit the stock team_select GSC
-					// path to change it, then mirror that authoritative value back to
-					// PartyData so reconnects and lobby presentation stay consistent.
-					utils::hook::call(0x546128_g, has_assigned_team_stub);
-					utils::hook::call(0x546194_g, update_session_team_stub);
-				}
+				// Dedicated and map-command games use online stats, so the public match path
+				// locks sessionTeam to the lobby assignment. Let GSC select the team and
+				// mirror it back to PartyData, including FFA-to-team-mode transitions.
+				// The stubs preserve stock behavior outside these hosted sessions.
+				utils::hook::call(0x546128_g, has_assigned_team_stub);
+				utils::hook::call(0x546194_g, update_session_team_stub);
 			}
 
 			if (game::environment::is_zombies())
@@ -1463,6 +1755,10 @@ namespace party
 			{
 				const utils::info_string info{ std::string{data} };
 				const auto challenge = info.get("challenge");
+				const auto expected_session_id = connect_state.expected_session_id;
+				const auto friend_join = connect_state.friend_join;
+				const auto follow_party = connect_state.follow_party;
+				const auto discord_token = connect_state.discord_token;
 				const auto connect_response = connect_state.query_pending
 					&& connect_state.host_defined
 					&& challenge == connect_state.challenge
@@ -1473,7 +1769,7 @@ namespace party
 				}
 				const auto attempt_id = connect_state.attempt_id;
 
-				if (dedicated_party_client::try_handle_sync_response(from, info, challenge))
+				if (party_client::try_handle_sync_response(from, info, challenge))
 				{
 					return;
 				}
@@ -1510,6 +1806,24 @@ namespace party
 				}
 
 				const auto session_kind = party::session::classify(info.get("party_session"));
+
+				if (!expected_session_id.empty())
+				{
+					const auto invite_session = session_kind == party::session::kind::custom
+						|| session_kind == party::session::kind::social;
+					const auto follow_session = follow_party
+						&& (session_kind == party::session::kind::dedicated
+							|| session_kind == party::session::kind::headquarters);
+					const auto session_matches = utils::string::to_lower(info.get("session_id"))
+						== utils::string::to_lower(expected_session_id);
+
+					if ((!invite_session && !follow_session) || !session_matches)
+					{
+						console::error("Connection failed: this party invite is no longer valid.\n");
+						return;
+					}
+				}
+
 				const auto player_limit = party::session::get_player_limit(session_kind);
 				int client_count{};
 				int bot_count{};
@@ -1529,7 +1843,8 @@ namespace party
 				// Dedicated and custom lobbies can be joined before gameplay starts.
 				// Hand the stock session descriptor to CL_Connect before applying
 				// direct-game connection requirements such as sv_running.
-				if (dedicated_party_client::try_handle_join(from, info, max_clients, attempt_id))
+				if (party_client::try_handle_join(from, info, max_clients, attempt_id, friend_join, discord_token,
+					!expected_session_id.empty() && !follow_party, follow_party))
 				{
 					return;
 				}

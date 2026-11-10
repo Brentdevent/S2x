@@ -140,6 +140,43 @@ namespace mode_switch
 		}
 	}
 
+	bool join_invite(const game::environment::mode mode, const std::string_view secret,
+		const bool discord_invite)
+	{
+		try
+		{
+			if ((mode != game::environment::mode::multiplayer && mode != game::environment::mode::zombies)
+				|| !game::environment::is_mode_installed(mode))
+			{
+				return false;
+			}
+
+			auto args = saved_arguments;
+			args.emplace_back(mode == game::environment::mode::zombies ? L"-zombies" : L"-multiplayer");
+
+			if (mode == game::environment::mode::zombies)
+			{
+				args.emplace_back(L"+zombiesMode");
+				args.emplace_back(L"1");
+			}
+
+			args.emplace_back(discord_invite ? L"-discord-invite" : L"-s2x-invite");
+			args.push_back(utils::string::convert(std::string{secret}));
+
+			args.emplace_back(L"-profile");
+			args.push_back(utils::string::convert(player_profile::name()));
+			start_process(std::move(args));
+			game::Com_Quit_f();
+
+			return true;
+		}
+		catch (const std::exception& e)
+		{
+			MessageBoxA(nullptr, e.what(), "S2x Invite Failed", MB_OK | MB_ICONERROR);
+			return false;
+		}
+	}
+
 	void wait_for_previous_process()
 	{
 		if (!utils::flags::has_flag("-wait-for-parent"))
