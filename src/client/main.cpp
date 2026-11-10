@@ -244,7 +244,7 @@ int main()
 				? game::environment::platform::microsoft_store
 				: game::environment::platform::steam);
 
-			if (game::environment::is_microsoft_store())
+			if (game::environment::is_microsoft_store() || utils::flags::has_flag("-discord-launch"))
 			{
 				std::filesystem::current_path(application_directory);
 			}
