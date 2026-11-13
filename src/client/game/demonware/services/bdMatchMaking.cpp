@@ -3,6 +3,8 @@
 
 #include "game/demonware/runtime_context.hpp"
 
+#include <utils/cryptography.hpp>
+
 namespace demonware
 {
 	bdMatchMaking::bdMatchMaking() : service(138, "bdMatchMaking")
@@ -154,10 +156,18 @@ namespace demonware
 		reply.send();
 	}
 
-	void bdMatchMaking::requestSessionID(service_server* server, byte_buffer* buffer) const
+	void bdMatchMaking::requestSessionID(service_server* server, byte_buffer* /*buffer*/) const
 	{
-		// TODO:
+		// Native social-party creation requests a new ID without registering a
+		// searchable match. An empty success reply leaves its session ID at zero.
+		auto id = std::make_unique<bdSessionID>();
+		do
+		{
+			utils::cryptography::random::get_data(&id->session_id, sizeof(id->session_id));
+		} while (!id->session_id);
+
 		auto reply = server->create_reply(this->task_id());
+		reply.add(id);
 		reply.send();
 	}
 }

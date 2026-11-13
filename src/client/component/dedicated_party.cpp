@@ -2,7 +2,7 @@
 #include "loader/component_loader.hpp"
 
 #include "dedicated_party.hpp"
-#include "dedicated_party_client.hpp"
+#include "party_client.hpp"
 #include "headquarters.hpp"
 #include "network.hpp"
 #include "party.hpp"
@@ -984,7 +984,7 @@ namespace dedicated_party
 				{
 					dedicated_party_state.game_lobby = game_lobby;
 					apply_configured_party_limits();
-					dedicated_party_client::refresh_presentation();
+					party_client::refresh_presentation();
 
 					// Stock StartPrivateMatch notifies the persistent private party only after
 					// the hosted game lobby has completed creation.

@@ -56,6 +56,8 @@ namespace steam
 
 	class callbacks
 	{
+		friend class user;
+
 	public:
 		class base
 		{
@@ -107,6 +109,7 @@ namespace steam
 		static void unregister_call_result(uint64_t call, base* result);
 
 		static void return_call(void* data, int size, int type, uint64_t call);
+		static void dispatch_callback(void* data, int size, int type);
 		static void run_callbacks();
 
 	private:

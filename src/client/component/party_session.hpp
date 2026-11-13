@@ -18,6 +18,7 @@ namespace party::session
 		dedicated,
 		custom,
 		headquarters,
+		social,
 		invalid,
 	};
 
@@ -39,6 +40,7 @@ namespace party::session
 		int player_count{};
 		int max_players{};
 		bool match_running{};
+		kind type{kind::none};
 	};
 
 	kind classify(std::string_view value);

@@ -486,7 +486,9 @@ namespace game
 		PartyActiveClient activeClient;
 		char __pad3[0x186430 - 0x186400 - sizeof(PartyActiveClient)];
 		std::uint32_t launchDeadline;
-		char __pad4[0x186490 - 0x186430 - sizeof(std::uint32_t)];
+		char __pad4[0x186480 - 0x186430 - sizeof(std::uint32_t)];
+		std::uint32_t presenceSequence;
+		char __pad5[0x186490 - 0x186480 - sizeof(std::uint32_t)];
 		std::uint32_t hostState;
 	};
 	static_assert(offsetof(PartyData, session) == 0x0);
@@ -495,9 +497,24 @@ namespace game
 	static_assert(offsetof(PartyData, hostIndex) == 0x1863BC);
 	static_assert(offsetof(PartyData, activeClient) == 0x186400);
 	static_assert(offsetof(PartyData, launchDeadline) == 0x186430);
+	static_assert(offsetof(PartyData, presenceSequence) == 0x186480);
 	static_assert(offsetof(PartyData, hostState) == 0x186490);
 
 #pragma pack(push, 1)
+	// Native Session_Init / PartyAtomic descriptor (6FFD70 / 497EF0).
+	struct PartySessionInfo
+	{
+		std::uint64_t id;
+		std::uint8_t address[37];
+		std::uint8_t key[16];
+		std::uint8_t padding[3];
+		std::uint32_t flags;
+	};
+	static_assert(sizeof(PartySessionInfo) == 68);
+	static_assert(offsetof(PartySessionInfo, address) == 8);
+	static_assert(offsetof(PartySessionInfo, key) == 45);
+	static_assert(offsetof(PartySessionInfo, flags) == 64);
+
 	struct SessionMember
 	{
 		std::uint64_t xuid;
@@ -515,7 +532,10 @@ namespace game
 		std::uint8_t hostAddress;
 		char __pad1[0x61 - 0x3C - sizeof(std::uint8_t)];
 		std::uint8_t sessionKey;
-		char __pad2[0x90 - 0x61 - sizeof(std::uint8_t)];
+		char __pad2[0x7C - 0x61 - sizeof(std::uint8_t)];
+		std::uint32_t privateSlots;
+		std::uint32_t publicSlots;
+		char __pad3[0x90 - 0x80 - sizeof(std::uint32_t)];
 		SessionMember members[48];
 	};
 #pragma pack(pop)
@@ -525,15 +545,33 @@ namespace game
 	static_assert(offsetof(SessionData, sessionId) == 0x34);
 	static_assert(offsetof(SessionData, hostAddress) == 0x3C);
 	static_assert(offsetof(SessionData, sessionKey) == 0x61);
+	static_assert(offsetof(SessionData, privateSlots) == 0x7C);
+	static_assert(offsetof(SessionData, publicSlots) == 0x80);
 	static_assert(offsetof(SessionData, members) == 0x90);
 
 	struct PartyAtomicJoinInfo
 	{
-		char __pad0[0x158];
+		int state;
+		int joinType;
+		char __pad0[0x158 - 2 * sizeof(int)];
 		std::uint8_t addressValid;
 		char __pad1[0x15C - 0x158 - sizeof(std::uint8_t)];
 		netadr_s address;
+		char __pad2[0x794 - 0x15C - sizeof(netadr_s)];
+		std::uint8_t memberCount;
+		std::uint8_t subPartyCount;
+		std::uint8_t subPartySizes[48];
+		char __pad3[0x7D8 - 0x796 - 48];
+		int hasSecondaryLocalClient;
+		char __pad4[0xA8A0 - 0x7D8 - sizeof(int)];
+		int connectAttempts;
 	};
+	static_assert(offsetof(PartyAtomicJoinInfo, connectAttempts) == 0xA8A0);
+	static_assert(offsetof(PartyAtomicJoinInfo, memberCount) == 0x794);
+	static_assert(offsetof(PartyAtomicJoinInfo, subPartyCount) == 0x795);
+	static_assert(offsetof(PartyAtomicJoinInfo, subPartySizes) == 0x796);
+	static_assert(offsetof(PartyAtomicJoinInfo, hasSecondaryLocalClient) == 0x7D8);
+	static_assert(offsetof(PartyAtomicJoinInfo, joinType) == 0x4);
 	static_assert(offsetof(PartyAtomicJoinInfo, addressValid) == 0x158);
 	static_assert(offsetof(PartyAtomicJoinInfo, address) == 0x15C);
 

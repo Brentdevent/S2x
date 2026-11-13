@@ -2,6 +2,7 @@
 #include "../steam.hpp"
 
 #include "game/game.hpp"
+#include "component/steam_proxy.hpp"
 
 namespace steam
 {
@@ -32,12 +33,22 @@ namespace steam
 
 	bool utils::GetImageSize(int iImage, unsigned int* pnWidth, unsigned int* pnHeight)
 	{
-		return false;
+		if (!pnWidth || !pnHeight)
+		{
+			return false;
+		}
+
+		*pnWidth = 0;
+		*pnHeight = 0;
+		const auto client = steam_proxy::access_client();
+		return client.utils && iImage > 0 && client.utils->GetImageSize(iImage, pnWidth, pnHeight);
 	}
 
 	bool utils::GetImageRGBA(int iImage, unsigned char* pubDest, int nDestBufferSize)
 	{
-		return false;
+		const auto client = steam_proxy::access_client();
+		return client.utils && iImage > 0 && pubDest && nDestBufferSize > 0
+			&& client.utils->GetImageRGBA(iImage, pubDest, nDestBufferSize);
 	}
 
 	bool utils::GetCSERIPPort(unsigned int* unIP, unsigned short* usPort)

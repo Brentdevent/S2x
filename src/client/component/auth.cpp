@@ -96,6 +96,24 @@ namespace auth
 			return key;
 		}
 
+		void skip_party_admission_authentication()
+		{
+			// Reuse native admission after its authentication wait, for listen and
+			// dedicated hosts. Keep packet, privacy and capacity checks in place.
+			constexpr std::array<std::uint8_t, 5> mark_authenticated{
+				0xC6, 0x44, 0x24, 0x70, 0x01
+			};
+
+			utils::hook::copy(
+				0x486E87_g,
+				mark_authenticated.data(),
+				mark_authenticated.size()
+			);
+
+			utils::hook::jump(0x486E8C_g, 0x486FA8_g);
+			utils::hook::nop(0x486E91_g, 1);
+		}
+
 		std::string serialize_connect_data(const std::vector<char>& data)
 		{
 			utils::byte_buffer buffer{};
@@ -156,6 +174,8 @@ namespace auth
 			}
 			else
 			{
+				skip_party_admission_authentication();
+
 				p(0x1908A_g, 0x190D9_g);
 				p(0x1A553_g, 0x1A598_g);
 				p(0x1B61B_g, 0x1B64E_g);

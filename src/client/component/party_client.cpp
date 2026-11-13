@@ -1,7 +1,7 @@
 #include <std_include.hpp>
 #include "loader/component_loader.hpp"
 
-#include "dedicated_party_client.hpp"
+#include "party_client.hpp"
 #include "arena.hpp"
 #include "command.hpp"
 #include "dedicated_party.hpp"
@@ -9,6 +9,7 @@
 #include "party.hpp"
 #include "network.hpp"
 #include "scheduler.hpp"
+#include "upnp.hpp"
 
 #include "console/console.hpp"
 
@@ -24,12 +25,14 @@
 
 #include <charconv>
 
-namespace dedicated_party_client
+namespace party_client
 {
 	namespace
 	{
 		constexpr auto hq_preparation_timeout = 120s;
 
+		utils::hook::detour quit_hook;
+		utils::hook::detour party_client_host_presence_hook;
 		utils::hook::detour cl_connect_and_preload_map_hook;
 		utils::hook::detour party_atomic_setup_potential_host_hook;
 		utils::hook::detour party_atomic_request_join_hook;
@@ -47,6 +50,9 @@ namespace dedicated_party_client
 			std::string map_name{};
 			std::string gametype{};
 			int max_players{};
+			bool friend_join{};
+			std::uint32_t discord_token{};
+			bool custom_invite{};
 		};
 
 		struct hosted_dedicated_party_state_t
@@ -67,8 +73,31 @@ namespace dedicated_party_client
 		hosted_dedicated_party_state_t hosted_dedicated_party_state{};
 		std::string joined_custom_session_id{};
 		std::string joined_hq_session_id{};
+		std::string joined_social_session_id{};
+		game::netadr_s joined_game_target{};
+		game::netadr_s joined_hq_target{};
+
+		struct pending_party_follow
+		{
+			std::uint64_t attempt_id{};
+			std::uint64_t private_session{};
+			std::uint64_t game_session{};
+			std::chrono::steady_clock::time_point expires;
+			int sequence{};
+			int party_type{};
+			bool remote_game{};
+			game::PartySessionInfo session_info{};
+			game::netadr_s leader{};
+			std::array<std::uint32_t, 2> active_client{};
+			game::msg_t message{};
+			std::string data;
+		};
+
+		std::optional<pending_party_follow> party_follow;
+
 		bool hosted_dedicated_go_in_progress{};
 		thread_local bool preserve_local_players_for_join{};
+		bool custom_invite_token{};
 
 		bool has_joined_session(game::PartyData* party_data, const int party_type,
 			const std::string& joined_session_id)
@@ -97,7 +126,8 @@ namespace dedicated_party_client
 			const unsigned int controller_index, const int joining)
 		{
 			const auto hosted_join = has_dedicated_session(party_data)
-				|| has_joined_session(party_data, 0, joined_custom_session_id);
+				|| has_joined_session(party_data, 0, joined_custom_session_id)
+				|| has_joined_session(party_data, 1, joined_social_session_id);
 			
 			if (hosted_join)
 			{
@@ -281,6 +311,20 @@ namespace dedicated_party_client
 		void party_atomic_request_join_stub(game::PartyAtomicJoinInfo* join_info,
 			const int controller_index, const void* session_info)
 		{
+			// SetupPotentialHost consumes hosted_party_join_state inside the native call.
+			const auto custom_join = pending_hosted_party_join_matches(session_info)
+				&& hosted_party_join_state.kind == party::session::kind::custom;
+			const auto friend_join = custom_join && hosted_party_join_state.friend_join;
+
+			if (custom_join)
+			{
+				// Retail Discord sets this before RequestJoin (84DB8D). The native
+				// join state machine clears it on completion, failure and timeout.
+				const auto token = friend_join ? 0 : hosted_party_join_state.discord_token;
+				utils::hook::invoke<void>(0x1E4990_g, token);
+				custom_invite_token = token != 0;
+			}
+
 			const auto previous = preserve_local_players_for_join;
 			const auto restore = utils::finally([previous]
 			{
@@ -299,6 +343,40 @@ namespace dedicated_party_client
 			}
 
 			party_atomic_request_join_hook.invoke<void>(join_info, controller_index, session_info);
+
+			if (friend_join && join_info)
+			{
+				// 497D8E writes PJT_INVITE (2); 4968F8 serializes this field.
+				// Steam must use PJT_PRESENCE (1), which checks the host's invite list.
+				join_info->joinType = 1;
+			}
+		}
+
+		bool keep_social_party()
+		{
+			auto* private_party = game::Party_GetPrivatePartyData();
+			return hosted_party_join_state.active && !hosted_party_join_state.custom_invite
+				&& (hosted_party_join_state.kind == party::session::kind::dedicated
+					|| hosted_party_join_state.kind == party::session::kind::custom)
+				&& party::is_connection_attempt_current(hosted_party_join_state.attempt_id)
+				&& private_party && utils::hook::invoke<bool>(0x471200_g, private_party)
+				&& game::Party_AreWeHost(private_party);
+		}
+
+		void stop_private_party_for_join(game::PartyData* party_data)
+		{
+			if (!keep_social_party())
+			{
+				utils::hook::invoke<void>(0x4843B0_g, party_data);
+			}
+		}
+
+		void clear_private_session_for_join(game::SessionData* session)
+		{
+			if (!keep_social_party())
+			{
+				utils::hook::invoke<void>(0x6FD220_g, session);
+			}
 		}
 
 		bool party_join_uses_local_controllers_stub()
@@ -539,15 +617,27 @@ namespace dedicated_party_client
 			hosted_dedicated_party_state = {};
 			joined_custom_session_id.clear();
 			joined_hq_session_id.clear();
+			joined_hq_target = {};
 			if (pending_join.kind == party::session::kind::headquarters)
 			{
 				// Retain the validated session identity for owner filtering. HQ still
 				// owns its lifecycle; skip game-party presentation and rotation.
 				joined_hq_session_id = pending_join.session_id;
+				joined_hq_target = pending_join.target;
 				console::info("[HQ] Joining %s...\n",
 					network::net_adr_to_string(pending_join.target));
 				return true;
 			}
+
+			if (pending_join.kind == party::session::kind::social)
+			{
+				joined_social_session_id = pending_join.session_id;
+				console::info("[party] Joining social party through %s.\n",
+					network::net_adr_to_string(pending_join.target));
+				return true;
+			}
+
+			joined_game_target = pending_join.target;
 
 			if (!dedicated_join)
 			{
@@ -572,6 +662,433 @@ namespace dedicated_party_client
 			console::info("Hosted dedicated lobby: joining through %s.\n",
 				network::net_adr_to_string(pending_join.target));
 			return true;
+		}
+
+		game::PartyData* get_party_follow_destination()
+		{
+			auto* game_party = game::Lobby_GetPartyData(0);
+			if (game_party && utils::hook::invoke<bool>(0x471200_g, game_party)
+				&& (game::Party_AreWeHost(game_party) || has_dedicated_session(game_party)
+					|| has_joined_session(game_party, 0, joined_custom_session_id)))
+			{
+				return game_party;
+			}
+
+			auto* hq_party = game::Lobby_GetPartyData(headquarters::party_type);
+			return game::environment::is_multiplayer() && has_headquarters_session(hq_party)
+				&& utils::hook::invoke<bool>(0x471200_g, hq_party) ? hq_party : nullptr;
+		}
+
+		void write_party_follow_session(game::msg_t* message, const void* data, const int size)
+		{
+			if (size != sizeof(game::PartySessionInfo) || game::is_local_play())
+			{
+				utils::hook::invoke<void>(0xDDAF0_g, message, data, size);
+				return;
+			}
+
+			game::PartySessionInfo descriptor{};
+			std::memcpy(&descriptor, data, sizeof(descriptor));
+			auto* game_party = get_party_follow_destination();
+			const auto owned = game_party && game_party->session
+				&& descriptor.id == game_party->session->sessionId;
+			const auto hosted = owned && game::Party_AreWeHost(game_party);
+			const auto hq = owned && has_headquarters_session(game_party);
+			const auto joined = owned && (has_dedicated_session(game_party)
+				|| has_joined_session(game_party, 0, joined_custom_session_id) || hq);
+
+			if (hosted || joined)
+			{
+				// bdCommonAddr serializes five local IPv4/port pairs, then its public
+				// pair (A78470 / A75D30). Mark the descriptor's unused alignment bytes
+				// so only S2x party members interpret this raw address. A zero pair
+				// means the current leader, whose reachable endpoint is already known.
+				const auto& target = hq ? joined_hq_target : joined_game_target;
+				const std::uint32_t address = joined ? target.addr : 0;
+				const std::uint16_t port = joined ? ntohs(target.port) : 0;
+				std::memcpy(descriptor.address + 30, &address, sizeof(address));
+				std::memcpy(descriptor.address + 34, &port, sizeof(port));
+				std::memcpy(descriptor.padding, "S2X", sizeof(descriptor.padding));
+			}
+
+			utils::hook::invoke<void>(0xDDAF0_g, message, &descriptor, size);
+		}
+
+		int party_atomic_is_joining_follow_session_stub(void* join_info, const game::PartySessionInfo* session_info)
+		{
+			if (std::memcmp(session_info->padding, "S2X", sizeof(session_info->padding)) == 0)
+			{
+				std::array<char, 17> session_id{};
+				game::Session_IdToString(session_info->id, session_id.data());
+				if (party::has_session(session_id.data()))
+				{
+					// HostPresence's completed-session checks compare the descriptor's
+					// address to an ID (471676 / 471688). Treat the current S2x session
+					// like a pending join so retries only update native presence state.
+					return 1;
+				}
+			}
+
+			return utils::hook::invoke<int>(0x4971A0_g, join_info, session_info);
+		}
+
+		void party_client_host_presence_stub(game::PartyData* party_data, const std::uint32_t* active_client,
+			game::netadr_s* from, game::msg_t* message)
+		{
+			// The native handler verifies the source again when the query completes.
+			// Do not query an address supplied by anyone except our current leader.
+			if (game::is_local_play() || !party_data || party_data != game::Party_GetPrivatePartyData()
+				|| !party_data->session || !utils::hook::invoke<bool>(0x471200_g, party_data)
+				|| game::Party_AreWeHost(party_data)
+				|| !utils::hook::invoke<bool>(0x479490_g, party_data, from)
+				|| !utils::hook::invoke<bool>(0x481230_g, party_data, party_data->hostIndex)
+				|| message->overflowed || message->splitSize || !message->data
+				|| message->cursize < 0 || message->cursize > 1024
+				|| message->readcount < 0 || message->readcount > message->cursize
+				|| message->bit < 0 || message->bit > message->cursize * 8)
+			{
+				party_client_host_presence_hook.invoke<void>(party_data, active_client, from, message);
+				return;
+			}
+
+			auto reader = *message;
+			const auto type = utils::hook::invoke<int>(0xDCB40_g, &reader);
+			utils::hook::invoke<int>(0xDCB40_g, &reader); // Native mode.
+			const auto sequence = utils::hook::invoke<int>(0xDC910_g, &reader, 8);
+			game::PartySessionInfo descriptor{};
+			if (type == 0 || type == headquarters::party_type)
+			{
+				utils::hook::invoke<void>(0xDCBB0_g, &reader, sizeof(descriptor), &descriptor, sizeof(descriptor));
+				utils::hook::invoke<int>(0xDCB40_g, &reader); // Capacity.
+				utils::hook::invoke<int>(0xDCB40_g, &reader); // Private match.
+				utils::hook::invoke<int>(0xDC870_g, &reader); // Native join flag.
+			}
+
+			if ((type != 0 && type != headquarters::party_type)
+				|| (type == headquarters::party_type && !game::environment::is_multiplayer())
+				|| reader.overflowed || std::memcmp(descriptor.padding, "S2X", 3) != 0)
+			{
+				if (type == 1 && !reader.overflowed && party_follow
+					&& is_party_follow_current(party_follow->attempt_id)
+					&& (sequence > party_follow->sequence
+						|| (sequence != party_follow->sequence && party_follow->sequence > 170 && sequence < 85)))
+				{
+					// A newer leader backout cancels a query still waiting for the old game.
+					party::cancel_pending_connection();
+				}
+
+				party_client_host_presence_hook.invoke<void>(party_data, active_client, from, message);
+				return;
+			}
+
+			const auto previous = party_follow && is_party_follow_current(party_follow->attempt_id)
+				? party_follow->sequence : static_cast<int>(party_data->presenceSequence);
+			if (!(sequence > previous || (sequence != previous && previous > 170 && sequence < 85)))
+			{
+				return;
+			}
+
+			game::netadr_s target = *from;
+			if (target.type == game::NA_BROADCAST)
+			{
+				// Native reliable party packets use this type for raw IP peers too.
+				target.type = game::NA_IP;
+			}
+
+			std::uint32_t address{};
+			std::uint16_t port{};
+			std::memcpy(&address, descriptor.address + 30, sizeof(address));
+			std::memcpy(&port, descriptor.address + 34, sizeof(port));
+			if (address || port)
+			{
+				if (!address || !port)
+				{
+					return;
+				}
+
+				target.type = game::NA_IP;
+				target.addr = address;
+				target.port = htons(port);
+			}
+
+			std::array<char, 17> session_id{};
+			game::Session_IdToString(descriptor.id, session_id.data());
+			if (party::has_session(session_id.data())
+				|| utils::hook::invoke<bool>(0x4971A0_g,
+					utils::hook::invoke<void*>(0x47D270_g, type), &descriptor)
+				|| (!game::virtual_lobby_loaded() && game::CL_IsLocalClientInGame(0)))
+			{
+				// Let stock presence acknowledge an existing join and handle gameplay
+				// backout. Never discard the social party through an invite disconnect.
+				party_client_host_presence_hook.invoke<void>(party_data, active_client, from, message);
+				return;
+			}
+
+			if (!descriptor.id || target.type != game::NA_IP || !target.port
+				|| (party_follow && is_party_follow_current(party_follow->attempt_id)
+					&& party_follow->game_session == descriptor.id))
+			{
+				return;
+			}
+
+			pending_party_follow pending{};
+			pending.private_session = party_data->session->sessionId;
+			pending.game_session = descriptor.id;
+			pending.expires = std::chrono::steady_clock::now() + 90s;
+			pending.sequence = sequence;
+			pending.party_type = type;
+			pending.remote_game = address != 0;
+			pending.session_info = descriptor;
+			pending.leader = *from;
+			std::copy_n(active_client, pending.active_client.size(), pending.active_client.begin());
+			pending.message = *message;
+			pending.data.assign(message->data, message->cursize);
+			const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+				std::chrono::system_clock::now().time_since_epoch()).count();
+			party::queue_session_join(network::net_adr_to_string(target), session_id.data(), now + 90, false, 0, true);
+			pending.attempt_id = party::get_connection_attempt_id();
+			party_follow = std::move(pending);
+		}
+
+		void join_headquarters(game::PartySessionInfo& descriptor)
+		{
+			// Mirror pa_joinhub (471E40): select full HQ and enter its atomic join.
+			utils::hook::invoke<void>(0x483D50_g);
+			utils::hook::invoke<void>(0x497290_g,
+				game::CL_ControllerIndexFromClientNum(0), &descriptor);
+			utils::hook::invoke<void>(0xA74A50_g, descriptor.key);
+			utils::hook::invoke<void>(0xA74AA0_g, &descriptor);
+		}
+
+		void complete_party_follow(const party::internal_connect_request& request)
+		{
+			if (!is_party_follow_current(request.attempt_id))
+			{
+				cancel_pending_connection();
+				return;
+			}
+
+			auto pending = std::move(*party_follow);
+			party_follow.reset();
+			pending.message.data = pending.data.data();
+			pending.message.splitData = nullptr;
+			if (pending.party_type == headquarters::party_type)
+			{
+				// Native hostPresence ignores HQ follows while we own the local HQ
+				// (4714FD). The normal HQ join retires it first. Its descriptor must
+				// match the presence so native retries recognize the pending join.
+				join_headquarters(pending.session_info);
+			}
+
+			// SetupPotentialHost consumes the validated session kind inside this call.
+			const auto kind = hosted_party_join_state.kind;
+
+			// Native hostPresence owns the sequence, controller selection, backout
+			// and PJT_FOLLOW flow. SetupPotentialHost uses the validated query result.
+			party_client_host_presence_hook.invoke<void>(game::Party_GetPrivatePartyData(),
+				pending.active_client.data(), &pending.leader, &pending.message);
+			hosted_party_join_state = {};
+
+			if (pending.remote_game && pending.party_type == 0)
+			{
+				auto* join_info = utils::hook::invoke<game::PartyAtomicJoinInfo*>(0x47D270_g, 0);
+				if (join_info->state == 11 && join_info->joinType == 3)
+				{
+					// A remote host has not reserved this follower's slot. Match direct
+					// RequestJoin admission for dedicated servers; Custom Matches keep
+					// presence admission and its privacy checks. Retain the social party
+					// with the local-player counts from RequestJoin (497D7A-497DAE).
+					join_info->memberCount = join_info->hasSecondaryLocalClient ? 2 : 1;
+					join_info->subPartyCount = 1;
+					join_info->subPartySizes[0] = join_info->memberCount;
+					join_info->joinType = kind == party::session::kind::dedicated ? 2 : 1;
+					utils::hook::invoke<void>(0x497E80_g, join_info, 1, 0);
+				}
+			}
+		}
+
+		bool has_game_party_member(const game::PartyData* game_party, const std::uint64_t xuid)
+		{
+			return std::any_of(std::begin(game_party->members), std::end(game_party->members),
+				[xuid](const auto& member)
+				{
+					// Native PartyMember_IsPresent (481360). Reserved slots are not joins.
+					return member.state >= 5 && member.xuid == xuid;
+				});
+		}
+
+		std::int8_t find_follow_reservation_stub(game::PartyData* game_party, game::netadr_s* address)
+		{
+			const auto member = utils::hook::invoke<std::int8_t>(0x47C1A0_g, game_party, address);
+			auto* private_party = game::Party_GetPrivatePartyData();
+			if (member >= 0 || game::is_local_play() || game_party != game::Lobby_GetPartyData(0)
+				|| !private_party || !private_party->session || !game::Party_AreWeHost(private_party))
+			{
+				return member;
+			}
+
+			// Native address lookup ignores a reservation until its session member
+			// is active. Match its XUID through the current social-party address.
+			const auto social_member = utils::hook::invoke<std::int8_t>(0x47C1A0_g, private_party, address);
+			if (social_member < 0 || private_party->members[social_member].state < 5)
+			{
+				return member;
+			}
+
+			for (auto slot = 0; slot < static_cast<int>(std::size(game_party->members)); ++slot)
+			{
+				const auto& reserved = game_party->members[slot];
+				if (reserved.state != 0 && reserved.xuid == private_party->members[social_member].xuid)
+				{
+					return static_cast<std::int8_t>(slot);
+				}
+			}
+
+			return member;
+		}
+
+		bool reserve_party_follow_slots(game::PartyData* private_party, game::PartyData* game_party)
+		{
+			auto needed = 0;
+			for (const auto& member : private_party->members)
+			{
+				if (member.state >= 5 && std::none_of(std::begin(game_party->members), std::end(game_party->members),
+					[&member](const auto& reserved) { return reserved.state != 0 && reserved.xuid == member.xuid; }))
+				{
+					++needed;
+				}
+			}
+
+			if (!needed)
+			{
+				return true;
+			}
+
+			const auto capacity = std::min<std::size_t>(std::size(game_party->members),
+				static_cast<std::size_t>(game_party->session->publicSlots) + game_party->session->privateSlots);
+			const auto available = std::count_if(game_party->members, game_party->members + capacity,
+				[](const auto& member) { return member.state == 0; });
+			if (needed > available)
+			{
+				// The native reservation routine raises Com_Error when full. Wait for
+				// space instead of dropping the host from a scheduler callback.
+				return false;
+			}
+
+			utils::hook::invoke<void>(0x4896D0_g, game_party, game::CL_ControllerIndexFromClientNum(0));
+			return true;
+		}
+
+		bool send_party_follow(game::PartyData* private_party, game::PartyData* game_party)
+		{
+			const auto hosting = game::Party_AreWeHost(game_party);
+			const auto hq = has_headquarters_session(game_party);
+			if (!hosting && !has_dedicated_session(game_party)
+				&& !has_joined_session(game_party, 0, joined_custom_session_id) && !hq)
+			{
+				return false;
+			}
+
+			std::vector<int> followers;
+			for (auto member = 0; member < static_cast<int>(std::size(private_party->members)); ++member)
+			{
+				if (game::Party_IsMemberUIVisible(private_party, member)
+					&& !game::Party_IsMemberLocalPlayer(private_party, member)
+					&& !has_game_party_member(game_party, private_party->members[member].xuid))
+				{
+					followers.push_back(member);
+				}
+			}
+
+			if (followers.empty())
+			{
+				return false;
+			}
+
+			if (hosting && !reserve_party_follow_slots(private_party, game_party))
+			{
+				// Existing reservations still need presence retries while others wait for space.
+				std::erase_if(followers, [&](const int member)
+				{
+					const auto xuid = private_party->members[member].xuid;
+					return std::none_of(std::begin(game_party->members), std::end(game_party->members),
+						[xuid](const auto& reserved) { return reserved.state != 0 && reserved.xuid == xuid; });
+				});
+
+				if (followers.empty())
+				{
+					return true; // Keep retrying while the lobby is full.
+				}
+			}
+
+			// Match 4896D0's wire format without reserving slots in a remote roster.
+			// A follower still in gameplay consumes presence just to back out; a
+			// later sequence lets it join after the frontend has finished loading.
+			std::array<char, 128> data{};
+			game::msg_t message{};
+			utils::hook::invoke<void>(0xDC720_g, &message, data.data(), static_cast<int>(data.size()));
+			utils::hook::invoke<void>(0xDDE70_g, &message, "1pa_presence");
+			utils::hook::invoke<void>(0xDDAD0_g, &message, hq ? headquarters::party_type : 0);
+			utils::hook::invoke<void>(0xDDAD0_g, &message, utils::hook::invoke<int>(0x76BF30_g));
+			private_party->presenceSequence = (private_party->presenceSequence + 1) % 255;
+			utils::hook::invoke<void>(0xDD8B0_g, &message, private_party->presenceSequence, 8);
+			write_party_follow_session(&message, &game_party->session->sessionId, sizeof(game::PartySessionInfo));
+			utils::hook::invoke<void>(0xDDAD0_g, &message, game_party->session->publicSlots);
+			utils::hook::invoke<void>(0xDDAD0_g, &message, game_party->session->privateSlots);
+			utils::hook::invoke<void>(0xDDA40_g, &message,
+				utils::hook::invoke<bool>(0x827770_g, game_party->session));
+
+			for (const auto member : followers)
+			{
+				auto address = private_party->session->members[member].address;
+				utils::hook::invoke<void>(0x76DFB0_g, &address, &message, 2, nullptr);
+			}
+
+			return true;
+		}
+
+		void notify_party_members()
+		{
+			static std::vector<std::uint64_t> notified;
+			static std::chrono::steady_clock::time_point retry_until;
+			static std::chrono::steady_clock::time_point next_notification;
+			auto* private_party = game::Party_GetPrivatePartyData();
+			auto* game_party = get_party_follow_destination();
+			if (!private_party || !private_party->session || !game_party || !game_party->session
+				|| game::is_local_play() || !utils::hook::invoke<bool>(0x471200_g, private_party)
+				|| !game::Party_AreWeHost(private_party) || !utils::hook::invoke<bool>(0x471200_g, game_party)
+				|| !private_party->session->sessionId || !game_party->session->sessionId
+				|| (game::Party_AreWeHost(game_party) && game_party->hostState != 4 && !game::is_server_running()))
+			{
+				notified.clear();
+				return;
+			}
+
+			std::vector<std::uint64_t> members{private_party->session->sessionId, game_party->session->sessionId};
+			for (int member = 0; member < static_cast<int>(std::size(private_party->members)); ++member)
+			{
+				if (game::Party_IsMemberUIVisible(private_party, member))
+				{
+					members.push_back(private_party->members[member].xuid);
+				}
+			}
+
+			const auto now = std::chrono::steady_clock::now();
+			if (members != notified)
+			{
+				notified = std::move(members);
+				retry_until = now + 90s;
+				next_notification = {};
+			}
+
+			if (now < retry_until && now >= next_notification)
+			{
+				next_notification = now + 1s;
+				if (!send_party_follow(private_party, game_party))
+				{
+					retry_until = {};
+				}
+			}
 		}
 
 		bool prepare_headquarters_join(bool& preparation_started)
@@ -599,20 +1116,76 @@ namespace dedicated_party_client
 			// CL_Connect (0x6D0A0) parses id at +0, 37-byte bdCommonAddr at +8,
 			// and the 16-byte key at +45. The HQ join copies 68 bytes
 			// (0x471E40 / 0x497EF0); preserve alignment and zero the trailing bytes.
-			constexpr auto address_offset = 8;
-			constexpr auto key_offset = 45;
+			alignas(16) game::PartySessionInfo descriptor{};
+			descriptor.id = utils::hook::invoke<std::uint64_t>(0x66EAF0_g, request.session.session_id.data());
+			utils::hook::invoke<void>(0x66EB40_g, request.session.host_address.data(), descriptor.address);
+			utils::hook::invoke<void>(0x66EA70_g, request.session.key.data(), descriptor.key);
+			join_headquarters(descriptor);
+		}
+
+		void join_social_party(const party::internal_connect_request& request)
+		{
+			if (request.custom_invite && party::has_session(request.session.session_id))
+			{
+				cancel_pending_connection();
+				return;
+			}
+
+			// Native invite join (496560) reads party type from descriptor +64.
+			// Private parties are type 1; game parties are 0. Session_Init (6FFD70)
+			// copies this same 68-byte descriptor into the temporary session.
 			alignas(16) std::array<std::uint8_t, 68> descriptor{};
 			const auto id = utils::hook::invoke<std::uint64_t>(0x66EAF0_g, request.session.session_id.data());
 			std::memcpy(descriptor.data(), &id, sizeof(id));
-			utils::hook::invoke<void>(0x66EB40_g, request.session.host_address.data(), descriptor.data() + address_offset);
-			utils::hook::invoke<void>(0x66EA70_g, request.session.key.data(), descriptor.data() + key_offset);
+			utils::hook::invoke<void>(0x66EB40_g, request.session.host_address.data(), descriptor.data() + 8);
+			utils::hook::invoke<void>(0x66EA70_g, request.session.key.data(), descriptor.data() + 45);
+			descriptor[64] = 1;
 
-			// Mirror pa_joinhub: select full HQ, then enter the native HQ atomic join.
-			utils::hook::invoke<void>(0x483D50_g);
-			utils::hook::invoke<void>(0x497290_g,
-				game::CL_ControllerIndexFromClientNum(0), descriptor.data());
-			utils::hook::invoke<void>(0xA74A50_g, descriptor.data() + key_offset);
+			const auto token = request.friend_join ? 0 : request.discord_token;
+			utils::hook::invoke<void>(0x1E4990_g, token);
+			custom_invite_token = token != 0;
+			utils::hook::invoke<void>(0x496560_g, game::CL_ControllerIndexFromClientNum(0),
+				descriptor.data(), request.friend_join ? 0 : 1, 1);
+
+			// The invite entry point starts a backend QoS probe (state 3), which cannot
+			// resolve raw S2x peers. Our session query already verified this endpoint.
+			// Enter the normal connect state with the same retry budget as a successful
+			// probe (0x494BC0) or a Custom Match join (0x497B50).
+			auto* join_info = utils::hook::invoke<game::PartyAtomicJoinInfo*>(0x47D270_g, 1);
+			if (join_info->state == 3 && join_info->addressValid
+				&& joined_social_session_id == request.session.session_id)
+			{
+				const auto* connect_attempts = game::Dvar_FindMalleableVar("pt_connectAttempts");
+				if (connect_attempts)
+				{
+					join_info->connectAttempts = connect_attempts->current.integer;
+					join_info->state = 1;
+				}
+			}
+
+			utils::hook::invoke<void>(0xA74A50_g, descriptor.data() + 45);
 			utils::hook::invoke<void>(0xA74AA0_g, descriptor.data());
+		}
+
+		void quit_stub()
+		{
+			party::cancel_pending_connection();
+
+			if (!game::is_local_play())
+			{
+				auto* private_party = game::Party_GetPrivatePartyData();
+				if (private_party && private_party->session
+					&& utils::hook::invoke<bool>(0x471200_g, private_party)
+					&& game::Party_AreWeHost(private_party))
+				{
+					// Stop the social party with native endparty reason 1 (disband).
+					// Send it before UPnP removes the endpoint, including on mode switches.
+					utils::hook::invoke<void>(0x4843C0_g, private_party, 1);
+				}
+			}
+
+			upnp::shutdown();
+			quit_hook.invoke<void>();
 		}
 
 		void install_lobby_functions()
@@ -655,7 +1228,8 @@ namespace dedicated_party_client
 	}
 
 	bool try_handle_join(const game::netadr_s& from, const utils::info_string& info,
-		const int max_players, const std::uint64_t attempt_id)
+		const int max_players, const std::uint64_t attempt_id, const bool friend_join, const std::uint32_t discord_token,
+		const bool custom_invite, const bool follow_party)
 	{
 		const auto kind = party::session::classify(info.get("party_session"));
 		if (kind == party::session::kind::none)
@@ -664,6 +1238,13 @@ namespace dedicated_party_client
 		}
 
 		const auto is_hq_join = kind == party::session::kind::headquarters;
+		const auto is_social_join = kind == party::session::kind::social;
+		if (follow_party && (!is_party_follow_current(attempt_id) || is_social_join
+			|| (party_follow->party_type == headquarters::party_type) != is_hq_join))
+		{
+			return true;
+		}
+
 		if (kind == party::session::kind::invalid
 			|| (is_hq_join
 				&& (!game::environment::is_multiplayer() || game::environment::is_dedicated()))
@@ -691,14 +1272,15 @@ namespace dedicated_party_client
 					|| map_name != headquarters::map_name || gametype != headquarters::gametype))
 			|| (kind == party::session::kind::dedicated
 				&& !parse_match_sequence(info.get("party_match_sequence"), match_sequence))
-			|| !validate_map_and_gametype(map_name, gametype)
-			|| !party::validate_gametype(gametype))
+			|| (!is_social_join && (!validate_map_and_gametype(map_name, gametype)
+				|| !party::validate_gametype(gametype)))
+			|| (is_social_join && (!map_name.empty() || !gametype.empty())))
 		{
 			console::error("Connection failed: invalid hosted-party session data.\n");
 			return true;
 		}
 
-		if (!is_hq_join)
+		if (!is_hq_join && !is_social_join)
 		{
 			console::info("Joining %s lobby on map '%s' gametype '%s'.\n",
 				kind == party::session::kind::custom ? "custom match" : "hosted dedicated",
@@ -711,19 +1293,24 @@ namespace dedicated_party_client
 		}
 
 		registration.keep();
+		auto pending_follow = follow_party ? std::move(party_follow) : std::nullopt;
 		cancel_pending_connection();
+		party_follow = std::move(pending_follow);
 
 		auto target = from;
 		target.localNetID = game::NS_SERVER;
 
 		const auto generation = pending_join_generation;
 		const auto deadline = std::chrono::steady_clock::now() + hq_preparation_timeout;
-		const party::internal_connect_request request{ attempt_id, session, map_name, gametype };
+		const party::internal_connect_request request{
+			attempt_id, session, map_name, gametype, friend_join, discord_token, custom_invite, follow_party
+		};
 		scheduler::schedule([request, target, max_players, match_sequence, kind,
 			generation, deadline, preparing_hq = false]() mutable
 		{
 			if (!party::is_connection_attempt_current(request.attempt_id)
-				|| generation != pending_join_generation)
+				|| generation != pending_join_generation
+				|| (request.follow_party && !is_party_follow_current(request.attempt_id)))
 			{
 				return scheduler::cond_end;
 			}
@@ -752,12 +1339,20 @@ namespace dedicated_party_client
 			// The potential-host hook consumes this state during the native join.
 			hosted_party_join_state = {
 				true, kind, request.attempt_id, match_sequence, target,
-				request.session.session_id, request.map_name, request.gametype, max_players
+				request.session.session_id, request.map_name, request.gametype, max_players, request.friend_join, request.discord_token, request.custom_invite
 			};
-			if (kind == party::session::kind::headquarters)
+			if (request.follow_party)
+			{
+				complete_party_follow(request);
+			}
+			else if (kind == party::session::kind::headquarters)
 			{
 				join_headquarters(request);
 				cancel_pending_connection();
+			}
+			else if (kind == party::session::kind::social)
+			{
+				join_social_party(request);
 			}
 			else
 			{
@@ -769,6 +1364,18 @@ namespace dedicated_party_client
 		}, scheduler::pipeline::main);
 
 		return true;
+	}
+
+	bool is_party_follow_current(const std::uint64_t attempt_id)
+	{
+		auto* private_party = game::Party_GetPrivatePartyData();
+		return party_follow && party_follow->attempt_id == attempt_id
+			&& party::is_connection_attempt_current(attempt_id)
+			&& std::chrono::steady_clock::now() < party_follow->expires
+			&& private_party && private_party->session && utils::hook::invoke<bool>(0x471200_g, private_party)
+			&& private_party->session->sessionId == party_follow->private_session
+			&& !game::Party_AreWeHost(private_party)
+			&& utils::hook::invoke<bool>(0x479490_g, private_party, &party_follow->leader);
 	}
 
 	bool is_pending_internal_connect(const std::string_view session_id,
@@ -891,7 +1498,20 @@ namespace dedicated_party_client
 			return dedicated_party::get_current_gametype();
 		}
 
-		return party::session::is_dedicated_lobby(game::Lobby_GetPartyData(0))
+		auto* game_lobby = game::Lobby_GetPartyData(0);
+		if (game::environment::is_multiplayer()
+			&& has_joined_session(game_lobby, 0, joined_custom_session_id)
+			&& utils::hook::invoke<bool>(0x471200_g, game_lobby)
+			&& game::PartySettings_GetPrivateMatch(&game_lobby->settings) == 0
+			&& game::PartySettings_GetRankedMatch(&game_lobby->settings) == 0)
+		{
+			// Map sessions use online stats without the private-match flag. Read the
+			// received party gametype instead of the client's stale playlist label.
+			const auto* gametype = game::Party_GetGameType(game_lobby);
+			return gametype ? gametype : "";
+		}
+
+		return party::session::is_dedicated_lobby(game_lobby)
 			? hosted_dedicated_party_state.gametype : std::string{};
 	}
 
@@ -925,6 +1545,13 @@ namespace dedicated_party_client
 
 	void cancel_pending_connection()
 	{
+		if (custom_invite_token)
+		{
+			utils::hook::invoke<void>(0x1E49B0_g);
+			custom_invite_token = false;
+		}
+
+		party_follow.reset();
 		++pending_join_generation;
 		hosted_party_join_state = {};
 		hosted_dedicated_go_in_progress = false;
@@ -941,6 +1568,9 @@ namespace dedicated_party_client
 		hosted_dedicated_party_state = {};
 		joined_custom_session_id.clear();
 		joined_hq_session_id.clear();
+		joined_social_session_id.clear();
+		joined_game_target = {};
+		joined_hq_target = {};
 	}
 
 	class component final : public multiplayer_component
@@ -954,6 +1584,8 @@ namespace dedicated_party_client
 			{
 				return;
 			}
+
+			quit_hook.create(game::Com_Quit_f, quit_stub);
 
 			cl_connect_and_preload_map_hook.create(
 				game::CL_ConnectAndPreloadMap, cl_connect_and_preload_map_stub);
@@ -971,6 +1603,17 @@ namespace dedicated_party_client
 
 			utils::hook::call(0x497767_g, party_atomic_activate_lobby_stub);
 
+			// CL_Connect and RequestJoin normally discard the social party. Keep it
+			// only when its leader selects an S2x server, then use native hostPresence.
+			utils::hook::call(0x6D1A5_g, stop_private_party_for_join);
+			utils::hook::call(0x497CF4_g, stop_private_party_for_join);
+			utils::hook::call(0x497D06_g, clear_private_session_for_join);
+			utils::hook::call(0x4897DA_g, write_party_follow_session);
+			utils::hook::call(0x4898DA_g, find_follow_reservation_stub);
+			utils::hook::call(0x471643_g, party_atomic_is_joining_follow_session_stub);
+			party_client_host_presence_hook.create(0x471400_g, party_client_host_presence_stub);
+			scheduler::loop(notify_party_members, scheduler::main, 250ms);
+
 			// The kickedFromLobby handler hardcodes the VAC-ban text; show the stock party-kick text instead.
 			utils::hook::inject(0x47223E_g + 3, 0xB72C68_g);
 			utils::hook::inject(0x472287_g + 3, 0xB72C68_g);
@@ -985,4 +1628,4 @@ namespace dedicated_party_client
 	};
 }
 
-REGISTER_COMPONENT(dedicated_party_client::component)
+REGISTER_COMPONENT(party_client::component)

@@ -198,6 +198,7 @@ namespace game
 	WEAK symbol<PartyData*()> Live_GetGameParty{ 0x789620 };
 	WEAK symbol<std::uint8_t(PartyData* partyData, std::uint64_t xuid)> Party_FindMemberByXUID{ 0x6FDDA0 };
 	WEAK symbol<int(PartyData* partyData)> Party_IsRunning{ 0x47A6C0 };
+	WEAK symbol<void(PartyData* partyData)> Party_Sleep{ 0x484250 };
 	WEAK symbol<int(PartyData* partyData)> Party_AreWeHost{ 0x47A6F0 };
 	WEAK symbol<bool(PartyData* partyData, int memberIndex)> Party_IsHost{ 0x480F10 };
 	WEAK symbol<int(PartyData* partyData, int memberIndex)> Party_IsMemberLocalPlayer{ 0x481320 };

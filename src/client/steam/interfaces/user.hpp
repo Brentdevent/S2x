@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+
 namespace steam
 {
 	struct encrypted_app_ticket_response final
@@ -16,6 +19,22 @@ namespace steam
 		unsigned int m_h_auth_ticket;
 		int m_e_result;
 	};
+
+#pragma pack(push, 4)
+	struct validate_auth_ticket_response
+	{
+		static constexpr int callback_id = 143;
+		uint64_t steam_id;
+		int auth_session_response;
+		uint64_t owner_steam_id;
+	};
+#pragma pack(pop)
+
+	// MP's callback vtable (BAD430) reports 20 bytes; 82D950 reads ID/result at 0/8.
+	static_assert(sizeof(validate_auth_ticket_response) == 20);
+	static_assert(alignof(validate_auth_ticket_response) == 4);
+	static_assert(offsetof(validate_auth_ticket_response, auth_session_response) == 8);
+	static_assert(offsetof(validate_auth_ticket_response, owner_steam_id) == 12);
 
 	class user
 	{
@@ -59,5 +78,8 @@ namespace steam
 		virtual bool BIsTwoFactorEnabled();
 		virtual bool BIsPhoneIdentifying();
 		virtual bool BIsPhoneRequiringVerification();
+
+		static void initialize();
+		static void shutdown();
 	};
 }
