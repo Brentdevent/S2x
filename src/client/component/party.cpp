@@ -82,13 +82,26 @@ namespace party
 			std::string expected_session_id{};
 			bool friend_join{};
 			bool follow_party{};
+			bool reconnecting{};
 			std::uint32_t discord_token{};
+			std::uint64_t invite_expires{};
 			bool host_defined{ false };
 			bool query_pending{};
 			std::uint64_t attempt_id{};
 		};
 
 		connect_state_t connect_state{};
+
+		struct reconnect_session_t
+		{
+			std::string session_id;
+			bool friend_join{};
+			std::uint32_t discord_token{};
+			std::uint64_t expires{};
+		};
+
+		// Social parties need their session ID even after the query or join has ended.
+		reconnect_session_t reconnect_session{};
 
 		struct queued_map_start_t
 		{
@@ -145,7 +158,9 @@ namespace party
 			connect_state.expected_session_id.clear();
 			connect_state.friend_join = false;
 			connect_state.follow_party = false;
+			connect_state.reconnecting = false;
 			connect_state.discord_token = 0;
+			connect_state.invite_expires = 0;
 		}
 
 		std::uint64_t invalidate_connection_attempt()
@@ -870,6 +885,12 @@ namespace party
 				return;
 			}
 
+			// Replace the saved context with every new target, including direct connects.
+			reconnect_session = connect_state.follow_party ? reconnect_session_t{} : reconnect_session_t{
+				connect_state.expected_session_id, connect_state.friend_join,
+				connect_state.discord_token, connect_state.invite_expires
+			};
+
 			connect_state.host = target;
 			connect_state.challenge = utils::cryptography::random::get_challenge();
 			connect_state.host_defined = true;
@@ -932,7 +953,22 @@ namespace party
 				return;
 			}
 
-			connect(connect_state.host);
+			const auto attempt_id = invalidate_connection_attempt();
+			connect_state.reconnecting = true;
+
+			if (!reconnect_session.session_id.empty())
+			{
+				const auto now = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+					std::chrono::system_clock::now().time_since_epoch()).count());
+
+				connect_state.expected_session_id = reconnect_session.session_id;
+				connect_state.invite_expires = reconnect_session.expires;
+				// An expired invite grants no special admission; check the host's current privacy.
+				connect_state.friend_join = reconnect_session.friend_join || now >= reconnect_session.expires;
+				connect_state.discord_token = connect_state.friend_join ? 0 : reconnect_session.discord_token;
+			}
+
+			connect(connect_state.host, attempt_id);
 		}
 
 		void cl_connect_stub()
@@ -1583,6 +1619,7 @@ namespace party
 			connect_state.friend_join = friend_join;
 			connect_state.follow_party = follow_party;
 			connect_state.discord_token = friend_join ? 0 : discord_token;
+			connect_state.invite_expires = expires;
 			connect(target, attempt_id);
 
 			return scheduler::cond_end;
@@ -1758,6 +1795,7 @@ namespace party
 				const auto expected_session_id = connect_state.expected_session_id;
 				const auto friend_join = connect_state.friend_join;
 				const auto follow_party = connect_state.follow_party;
+				const auto reconnecting = connect_state.reconnecting;
 				const auto discord_token = connect_state.discord_token;
 				const auto connect_response = connect_state.query_pending
 					&& connect_state.host_defined
@@ -1837,6 +1875,12 @@ namespace party
 					return;
 				}
 
+				// Game servers remain discoverable by address, including after map rotations.
+				if (session_kind != party::session::kind::social)
+				{
+					reconnect_session = {};
+				}
+
 				console::info("[party] validated server response from %s.\n",
 					network::net_adr_to_string(from));
 
@@ -1844,7 +1888,7 @@ namespace party
 				// Hand the stock session descriptor to CL_Connect before applying
 				// direct-game connection requirements such as sv_running.
 				if (party_client::try_handle_join(from, info, max_clients, attempt_id, friend_join, discord_token,
-					!expected_session_id.empty() && !follow_party, follow_party))
+					!expected_session_id.empty() && !follow_party && !reconnecting, follow_party))
 				{
 					return;
 				}
