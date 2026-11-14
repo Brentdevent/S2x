@@ -38,6 +38,7 @@ namespace upnp
 		const game::symbol<bool(upnp_device*)> connect_http{0xA98E90};
 		const game::symbol<bool(upnp_device*, bool*)> send_http{0xA9A360};
 		const game::symbol<bool(upnp_device*)> receive_http{0xA9A2B0};
+		const game::symbol<bool(upnp_device*, bool*)> read_service_type{0xA99300};
 		const game::symbol<void(void*)> close_http{0xA7B690};
 		const game::symbol<bool(std::int32_t*, bool, unsigned, unsigned)> create_socket{0xA7B7B0};
 		const game::symbol<bool(const bd_sockaddr*, char*, std::size_t)> address_string{0xA75B90};
@@ -373,6 +374,14 @@ namespace upnp
 			// An incomplete or malformed frame must not reach native strstr parsers.
 			std::memcpy(device->response, response.c_str(), response.size() + 1);
 			device->response_size = static_cast<std::uint32_t>(response.size());
+
+			if (device->state == 3)
+			{
+				// A99980 stores the detected service only after A98F60 uses the old
+				// selection to find its control URL, rejecting PPP-only routers.
+				read_service_type(device, &device->wan_ip_connection);
+			}
+
 			return false;
 		}
 

@@ -59,7 +59,10 @@ namespace game::native_upnp
 		std::uint32_t mapping_result;
 		std::byte router_address[144];
 		bd_sockaddr internal_address;
-		std::byte socket[8];
+		std::byte socket[4];
+		// A98AE0 defaults this to true; A98F60 uses it to find the control URL.
+		bool wan_ip_connection;
+		std::byte service_pad[3];
 		upnp_config config;
 		std::uint16_t internal_port;
 		std::uint16_t external_port;
@@ -77,6 +80,7 @@ namespace game::native_upnp
 	static_assert(offsetof(upnp_device, router_address) == 16);
 	static_assert(offsetof(upnp_device, internal_address) == 160);
 	static_assert(offsetof(upnp_device, socket) == 292);
+	static_assert(offsetof(upnp_device, wan_ip_connection) == 296);
 	static_assert(offsetof(upnp_device, config) == 300);
 	static_assert(offsetof(upnp_device, internal_port) == 472);
 	static_assert(offsetof(upnp_device, external_port) == 474);
