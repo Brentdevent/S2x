@@ -42,6 +42,7 @@ namespace upnp
 		const game::symbol<void(void*)> close_http{0xA7B690};
 		const game::symbol<bool(std::int32_t*, bool, unsigned, unsigned)> create_socket{0xA7B7B0};
 		const game::symbol<bool(const bd_sockaddr*, char*, std::size_t)> address_string{0xA75B90};
+		const game::symbol<bd_sockaddr*(bd_sockaddr*, const char*)> construct_address{0xA75810};
 
 		utils::hook::detour start_hook;
 		utils::hook::detour destroy_hook;
@@ -208,6 +209,72 @@ namespace upnp
 			return discovery_hook.invoke<bool>(client);
 		}
 
+		std::vector<bd_sockaddr> local_addresses()
+		{
+			// bdNet's startup list can omit adapters or become stale after a VPN
+			// reconnect. Enumerate Windows for each new attempt, not during cleanup.
+			ULONG size = 15 * 1024;
+			std::vector<std::byte> buffer(size);
+			ULONG result = ERROR_BUFFER_OVERFLOW;
+			constexpr auto flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+
+			for (unsigned attempt = 0; attempt < 3 && result == ERROR_BUFFER_OVERFLOW; ++attempt)
+			{
+				buffer.resize(size);
+				result = GetAdaptersAddresses(AF_INET, flags, nullptr,
+					reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()), &size);
+			}
+
+			if (result == ERROR_NO_DATA)
+			{
+				return {};
+			}
+
+			if (result != NO_ERROR)
+			{
+				return latest_addresses;
+			}
+
+			std::vector<bd_sockaddr> addresses;
+			std::unordered_set<std::uint32_t> seen;
+
+			for (auto* adapter = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buffer.data()); adapter; adapter = adapter->Next)
+			{
+				if (adapter->OperStatus != IfOperStatusUp || adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
+				{
+					continue;
+				}
+
+				for (auto* unicast = adapter->FirstUnicastAddress; unicast; unicast = unicast->Next)
+				{
+					if (!unicast->Address.lpSockaddr || unicast->Address.iSockaddrLength < static_cast<int>(sizeof(sockaddr_in))
+						|| unicast->Address.lpSockaddr->sa_family != AF_INET
+						|| (unicast->DadState != IpDadStatePreferred && unicast->DadState != IpDadStateDeprecated))
+					{
+						continue;
+					}
+
+					const auto* local = reinterpret_cast<const sockaddr_in*>(unicast->Address.lpSockaddr);
+					const auto host_address = ntohl(local->sin_addr.s_addr);
+
+					if (!host_address || (host_address >> 24) == 127 || host_address >= 0xE0000000
+						|| !seen.insert(local->sin_addr.s_addr).second)
+					{
+						continue;
+					}
+
+					char address[INET_ADDRSTRLEN]{};
+
+					if (InetNtopA(AF_INET, &local->sin_addr, address, sizeof(address)))
+					{
+						construct_address(&addresses.emplace_back(), address);
+					}
+				}
+			}
+
+			return addresses;
+		}
+
 		std::uint32_t preferred_address()
 		{
 			// Ask for the default unicast route, independent of the SSDP route.
@@ -237,11 +304,12 @@ namespace upnp
 			return 0;
 		}
 
-		std::uint32_t next_interface(const std::uint32_t bound_address, const std::uint32_t preferred)
+		std::uint32_t next_interface(const std::vector<bd_sockaddr>& addresses,
+			const std::uint32_t bound_address, const std::uint32_t preferred)
 		{
 			std::uint32_t fallback{};
 
-			for (const auto& local : latest_addresses)
+			for (const auto& local : addresses)
 			{
 				char address[32]{};
 				in_addr ipv4{};
@@ -709,7 +777,8 @@ namespace upnp
 
 		void start_mapping(const sockaddr_in& address)
 		{
-			const auto interface_address = next_interface(address.sin_addr.s_addr, preferred_address());
+			auto addresses = local_addresses();
+			const auto interface_address = next_interface(addresses, address.sin_addr.s_addr, preferred_address());
 
 			if (!interface_address)
 			{
@@ -721,7 +790,7 @@ namespace upnp
 			tried_interfaces.insert(interface_address);
 			active = std::make_unique<mapping>();
 			auto& value = *active;
-			value.storage = latest_addresses;
+			value.storage = std::move(addresses);
 
 			const auto address_count = static_cast<std::uint32_t>(value.storage.size());
 			value.addresses = {value.storage.data(), address_count, address_count};
@@ -900,7 +969,7 @@ namespace upnp
 
 			if (!active)
 			{
-				if (latest_addresses.empty() || clock::now() < retry_at)
+				if (!native_owner || clock::now() < retry_at)
 				{
 					return;
 				}
