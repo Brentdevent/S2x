@@ -53,6 +53,7 @@ namespace upnp
 
 		std::recursive_mutex mutex;
 		const game::dvar_t* enabled{};
+		const game::dvar_t* public_address{};
 		upnp_client* native_owner{};
 		std::vector<bd_sockaddr> latest_addresses;
 		std::unordered_set<std::uint32_t> tried_interfaces;
@@ -932,6 +933,11 @@ namespace upnp
 			return party::get_invite_connect_info(info);
 		}
 
+		std::string_view public_address_override()
+		{
+			return public_address && public_address->current.string ? public_address->current.string : "";
+		}
+
 		void tick()
 		{
 			const std::lock_guard lock(mutex);
@@ -942,7 +948,7 @@ namespace upnp
 			}
 
 			sockaddr_in address{};
-			const auto hosting = enabled && enabled->current.enabled
+			const auto hosting = enabled && enabled->current.enabled && public_address_override().empty()
 				&& is_hosting_party() && bound_socket(address);
 
 			if (active && (!hosting
@@ -1057,11 +1063,23 @@ namespace upnp
 
 		party::session::connect_info info{};
 		sockaddr_in address{};
-		if (shutting_down || !enabled || !enabled->current.enabled || !active || active->cleanup
-			|| active->generation != network_generation || clock::now() >= active->lease_expires_at
-			|| !bound_socket(address) || *game::ip_socket != active->socket
-			|| ntohs(address.sin_port) != active->port || address.sin_addr.s_addr != active->bound_address
+		if (shutting_down || !bound_socket(address)
 			|| !party::get_invite_connect_info(info) || info.session.session_id != session_id)
+		{
+			return {};
+		}
+
+		const auto override = public_address_override();
+
+		if (!override.empty())
+		{
+			return party::invite::endpoint_override(override, ntohs(address.sin_port));
+		}
+
+		if (!enabled || !enabled->current.enabled || !active || active->cleanup
+			|| active->generation != network_generation || clock::now() >= active->lease_expires_at
+			|| *game::ip_socket != active->socket || ntohs(address.sin_port) != active->port
+			|| address.sin_addr.s_addr != active->bound_address)
 		{
 			return {};
 		}
@@ -1089,6 +1107,7 @@ namespace upnp
 			scheduler::once([]
 			{
 				enabled = game::Dvar_RegisterBool("net_upnp", true, game::DVAR_FLAG_SAVED);
+				public_address = game::Dvar_RegisterString("net_public_address", "", game::DVAR_FLAG_SAVED);
 			}, scheduler::main);
 
 			start_hook.create(0xA98220_g, start_stub);
@@ -1105,6 +1124,31 @@ namespace upnp
 			command::add("upnp_status", []
 			{
 				const std::lock_guard lock(mutex);
+
+				const auto override = public_address_override();
+
+				if (!override.empty())
+				{
+					sockaddr_in address{};
+
+					if (!bound_socket(address))
+					{
+						console::info("[upnp] Manual invite address configured; waiting for the game socket.\n");
+						return;
+					}
+
+					const auto endpoint = party::invite::endpoint_override(override, ntohs(address.sin_port));
+
+					if (endpoint.empty())
+					{
+						console::warn("[upnp] Invalid net_public_address; expected a public IPv4 address with an optional :port (1-65535).\n");
+						return;
+					}
+
+					console::info("[upnp] Manual invite address: %s (requires port forwarding; reachability is not verified).\n",
+						endpoint.c_str());
+					return;
+				}
 
 				console::info("[upnp] %s\n", active && !active->endpoint.empty()
 					? active->endpoint.c_str() : "No public Custom Match mapping.");

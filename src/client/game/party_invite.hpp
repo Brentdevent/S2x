@@ -82,6 +82,28 @@ namespace party::invite
 			&& parse_number(endpoint.substr(colon + 1), port) && port != 0;
 	}
 
+	inline std::string endpoint_override(std::string_view address, std::uint16_t port)
+	{
+		const auto colon = address.find(':');
+
+		if (colon != std::string_view::npos)
+		{
+			if (!parse_number(address.substr(colon + 1), port))
+			{
+				return {};
+			}
+
+			address = address.substr(0, colon);
+		}
+
+		if (!port || !public_ipv4(address))
+		{
+			return {};
+		}
+
+		return std::string{address} + ":" + std::to_string(port);
+	}
+
 	inline bool valid_session(const std::string_view id)
 	{
 		return id.size() == 16 && id != "0000000000000000"
