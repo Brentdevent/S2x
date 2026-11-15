@@ -34,6 +34,9 @@ namespace discord
 		utils::hook::detour respond_to_all_requests_hook;
 		utils::hook::detour serialize_reply_hook;
 
+		const game::symbol<void(void*, char*, unsigned int, json_node*, unsigned int)> initialize_json{0x27F8D0, 0x125BB0};
+		const game::symbol<int(void*, json_node**)> parse_json{0x27FF40, 0x126220};
+		const game::symbol<bool(const json_node*)> is_json_object{0x27FCF0, 0x125FD0};
 		const game::symbol<discord_presence> native_presence{0x6E8F470};
 		const game::symbol<discord_presence> native_last_presence{0x6E8F4E0};
 		const game::symbol<void()> clear_requests{0x1E1B80};
@@ -54,6 +57,49 @@ namespace discord
 		std::string join_secret;
 		std::string last_signature;
 		std::uint64_t refresh_at{};
+
+		bool parse_rpc_json(json_document* document, const char* source)
+		{
+			// The reader ignores parse failures and still calls the native getters.
+			// An empty object (27F430 / 125770) keeps those lookups safe.
+			static json_node empty_object{0x1FFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
+			*document = {};
+			document->root = &empty_object;
+
+			if (!source)
+			{
+				return false;
+			}
+
+			const auto length = strnlen_s(source, sizeof(document->buffer));
+
+			if (length >= sizeof(document->buffer))
+			{
+				console::warn("[discord] Ignoring an oversized RPC message.\n");
+				return false;
+			}
+
+			// Modern join requests exceed the native 32-node pool. RPC documents
+			// are consumed on the IO thread before the next read (19A060 / 39910);
+			// callbacks receive copies, so this storage need not cross threads.
+			thread_local json_node nodes[sizeof(document->buffer) / 2];
+			std::memcpy(document->buffer, source, length);
+			initialize_json(document->parser, document->buffer, static_cast<unsigned int>(length),
+				nodes, static_cast<unsigned int>(std::size(nodes)));
+			json_node* root{};
+			const auto count = parse_json(document->parser, &root);
+
+			// Native errors are negative; treating them as true caused the crash.
+			if (count <= 0 || !root || !is_json_object(root))
+			{
+				console::warn("[discord] Ignoring an invalid RPC message.\n");
+				return false;
+			}
+
+			document->length = length;
+			document->root = root;
+			return true;
+		}
 
 		void register_settings()
 		{
@@ -396,6 +442,7 @@ namespace discord
 				return;
 			}
 
+			utils::hook::jump(game::select(0x1993F0, 0x38C90), parse_rpc_json);
 			scheduler::once(register_settings, scheduler::main);
 			initialize_hook.create(game::select(0x19A780, 0x3A030), initialize_stub);
 			presence_hook.create(game::select(0x19ABD0, 0x3A3E0), presence_stub);

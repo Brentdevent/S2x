@@ -5,6 +5,33 @@
 
 namespace game::native_discord
 {
+	// Native RPC JSON document: MP 199070/1993F0, SP 38910/38C90.
+	// Nodes contain a type/value index, a key offset and a next-node index.
+	struct json_node
+	{
+		std::uint32_t value;
+		std::uint32_t key;
+		std::uint32_t next;
+	};
+
+	struct json_document
+	{
+		char buffer[2048];
+		json_node nodes[32];
+		std::uint64_t length;
+		std::byte pad_988[8];
+		alignas(16) std::byte parser[0x130];
+		json_node* root;
+		std::byte pad_ac8[8];
+	};
+
+	static_assert(sizeof(json_node) == 12);
+	static_assert(sizeof(json_document) == 0xAD0);
+	static_assert(offsetof(json_document, nodes) == 0x800);
+	static_assert(offsetof(json_document, length) == 0x980);
+	static_assert(offsetof(json_document, parser) == 0x990);
+	static_assert(offsetof(json_document, root) == 0xAC0);
+
 	// MP 19B4A0 / SP 3AB60 serialize this; 1E2180 / 74F10 copy 112 bytes.
 	// This predates partyPrivacy in discord-rpc's public headers; adding it
 	// would shift all secrets.
