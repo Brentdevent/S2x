@@ -343,6 +343,84 @@ namespace command
 			game::mp::PlayerCmd_Suicide({static_cast<unsigned short>(client_num), 0});
 		}
 
+		bool parse_float(const char* text, float& value)
+		{
+			if (!text || !*text)
+			{
+				return false;
+			}
+
+			char* end{};
+			value = std::strtof(text, &end);
+			return end != text && *end == '\0' && std::isfinite(value);
+		}
+
+		void getviewpos_mp(const int client_num)
+		{
+			const auto player = get_mp_player(client_num);
+			if (!player || !player.entity->playerState)
+			{
+				return;
+			}
+
+			const auto* origin = player.entity->currentOrigin;
+			const auto* angles = player.entity->client->ps.viewangles;
+
+			const auto* message = utils::string::va("(%.0f %.0f %.0f) : %.0f %.0f",
+				origin[0], origin[1], origin[2], angles[1], angles[0]);
+
+			console::info("%s\n", message);
+			send_mp_game_message(player, message);
+		}
+
+		void setviewpos_mp(const int client_num, const params_sv& params)
+		{
+			const auto player = get_mp_player(client_num);
+			if (!player || !cheats_ok(player) || !player.entity->playerState)
+			{
+				return;
+			}
+
+			if (params.size() != 4 && params.size() != 5 && params.size() != 6)
+			{
+				send_mp_game_message(player, "usage: setviewpos x y z [yaw] [pitch]");
+				return;
+			}
+
+			game::vec3_t origin{};
+			for (auto i = 0; i < 3; ++i)
+			{
+				if (!parse_float(params[i + 1], origin[i]))
+				{
+					send_mp_game_message(player, "setviewpos: invalid coordinates");
+					return;
+				}
+			}
+
+			auto* entity = player.entity;
+			game::vec3_t angles{
+				entity->client->ps.viewangles[0],
+				entity->client->ps.viewangles[1],
+				0.0f,
+			};
+
+			if ((params.size() >= 5 && !parse_float(params[4], angles[1]))
+				|| (params.size() >= 6 && !parse_float(params[5], angles[0])))
+			{
+				send_mp_game_message(player, "setviewpos: invalid angles");
+				return;
+			}
+
+			game::mp::TeleportPlayer(entity, origin, 1);
+			utils::hook::invoke<void>(0x6F97E0_g, entity);
+			if (utils::hook::invoke<int>(0x6C4160_g, entity))
+			{
+				utils::hook::invoke<void>(0x6C1E00_g, entity);
+			}
+
+			game::mp::SetClientViewAngle(entity, angles);
+		}
+
 		struct asset_list_context
 		{
 			game::XAssetType type{};
@@ -586,6 +664,8 @@ namespace command
 			command::add_sv("give", give_mp);
 			command::add_sv("take", take_mp);
 			command::add_sv("kill", [](const int client_num, const params_sv&) { kill_mp(client_num); });
+			command::add_sv("setviewpos", setviewpos_mp);
+			command::add_sv("getviewpos", [](const int client_num, const params_sv&) { getviewpos_mp(client_num); });
 		}
 
 		void execute_custom_command()

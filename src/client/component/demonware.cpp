@@ -496,6 +496,15 @@ namespace demonware
 		{
 			return true;
 		}
+
+		// xor eax, eax / inc eax / ret. Kept to 5 bytes on purpose: the game's obfuscated code is packed
+		// into the gaps right after short functions, so a patch must not write past the function's end.
+		// (utils::hook::set(address, 0xC300000001B8) writes a full 8-byte value.)
+		void return_true(const size_t address)
+		{
+			static constexpr std::uint8_t code[] = {0x33, 0xC0, 0xFF, 0xC0, 0xC3};
+			utils::hook::copy(address, code, sizeof(code));
+		}
 	}
 
 	class component final : public generic_component
@@ -575,7 +584,7 @@ namespace demonware
 
 			// Skip bdAuth::validateResponseSignature
 			utils::hook::set(game::select(0xA7ABA0, 0x7B3FF0), 0xC301B0); // bdRSAKey::importKey
-			utils::hook::set(game::select(0xA7ACC0, 0x7B4110), 0xC300000001B8); // bdRSAKey::verifySignatureSHA256
+			return_true(game::select(0xA7ACC0, 0x7B4110)); // bdRSAKey::verifySignatureSHA256
 
 			utils::hook::set<uint8_t>(game::select(0xA249F7, 0x77FC87) + 3, 0x0); // CURLOPT_SSL_VERIFYPEER
 			utils::hook::set<uint8_t>(game::select(0xA249E0, 0x77FC70) + 3, 0xAF); // CURLOPT_SSL_VERIFYHOST

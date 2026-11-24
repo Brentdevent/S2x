@@ -2,6 +2,7 @@
 #include "loader/component_loader.hpp"
 
 #include "party_client.hpp"
+#include "download.hpp"
 #include "arena.hpp"
 #include "command.hpp"
 #include "dedicated_party.hpp"
@@ -1460,6 +1461,7 @@ namespace party_client
 				hosted_dedicated_party_state.sync_after_next_go = false;
 			}
 			refresh_presentation();
+			download::check_rotation_map(from, info);
 		}
 
 		return true;

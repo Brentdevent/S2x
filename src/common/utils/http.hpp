@@ -4,6 +4,8 @@
 #include <optional>
 #include <future>
 #include <unordered_map>
+#include <functional>
+#include <cstdint>
 
 namespace utils::http
 {
@@ -16,4 +18,18 @@ namespace utils::http
 		const std::string& fallback_connect_to = {},
 		const std::function<void(const std::string&)>& validate = {});
 	std::future<std::optional<std::string>> get_data_async(const std::string& url, const headers& headers = {});
+
+	struct download_result
+	{
+		bool success{};
+		// The server ignored the Range request
+		bool range_ignored{};
+		long http_code{};
+		std::string error{};
+	};
+
+	// Streams to on_data; resume_from > 0 sends a Range request. Callbacks return false to abort.
+	download_result download(const std::string& url, std::uint64_t resume_from,
+		const std::function<bool(const char* data, size_t size)>& on_data,
+		const std::function<bool()>& should_continue = {});
 }

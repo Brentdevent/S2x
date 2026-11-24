@@ -33,6 +33,65 @@ namespace patches
 			a.jmp(0x19A73_g); // Continue processing the session member.
 		}
 
+		constexpr auto occlusion_query_timeout = std::chrono::milliseconds(100);
+		constexpr auto occlusion_query_failed = ~0ull;
+
+		std::atomic_bool occlusion_queries_stalled{false};
+
+		std::uint64_t wait_for_occlusion_query(ID3D11Query* query)
+		{
+			auto* context = *reinterpret_cast<ID3D11DeviceContext**>(0xF9FF80_g);
+			if (!context || !query)
+			{
+				return occlusion_query_failed;
+			}
+
+			const auto timeout = occlusion_queries_stalled ? std::chrono::milliseconds(0) : occlusion_query_timeout;
+			const auto start = std::chrono::steady_clock::now();
+
+			while (true)
+			{
+				UINT64 samples{};
+				const auto result = context->GetData(query, &samples, sizeof(samples), 0);
+				if (result == S_OK)
+				{
+					if (occlusion_queries_stalled.exchange(false))
+					{
+						console::warn("[Patches] Occlusion queries are completing again\n");
+					}
+
+					return samples;
+				}
+
+				if (FAILED(result))
+				{
+					return occlusion_query_failed;
+				}
+
+				if (std::chrono::steady_clock::now() - start >= timeout)
+				{
+					if (!occlusion_queries_stalled.exchange(true))
+					{
+						console::warn("[Patches] Occlusion query did not complete within %lld ms, skipping it\n",
+							static_cast<long long>(occlusion_query_timeout.count()));
+					}
+
+					return occlusion_query_failed;
+				}
+
+				Sleep(0);
+			}
+		}
+
+		void occlusion_query_wait_stub(utils::hook::assembler& a)
+		{
+			a.mov(rcx, qword_ptr(rbp, r15, 3, 0x38));
+			a.call_aligned(wait_for_occlusion_query);
+			a.mov(rsi, rax);
+
+			a.jmp(0x8F4ED5_g);
+		}
+
 		void validate_fastfile_checksums_stub(game::mp::client_t* client)
 		{
 			const auto previous_pure_state = client->pureAuthentic;
@@ -66,6 +125,9 @@ namespace patches
 
 			utils::hook::nop(0x19A66_g, 7);
 			utils::hook::jump(0x19A66_g, utils::hook::assemble(lobby_client_state_stub));
+
+			utils::hook::nop(0x8F4E66_g, 10);
+			utils::hook::jump(0x8F4E66_g, utils::hook::assemble(occlusion_query_wait_stub));
 
 			// unlock safeArea_*
 			utils::hook::jump(0x46E271_g, 0x46E2B7_g);

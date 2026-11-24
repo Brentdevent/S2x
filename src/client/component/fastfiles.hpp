@@ -17,6 +17,7 @@ namespace fastfiles
 	bool is_zone_loaded(const std::string& zone);
 	bool try_load_zone(const std::string& zone, int alloc_flags);
 
+	bool is_mod_zone(const zone_info& info);
 	std::string get_zone_name(unsigned int index);
 	std::vector<zone_info> get_loaded_zones();
 

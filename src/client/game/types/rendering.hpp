@@ -161,7 +161,7 @@ namespace game
 	// Partial layout through the LOD count.
 	struct XModel
 	{
-		std::uint8_t unknown00[8];
+		const char* name;
 		std::uint16_t bone_count;
 		std::uint8_t unknown0A[118];
 		const DObjAnimMat* base_pose;
@@ -310,13 +310,48 @@ namespace game
 	static_assert(sizeof(GfxWorldZone) == 24);
 	static_assert(offsetof(GfxWorldZone, vertices) == 16);
 
+	struct GfxLightRegionAxis
+	{
+		float dir[3];
+		float midPoint;
+		float halfSize;
+	};
+	static_assert(sizeof(GfxLightRegionAxis) == 0x14);
+
+	// MP 0x8B6090 tests the 9 k-dop slabs at +0x0/+0x24, then axisCount axes from +0x50.
+	struct GfxLightRegionHull
+	{
+		float kdopMidPoint[9];
+		float kdopHalfSize[9];
+		unsigned int axisCount;
+		GfxLightRegionAxis* axis;
+	};
+	static_assert(sizeof(GfxLightRegionHull) == 0x58);
+	static_assert(offsetof(GfxLightRegionHull, kdopHalfSize) == 0x24);
+	static_assert(offsetof(GfxLightRegionHull, axisCount) == 0x48);
+	static_assert(offsetof(GfxLightRegionHull, axis) == 0x50);
+
+	struct GfxLightRegion
+	{
+		unsigned int hullCount;
+		GfxLightRegionHull* hulls;
+	};
+	static_assert(sizeof(GfxLightRegion) == 0x10);
+
 	// Partial layout through the static model instances.
 	struct GfxWorld
 	{
 		const char* name;
 		std::uint8_t unknown08[20];
 		std::uint32_t surface_count;
-		std::uint8_t unknown20[0x318];
+		std::uint8_t unknown20[0x14];
+		// MP 0x8B5040 only tests light regions of primary lights past this index.
+		std::uint32_t lastSunPrimaryLightIndex;
+		// MP 0x259550 treats light indices below this as primary lights.
+		std::uint32_t primaryLightCount;
+		// MP 0x2590B0: the last primary lights of the list move with scriptables.
+		std::uint32_t movingScriptablePrimaryLightCount;
+		std::uint8_t unknown40[0x2F8];
 		std::uint32_t zone_count;
 		std::uint32_t unknown33C;
 		const GfxWorldZone* zones[16];
@@ -324,7 +359,10 @@ namespace game
 		std::uint32_t index_count;
 		std::uint32_t unknown3CC;
 		const std::uint16_t* indices;
-		std::uint8_t unknown3D8[0x8D0];
+		std::uint8_t unknown3D8[0x8C8];
+		// MP 0x8B5040 indexes this by primary light (0x10 stride).
+		GfxLightRegion* lightRegion;
+		// MP 0x878400 sizes the per-view static model visibility bits from this count.
 		std::uint32_t model_count;
 		std::uint8_t unknownCAC[0x2EC];
 		const GfxSurface* surfaces;
@@ -336,10 +374,14 @@ namespace game
 
 	static_assert(sizeof(GfxWorld) == 0xFC0);
 	static_assert(offsetof(GfxWorld, surface_count) == 0x1C);
+	static_assert(offsetof(GfxWorld, lastSunPrimaryLightIndex) == 0x34);
+	static_assert(offsetof(GfxWorld, primaryLightCount) == 0x38);
+	static_assert(offsetof(GfxWorld, movingScriptablePrimaryLightCount) == 0x3C);
 	static_assert(offsetof(GfxWorld, zone_count) == 0x338);
 	static_assert(offsetof(GfxWorld, zones) == 0x340);
 	static_assert(offsetof(GfxWorld, index_count) == 0x3C8);
 	static_assert(offsetof(GfxWorld, indices) == 0x3D0);
+	static_assert(offsetof(GfxWorld, lightRegion) == 0xCA0);
 	static_assert(offsetof(GfxWorld, model_count) == 0xCA8);
 	static_assert(offsetof(GfxWorld, surfaces) == 0xF98);
 	static_assert(offsetof(GfxWorld, surface_bounds) == 0xFA0);

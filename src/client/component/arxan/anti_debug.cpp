@@ -37,6 +37,7 @@ namespace arxan::anti_debug
 		utils::hook::detour get_thread_context_hook;
 		utils::hook::detour resume_thread_hook;
 		utils::hook::detour virtual_alloc_hook;
+		utils::hook::detour virtual_protect_hook;
 		utils::hook::detour check_remote_debugger_present_hook;
 		utils::hook::detour enum_windows_hook;
 
@@ -778,6 +779,38 @@ namespace arxan::anti_debug
 			return virtual_alloc_hook.invoke<LPVOID>(address, size, allocation_type, protect);
 		}
 
+		BOOL WINAPI virtual_protect_stub(LPVOID address, SIZE_T size, DWORD new_protect, PDWORD old_protect)
+		{
+			// When RenderDoc is injected, a game thread marks renderdoc.dll's code
+			// PAGE_READONLY, which crashes the process on its next call into RenderDoc.
+			// MinHook calls this while other threads are suspended, so it must not allocate.
+			const utils::nt::library renderdoc(GetModuleHandleA("renderdoc.dll"));
+			if (renderdoc && address)
+			{
+				const auto target = static_cast<std::uint8_t*>(address);
+				const auto in_renderdoc = target >= renderdoc.get_ptr() &&
+					target < renderdoc.get_ptr() + renderdoc.get_optional_header()->SizeOfImage;
+
+				if (in_renderdoc && utils::nt::library::get_by_address(_ReturnAddress()) == utils::nt::library{})
+				{
+					MEMORY_BASIC_INFORMATION info{};
+					if (!VirtualQuery(address, &info, sizeof(info)))
+					{
+						return FALSE;
+					}
+
+					if (old_protect)
+					{
+						*old_protect = info.Protect;
+					}
+
+					return TRUE;
+				}
+			}
+
+			return virtual_protect_hook.invoke<BOOL>(address, size, new_protect, old_protect);
+		}
+
 		void install_thread_information_hooks(const utils::nt::library& ntdll)
 		{
 			resume_thread_hook.create(ResumeThread, resume_thread_stub);
@@ -848,6 +881,9 @@ namespace arxan::anti_debug
 
 			auto* virtual_alloc_func = utils::nt::library("kernel32.dll").get_proc<void*>("VirtualAlloc");
 			virtual_alloc_hook.create(virtual_alloc_func, virtual_alloc_stub);
+
+			auto* virtual_protect_func = utils::nt::library("kernelbase.dll").get_proc<void*>("VirtualProtect");
+			virtual_protect_hook.create(virtual_protect_func, virtual_protect_stub);
 
 			auto* check_remote_debugger_present_func = utils::nt::library("kernel32.dll").get_proc<void*>("CheckRemoteDebuggerPresent");
 			check_remote_debugger_present_hook.create(check_remote_debugger_present_func, check_remote_debugger_present_stub);
