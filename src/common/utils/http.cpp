@@ -190,6 +190,158 @@ namespace utils::http
 		return {};
 	}
 
+	namespace
+	{
+		struct download_helper
+		{
+			CURL* curl{};
+			const std::function<bool(const char*, size_t)>* on_data{};
+			const std::function<bool()>* should_continue{};
+			std::uint64_t resume_from{};
+			bool checked_status{};
+			bool range_ignored{};
+			bool aborted{};
+			std::exception_ptr exception{};
+		};
+
+		size_t download_write_callback(void* contents, const size_t size, const size_t nmemb, void* userp)
+		{
+			auto* helper = static_cast<download_helper*>(userp);
+			const auto total_size = size * nmemb;
+
+			try
+			{
+				if (!helper->checked_status)
+				{
+					helper->checked_status = true;
+
+					long http_code = 0;
+					curl_easy_getinfo(helper->curl, CURLINFO_RESPONSE_CODE, &http_code);
+					if (helper->resume_from > 0 && http_code != 206)
+					{
+						helper->range_ignored = true;
+						return 0;
+					}
+				}
+
+				if (!(*helper->on_data)(static_cast<const char*>(contents), total_size))
+				{
+					helper->aborted = true;
+					return 0;
+				}
+			}
+			catch (...)
+			{
+				helper->exception = std::current_exception();
+				return 0;
+			}
+
+			return total_size;
+		}
+
+		int download_progress_callback(void* clientp, const curl_off_t, const curl_off_t, const curl_off_t,
+		                               const curl_off_t)
+		{
+			auto* helper = static_cast<download_helper*>(clientp);
+			if (*helper->should_continue && !(*helper->should_continue)())
+			{
+				helper->aborted = true;
+				return 1;
+			}
+
+			return 0;
+		}
+	}
+
+	download_result download(const std::string& url, const std::uint64_t resume_from,
+	                         const std::function<bool(const char* data, size_t size)>& on_data,
+	                         const std::function<bool()>& should_continue)
+	{
+		download_result result{};
+
+		auto* curl = curl_easy_init();
+		if (!curl)
+		{
+			result.error = "curl_easy_init failed";
+			return result;
+		}
+
+		const auto _ = utils::finally([&]()
+		{
+			curl_easy_cleanup(curl);
+		});
+
+		download_helper helper{};
+		helper.curl = curl;
+		helper.on_data = &on_data;
+		helper.should_continue = &should_continue;
+		helper.resume_from = resume_from;
+
+		curl_easy_setopt(curl, CURLOPT_URL, url.data());
+		curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "http,https");
+		curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, download_write_callback);
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &helper);
+		curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, download_progress_callback);
+		curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &helper);
+		curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+		curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+		curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+		curl_easy_setopt(curl, CURLOPT_USERAGENT, "s2x/1.0");
+		curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+		curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+		curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+		curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+
+		if (resume_from > 0)
+		{
+			curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(resume_from));
+		}
+
+		const auto code = curl_easy_perform(curl);
+		if (helper.exception)
+		{
+			std::rethrow_exception(helper.exception);
+		}
+
+		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.http_code);
+
+		// curl rejects a 200 reply to a Range request itself
+		if (resume_from > 0 && code == CURLE_RANGE_ERROR)
+		{
+			helper.range_ignored = true;
+		}
+
+		result.range_ignored = helper.range_ignored;
+
+		if (code == CURLE_OK && !helper.range_ignored && !helper.aborted)
+		{
+			result.success = true;
+			return result;
+		}
+
+		if (helper.aborted)
+		{
+			result.error = "aborted";
+		}
+		else if (helper.range_ignored)
+		{
+			result.error = "server ignored the range request";
+		}
+		else if (code == CURLE_HTTP_RETURNED_ERROR)
+		{
+			result.error = "HTTP " + std::to_string(result.http_code);
+		}
+		else
+		{
+			result.error = curl_easy_strerror(code);
+		}
+
+		return result;
+	}
+
 	std::future<std::optional<std::string>> get_data_async(const std::string& url, const headers& headers)
 	{
 		return std::async(std::launch::async, [url, headers]()

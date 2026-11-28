@@ -599,6 +599,51 @@ namespace utils::cryptography
 		return string::dump_hex(hash, "");
 	}
 
+	sha256::hasher::hasher()
+	{
+		sha256_init(&this->state_);
+	}
+
+	sha256::hasher::~hasher() = default;
+
+	void sha256::hasher::update(const void* data, size_t length)
+	{
+		if (this->finished_)
+		{
+			throw std::runtime_error("sha256 hasher already finished");
+		}
+
+		const auto* bytes = static_cast<const uint8_t*>(data);
+
+		// sha256_process takes an unsigned long length
+		constexpr size_t max_chunk = 0x40000000;
+		while (length > 0)
+		{
+			const auto chunk = std::min(length, max_chunk);
+			sha256_process(&this->state_, bytes, ul(chunk));
+			bytes += chunk;
+			length -= chunk;
+		}
+	}
+
+	std::string sha256::hasher::finish(const bool hex)
+	{
+		if (this->finished_)
+		{
+			throw std::runtime_error("sha256 hasher already finished");
+		}
+
+		this->finished_ = true;
+
+		uint8_t buffer[32] = {0};
+		sha256_done(&this->state_, buffer);
+
+		std::string hash(cs(buffer), sizeof(buffer));
+		if (!hex) return hash;
+
+		return string::dump_hex(hash, "");
+	}
+
 	std::string sha512::compute(const std::string& data, const bool hex)
 	{
 		return compute(cs(data.data()), data.size(), hex);

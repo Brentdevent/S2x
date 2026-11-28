@@ -91,13 +91,19 @@ namespace game
 	WEAK symbol<void(dvar_t* dvar, const char* value)> Dvar_SetString{ 0xB2E30 };
 
 	WEAK symbol<bool(int* min, int* max)> CG_GetFovRange{ 0x45830, 0x23F6B0 };
-	// MP only. Both getters decrypt their pointers and check their callers; use call_safe.
 	WEAK symbol<const std::byte*(int localClientNum)> CG_GetLocalClient{ 0x15330 };
 	WEAK symbol<const std::byte*(int localClientNum)> CG_GetLocalClientStatic{ 0x461E0 };
 	WEAK symbol<void(int localClientNum)> CG_ProcessSnapshots{ 0x43ADA0 };
 	WEAK symbol<const std::byte*(int localClientNum)> CG_ReadNextSnapshot{ 0x43B580 };
 
 	WEAK symbol<const ScreenPlacement*(const LocalClientNum_t localClientNum)> ScrPlace_GetViewPlacement{ 0x4A01B0, 0x272660 };
+
+	WEAK symbol<bool(int localClientNum, const ScreenPlacement* placement, const float* worldPos,
+		float* screenPos)> CG_WorldPosToScreenPosReal{ 0x3E6250 };
+
+	WEAK symbol<FxSystem*(int localClientNum)> FX_GetSystem{ 0x517710 };
+	WEAK symbol<void(FxSystemLock* lock)> FX_WaitEnterReadSystemLock{ 0x517F90 };
+	WEAK symbol<void(FxSystemLock* lock)> FX_ExitReadSystemLock{ 0x517EA0 };
 
 	WEAK symbol<const char*(int index)> Cmd_Argv{ 0x8D9F0 };
 	WEAK symbol<void(const char* text_in)> SV_Cmd_TokenizeString{ 0x64C070, 0x4665A0 };
@@ -372,8 +378,13 @@ namespace game
 		WEAK symbol<void(mp::client_t* client, const char* reason, std::uint8_t notify)> SV_DropClient{ 0xF4030 };
 		WEAK symbol<void(int migrate, int loadScripts)> SV_MapRestart{ 0x6D6F60 };
 		WEAK symbol<mp::playerState_s*(int clientNum)> SV_GetPlayerstateForClientNum{ 0x6D9AF0 };
+		WEAK symbol<void(mp::gentity_s* ent, const float* origin, int toggleTeleportBit)> TeleportPlayer{ 0x69E620 };
+		WEAK symbol<void(mp::gentity_s* ent, const float* angles)> SetClientViewAngle{ 0x69BE70 };
 
 		WEAK symbol<Weapon(const char* name)> G_GetWeaponForName{ 0x5C4C00 };
+		WEAK symbol<void()> G_SetWeaponConfigstrings{ 0x55C7B0 };
+		WEAK symbol<void(unsigned int weaponIndex)> G_RegisterWeapon{ 0x55B380 };
+		WEAK symbol<Weapon(const char* name, void(*register_callback)(unsigned int weaponIndex))> BG_GetWeaponIndexForName{ 0x3B6EF0 };
 		WEAK symbol<int(mp::playerState_s* ps, const Weapon* weapon, int dualWield, int startAlt,
 			int a5, unsigned char sourceClientNum, unsigned short a7, unsigned short a8)> G_GivePlayerWeapon{ 0x5C5290 };
 		WEAK symbol<void(mp::playerState_s* ps, const Weapon* weapon, int hadWeapon)> G_InitializeAmmo{ 0x55AD90 };
@@ -394,6 +405,8 @@ namespace game
 		WEAK symbol<volatile long> db_assetReadCount{ 0x1BA03C8 };
 		WEAK symbol<volatile long> db_assetWriteCount{ 0x1BA03CC };
 
+		WEAK symbol<unsigned int> bg_lastParsedWeaponIndex{ 0x8A9C640 };
+
 		WEAK symbol<int> ui_arenas_dirty{ 0xAB0F8AC };
 
 		WEAK symbol<int(mp::gentity_s* entity)> SV_SpawnTestClient{ 0xF6AA0 };
@@ -405,6 +418,12 @@ namespace game
 		WEAK symbol<mp::gentity_s> g_entities{ 0x9ED4430 };
 		// Level object ID used by Scr_NotifyLevel (0x691560).
 		WEAK symbol<unsigned int> levelEntityId{ 0xB12A030 };
+
+		WEAK symbol<clipMap_t> cm{ 0xAA73E80 };
+		WEAK symbol<GfxWorld*> gfx_world{ 0xFE1B8F0 };
+		WEAK symbol<ComWorld> com_world{ 0xAAA3760 };
+		WEAK symbol<int> scene_model_count{ 0x1484384 };
+		WEAK symbol<GfxSceneModel> scene_models{ 0x1484390 };
 	}
 
 	WEAK symbol<void(bool frontend, bool cg)> LUI_CoD_Init{ 0x318A00, 0x19CA30 };

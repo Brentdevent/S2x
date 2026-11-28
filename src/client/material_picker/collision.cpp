@@ -88,7 +88,7 @@ namespace material_picker::collision
 
 	std::optional<picked_material> pick(const geometry::ray& ray)
 	{
-		const auto* world = reinterpret_cast<const game::clipMap_t*>(game::select(0xAA73E90, 0x97D3910));
+		const auto* world = reinterpret_cast<const game::clipMap_t*>(game::select(0xAA73E80, 0x97D3900));
 		if (!world->material_count || !world->materials)
 		{
 			return {};

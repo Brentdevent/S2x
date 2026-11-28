@@ -12,10 +12,18 @@ namespace arxan::breakpoints
 {
 	namespace
 	{
-		std::unordered_map<PVOID, void*> handle_handler;
+		std::mutex handler_mutex;
+		std::vector<std::pair<PVOID, void*>> handlers;
 
 		void fake_exception(void* address, _CONTEXT* fake_context, DWORD exception)
 		{
+			// Guards run on multiple threads while others register/remove handlers, so iterate a snapshot
+			std::vector<std::pair<PVOID, void*>> handlers_copy;
+			{
+				std::lock_guard _(handler_mutex);
+				handlers_copy = handlers;
+			}
+
 			_EXCEPTION_POINTERS fake_info{};
 			_EXCEPTION_RECORD fake_record{};
 			fake_info.ExceptionRecord = &fake_record;
@@ -24,16 +32,13 @@ namespace arxan::breakpoints
 			fake_record.ExceptionAddress = reinterpret_cast<void*>(reinterpret_cast<std::uint64_t>(address) + 3);
 			fake_record.ExceptionCode = exception;
 
-			for (auto& handler : handle_handler)
+			for (const auto& handler : handlers_copy)
 			{
-				if (handler.second)
+				auto result = utils::hook::invoke<LONG>(handler.second, &fake_info);
+				if (result)
 				{
-					auto result = utils::hook::invoke<LONG>(handler.second, &fake_info);
-					if (result)
-					{
-						memset(fake_context, 0, sizeof(_CONTEXT));
-						break;
-					}
+					memset(fake_context, 0, sizeof(_CONTEXT));
+					break;
 				}
 			}
 		}
@@ -93,10 +98,11 @@ namespace arxan::breakpoints
 			}
 		}
 
+		std::once_flag patch_once;
+
 		void patch_breakpoints()
 		{
-			static std::once_flag once;
-			std::call_once(once, []
+			std::call_once(patch_once, []
 			{
 #ifdef PRECOMPUTED
 				patch_breakpoints_precomputed();
@@ -111,14 +117,22 @@ namespace arxan::breakpoints
 			patch_breakpoints();
 
 			auto handle = AddVectoredExceptionHandler(first, handler);
-			handle_handler[handle] = handler;
+			if (handle)
+			{
+				std::lock_guard _(handler_mutex);
+				handlers.emplace_back(handle, handler);
+			}
 
 			return handle;
 		}
 
 		ULONG WINAPI remove_vectored_exception_handler_stub(PVOID handle)
 		{
-			handle_handler[handle] = nullptr;
+			{
+				std::lock_guard _(handler_mutex);
+				std::erase_if(handlers, [handle](const auto& entry) { return entry.first == handle; });
+			}
+
 			return RemoveVectoredExceptionHandler(handle);
 		}
 	}

@@ -3,7 +3,9 @@
 #define PROTOCOL 1
 
 #ifdef __cplusplus
+#include "types/collision.hpp"
 #include "types/materials.hpp"
+#include "types/rendering.hpp"
 
 namespace game
 {
@@ -743,6 +745,94 @@ namespace game
 		const char* name;
 	}; static_assert(offsetof(LocalizeEntry, name) == 0x8);
 
+	struct FxEffectDef
+	{
+		const char* name;
+		// ...
+	};
+
+	// MP 0x8B5040 strides primary lights by 0xA8 and passes the origin at +0x34.
+	struct ComPrimaryLight
+	{
+		char __pad0[0xC];
+		// MP 0x16C3E5 copies this into the per-light shader color.
+		vec3_t color;
+		char __pad1[0x1C];
+		vec3_t origin;
+		char __pad2[0x68];
+	};
+	static_assert(sizeof(ComPrimaryLight) == 0xA8);
+	static_assert(offsetof(ComPrimaryLight, color) == 0xC);
+	static_assert(offsetof(ComPrimaryLight, origin) == 0x34);
+
+	struct ComWorld
+	{
+		const char* name;
+		char __pad0[0x8];
+		unsigned int primaryLightCount;
+		ComPrimaryLight* primaryLights;
+		char __pad1[0x10];
+	};
+	static_assert(sizeof(ComWorld) == 0x30);
+	static_assert(offsetof(ComWorld, primaryLightCount) == 0x10);
+	static_assert(offsetof(ComWorld, primaryLights) == 0x18);
+
+	// Filled by MP 0xE63A0 (model at +0x8, placement origin at +0x28).
+	struct GfxSceneModel
+	{
+		char __pad0[0x8];
+		XModel* model;
+		char __pad1[0x18];
+		vec3_t origin;
+		char __pad2[0x84];
+	};
+	static_assert(sizeof(GfxSceneModel) == 0xB8);
+	static_assert(offsetof(GfxSceneModel, model) == 0x8);
+	static_assert(offsetof(GfxSceneModel, origin) == 0x28);
+
+	struct FxSpatialFrame
+	{
+		float quat[4];
+		vec3_t origin;
+	};
+	static_assert(sizeof(FxSpatialFrame) == 0x1C);
+
+	// FX effect updates copy frameNow (+0x94) to framePrev (+0xB0), e.g. MP 0x51B8A2.
+	struct FxEffect
+	{
+		const FxEffectDef* def;
+		char __pad0[0x8C];
+		FxSpatialFrame frameNow;
+		FxSpatialFrame framePrev;
+		char __pad1[0x74];
+	};
+	static_assert(sizeof(FxEffect) == 0x140);
+	static_assert(offsetof(FxEffect, frameNow) == 0x94);
+	static_assert(offsetof(FxEffect, framePrev) == 0xB0);
+
+	struct FxSystemLock;
+
+	// MP FX_GetSystem (0x517710) strides by 0x900. MP 0x516970 walks
+	// allEffectHandles from +0xA0 to +0xA8 under the lock at +0x100.
+	struct FxSystem
+	{
+		FxEffect* effects;
+		char __pad0[0x98];
+		int firstActiveEffect;
+		char __pad1[0x4];
+		int firstFreeEffect;
+		char __pad2[0x4];
+		unsigned int* allEffectHandles;
+		char __pad3[0x48];
+		FxSystemLock* lock;
+		char __pad4[0x7F8];
+	};
+	static_assert(sizeof(FxSystem) == 0x900);
+	static_assert(offsetof(FxSystem, firstActiveEffect) == 0xA0);
+	static_assert(offsetof(FxSystem, firstFreeEffect) == 0xA8);
+	static_assert(offsetof(FxSystem, allEffectHandles) == 0xB0);
+	static_assert(offsetof(FxSystem, lock) == 0x100);
+
 	union XAssetHeader
 	{
 		void* data;
@@ -1062,9 +1152,15 @@ namespace game
 			char clientNum;
 			bool cursorHintDualWield;
 			uint8_t pm_type;
+			char __pad3[0x84 - 0x3];
+			vec3_t origin;
+			char __pad90[0x240 - 0x90];
+			vec3_t viewangles;
 
 			// ... incomplete
 		};
+		static_assert(offsetof(playerState_s, origin) == 0x84);
+		static_assert(offsetof(playerState_s, viewangles) == 0x240);
 
 		struct gclient_s
 		{
@@ -1084,16 +1180,22 @@ namespace game
 
 		struct gentity_s
 		{
-			char __pad0[0x258];
+			char __pad0[0x234];
+			vec3_t currentOrigin;
+			char __pad240[0x258 - 0x240];
 			gclient_s* client;
-			char __pad260[0x2B8 - 0x260];
+			char __pad260[0x268 - 0x260];
+			playerState_s* playerState;
+			char __pad270[0x2B8 - 0x270];
 			int flags;
 			char __pad2BC[0x2DC - 0x2BC];
 			int health;
 			char __pad2E0[0x418 - 0x2E0];
 		};
 		static_assert(sizeof(gentity_s) == 0x418);
+		static_assert(offsetof(gentity_s, currentOrigin) == 0x234);
 		static_assert(offsetof(gentity_s, client) == 0x258);
+		static_assert(offsetof(gentity_s, playerState) == 0x268);
 		static_assert(offsetof(gentity_s, flags) == 0x2B8);
 		static_assert(offsetof(gentity_s, health) == 0x2DC);
 

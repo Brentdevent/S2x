@@ -91,6 +91,24 @@ namespace utils::cryptography
 	{
 		std::string compute(const std::string& data, bool hex = false);
 		std::string compute(const uint8_t* data, size_t length, bool hex = false);
+
+		// Incremental hash for large files
+		class hasher
+		{
+		public:
+			hasher();
+			~hasher();
+
+			hasher(const hasher&) = delete;
+			hasher& operator=(const hasher&) = delete;
+
+			void update(const void* data, size_t length);
+			std::string finish(bool hex = false);
+
+		private:
+			hash_state state_{};
+			bool finished_ = false;
+		};
 	}
 
 	namespace sha512
